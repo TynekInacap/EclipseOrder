@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react"
+import { supabase } from "@/lib/supabase"
 import logoImg from "@/imports/bg,f8f8f8-flat,750x,075,f-pad,750x1000,f8f8f8.jpg"
 import siteLogoImg from "@/imports/final123.png"
 import defaultBannerImg from "@/imports/default-banner.jpg"
@@ -71,6 +72,106 @@ type View =
   | "new_thread"
   | "profile"
   | "admin"
+
+type ProfileRow = {
+  id: string
+  username: string
+  role: Role
+  avatar: string
+  avatar_url?: string | null
+  bio?: string | null
+  banner_color?: string | null
+  notifications?: NotificationItem[]
+  role_points?: number
+  redeemed_role_points?: number
+  joined_at: string
+}
+
+type ThreadRow = {
+  id: string
+  title: string
+  category: Category
+  author_id: string
+  content: string
+  status: ThreadStatus
+  pinned: boolean
+  admin_only: boolean
+  created_at: string
+}
+
+type ReplyRow = {
+  id: string
+  thread_id: string
+  author_id: string
+  content: string
+  is_staff: boolean
+  created_at: string
+}
+
+function mapProfile(row: ProfileRow): User {
+  return {
+    id: row.id,
+    username: row.username,
+    password: "",
+    role: row.role,
+    joinedAt: row.joined_at,
+    avatar: row.avatar,
+    avatarUrl: row.avatar_url || undefined,
+    bio: row.bio || undefined,
+    bannerColor: row.banner_color || undefined,
+    notifications: row.notifications || [],
+    rolePoints: row.role_points || 0,
+    redeemedRolePoints: row.redeemed_role_points || 0,
+  }
+}
+
+function mapReply(row: ReplyRow): Reply {
+  return {
+    id: row.id,
+    authorId: row.author_id,
+    content: row.content,
+    createdAt: row.created_at,
+    isStaff: row.is_staff,
+  }
+}
+
+async function loadSupabaseForum() {
+  const [{ data: profileRows, error: profilesError }, { data: threadRows, error: threadsError }] = await Promise.all([
+    supabase.from("profiles").select("*").order("joined_at", { ascending: true }),
+    supabase.from("threads").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
+  ])
+
+  if (profilesError) throw profilesError
+  if (threadsError) throw threadsError
+
+  const { data: replyRows, error: repliesError } = await supabase
+    .from("replies")
+    .select("*")
+    .order("created_at", { ascending: true })
+
+  if (repliesError) throw repliesError
+
+  const users = (profileRows || []).map((row) => mapProfile(row as ProfileRow))
+  const threads = (threadRows || []).map((row) => {
+    const thread = row as ThreadRow
+    return {
+      id: thread.id,
+      title: thread.title,
+      category: thread.category,
+      authorId: thread.author_id,
+      content: thread.content,
+      status: thread.status,
+      pinned: thread.pinned,
+      adminOnly: thread.admin_only,
+      createdAt: thread.created_at,
+      replies: (replyRows || [])
+        .filter((reply) => (reply as ReplyRow).thread_id === thread.id)
+        .map((reply) => mapReply(reply as ReplyRow)),
+    }
+  })
+
+  return { users, threads }
+}
 
 // ─── Seed Data ────────────────────────────────────────────────────────────────
 
@@ -387,28 +488,23 @@ function Avatar({ letter, role, size = 32, imageUrl }: { letter: string; role: R
 // ─── Login View ───────────────────────────────────────────────────────────────
 
 function LoginView({
-  users,
   onLogin,
   goRegister,
 }: {
-  users: User[]
-  onLogin: (u: User) => void
+  onLogin: (email: string, password: string) => Promise<void>
   goRegister: () => void
 }) {
-  const [username, setUsername] = useState("")
+  const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const found = users.find(
-      (u) => u.username.toLowerCase() === username.toLowerCase() && u.password === password
-    )
-    if (found) {
+    try {
+      await onLogin(email.trim(), password)
       setError("")
-      onLogin(found)
-    } else {
-      setError("Nombre de usuario o contraseña incorrectos.")
+    } catch (loginError) {
+      setError(loginError instanceof Error ? loginError.message : "No se pudo iniciar sesión.")
     }
   }
 
@@ -486,13 +582,14 @@ function LoginView({
 
           <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Nombre de usuario</label>
+              <label style={labelStyle}>Correo electrónico</label>
               <input
                 className="login-input"
                 style={inputStyle}
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Tu nombre en el servidor"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="tu-correo@ejemplo.com"
                 autoFocus
               />
             </div>
@@ -549,27 +646,22 @@ function LoginView({
 // ─── Register View ────────────────────────────────────────────────────────────
 
 function RegisterView({
-  users,
   onRegister,
   goLogin,
 }: {
-  users: User[]
-  onRegister: (u: User) => void
+  onRegister: (email: string, username: string, password: string) => Promise<void>
   goLogin: () => void
 }) {
+  const [email, setEmail] = useState("")
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
   const [error, setError] = useState("")
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (username.trim().length < 3) {
       setError("El nombre de usuario debe tener al menos 3 caracteres.")
-      return
-    }
-    if (users.some((u) => u.username.toLowerCase() === username.toLowerCase())) {
-      setError("Ese nombre de usuario ya está en uso.")
       return
     }
     if (password.length < 6) {
@@ -580,20 +672,12 @@ function RegisterView({
       setError("Las contraseñas no coinciden.")
       return
     }
-    const newUser: User = {
-      id: uid(),
-      username: username.trim(),
-      password,
-      role: "user",
-      joinedAt: new Date().toISOString().split("T")[0],
-      avatar: username[0].toUpperCase(),
-      avatarUrl: logoImg,
-      bannerColor: DEFAULT_BANNER_URL,
-      notifications: [],
-      rolePoints: 0,
-      redeemedRolePoints: 0,
+    try {
+      await onRegister(email.trim(), username.trim(), password)
+      setError("")
+    } catch (registerError) {
+      setError(registerError instanceof Error ? registerError.message : "No se pudo crear la cuenta.")
     }
-    onRegister(newUser)
   }
 
   return (
@@ -611,8 +695,12 @@ function RegisterView({
 
           <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Correo electrónico</label>
+              <input style={inputStyle} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu-correo@ejemplo.com" autoFocus />
+            </div>
+            <div style={{ marginBottom: 16 }}>
               <label style={labelStyle}>Nombre de usuario</label>
-              <input style={inputStyle} value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Usa el mismo nombre del servidor" autoFocus />
+              <input style={inputStyle} value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Usa el mismo nombre del servidor" />
               <p style={{ margin: "5px 0 0", fontSize: 11, color: "var(--text-dim)" }}>
                 Recomendamos usar tu nombre en el servidor de Zomboid
               </p>
@@ -2809,10 +2897,8 @@ const navBtn: React.CSSProperties = {
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [users, setUsers] = useState<User[]>(SEED_USERS)
-  const [threads, setThreads] = useState<Thread[]>(
-    SEED_THREADS.filter((thread) => thread.category === "normativa")
-  )
+  const [users, setUsers] = useState<User[]>([])
+  const [threads, setThreads] = useState<Thread[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [view, setView] = useState<View>("login")
   const [selectedThread, setSelectedThread] = useState<string>("")
@@ -2860,50 +2946,85 @@ export default function App() {
     document.documentElement.classList.toggle("light", !isDark)
   }, [isDark])
 
+  async function hydrateSession(userId: string) {
+    const [{ data: profileRow, error: profileError }, forum] = await Promise.all([
+      supabase.from("profiles").select("*").eq("id", userId).single(),
+      loadSupabaseForum(),
+    ])
+
+    if (profileError) throw profileError
+    const profile = mapProfile(profileRow as ProfileRow)
+    setUsers(forum.users)
+    setThreads(forum.threads)
+    setCurrentUser(profile)
+    setSelectedProfileId(profile.id)
+    setView("forum")
+  }
+
+  async function refreshForumState() {
+    const forum = await loadSupabaseForum()
+    setUsers(forum.users)
+    setThreads(forum.threads)
+  }
+
   useEffect(() => {
-    try {
-      const savedSession = localStorage.getItem(SESSION_STORAGE_KEY)
-      if (savedSession) {
-        const savedUser = JSON.parse(savedSession) as User
-        const existingUser = users.find((user) => user.id === savedUser?.id)
-        if (existingUser) {
-          setCurrentUser(existingUser)
-          setView("forum")
-        } else {
-          localStorage.removeItem(SESSION_STORAGE_KEY)
-        }
+    let mounted = true
+    const restoreSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session && mounted) await hydrateSession(session.user.id)
+      } catch (sessionError) {
+        console.error("Could not restore Supabase session", sessionError)
+      } finally {
+        if (mounted) setAuthReady(true)
       }
-    } catch {
-      localStorage.removeItem(SESSION_STORAGE_KEY)
-    } finally {
-      setAuthReady(true)
+    }
+
+    restoreSession()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return
+      if (session) {
+        void hydrateSession(session.user.id).catch((sessionError) => {
+          console.error("Could not load Supabase profile", sessionError)
+        })
+      } else {
+        setCurrentUser(null)
+        setUsers([])
+        setThreads([])
+        setView("login")
+      }
+    })
+
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
     }
   }, [])
 
   useEffect(() => {
-    if (!authReady) return
     if (currentUser) {
-      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(currentUser))
-    } else {
-      localStorage.removeItem(SESSION_STORAGE_KEY)
+      setSelectedProfileId((profileId) => profileId || currentUser.id)
     }
-  }, [authReady, currentUser])
+  }, [currentUser])
 
-  function handleLogin(user: User) {
-    setCurrentUser(user)
-    setView("forum")
+  async function handleLogin(email: string, password: string) {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) throw new Error(error.message)
   }
 
-  function handleRegister(user: User) {
-    setUsers((prev) => [...prev, user])
-    setCurrentUser(user)
-    setView("forum")
+  async function handleRegister(email: string, username: string, password: string) {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { username } },
+    })
+    if (error) throw new Error(error.message)
+    if (!data.session) throw new Error("Revisa tu correo para confirmar la cuenta antes de iniciar sesión.")
   }
 
-  function handleLogout() {
-    setCurrentUser(null)
-    setView("login")
-    localStorage.removeItem(SESSION_STORAGE_KEY)
+  async function handleLogout() {
+    const { error } = await supabase.auth.signOut()
+    if (error) console.error("Could not sign out from Supabase", error)
   }
 
   function notifyUser(userId: string, text: string) {
@@ -2932,81 +3053,85 @@ export default function App() {
     )
   }
 
-  function handleNewThread(thread: Thread, mentionedUserIds: string[] = []) {
-    if (thread.category === "normativa" && currentUser?.role !== "admin") return
-    setThreads((prev) => [thread, ...prev])
-    if (currentUser) {
-      const recipients = new Set(mentionedUserIds.filter((id) => id !== currentUser.id))
-      recipients.forEach((userId) => {
-        notifyUser(userId, `${currentUser.username} te ha mencionado en un hilo nuevo: "${thread.title}"`)
-      })
+  async function handleNewThread(thread: Thread, _mentionedUserIds: string[] = []) {
+    if (!currentUser || (thread.category === "normativa" && currentUser.role !== "admin")) return
+    const { error } = await supabase.from("threads").insert({
+      title: thread.title,
+      category: thread.category,
+      author_id: currentUser.id,
+      content: thread.content,
+      status: thread.status,
+      pinned: thread.pinned || false,
+      admin_only: thread.adminOnly || false,
+    })
+    if (error) {
+      console.error("Could not create thread", error)
+      return
     }
+    await refreshForumState()
     setView("forum")
   }
 
-  function handleEditThread(threadId: string, title: string, content: string) {
+  async function handleEditThread(threadId: string, title: string, content: string) {
     if (!currentUser) return
-    setThreads((prev) => prev.map((thread) => (
-      thread.id === threadId && thread.category === "historias" && thread.authorId === currentUser.id
-        ? { ...thread, title, content }
-        : thread
-    )))
+    const { error } = await supabase.from("threads").update({ title, content }).eq("id", threadId).eq("author_id", currentUser.id)
+    if (error) console.error("Could not edit thread", error)
+    else await refreshForumState()
   }
 
-  function handleReply(threadId: string, content: string, attachments: Attachment[], mentionedUserIds: string[] = []) {
+  async function handleReply(threadId: string, content: string, _attachments: Attachment[], _mentionedUserIds: string[] = []) {
     if (!currentUser) return
     const targetThread = threads.find((thread) => thread.id === threadId)
     if (!targetThread || targetThread.adminOnly) return
-    const reply: Reply = {
-      id: uid(),
-      authorId: currentUser.id,
+    const { error } = await supabase.from("replies").insert({
+      thread_id: threadId,
+      author_id: currentUser.id,
       content,
-      createdAt: new Date().toISOString(),
-      isStaff: currentUser.role !== "user",
-      attachments,
-    }
-    setThreads((prev) =>
-      prev.map((t) => (t.id === threadId ? { ...t, replies: [...t.replies, reply] } : t))
-    )
-
-    const recipients = new Set(mentionedUserIds.filter((id) => id !== currentUser.id))
-    recipients.forEach((userId) => {
-      notifyUser(userId, `${currentUser.username} te ha mencionado en una respuesta del hilo`)
+      is_staff: currentUser.role !== "user",
     })
-  }
-
-  function handleStatusChange(threadId: string, status: ThreadStatus) {
-    setThreads((prev) =>
-      prev.map((t) => (t.id === threadId ? { ...t, status } : t))
-    )
-  }
-
-  function handlePinToggle(threadId: string) {
-    setThreads((prev) =>
-      prev.map((t) => (t.id === threadId ? { ...t, pinned: !t.pinned } : t))
-    )
-  }
-
-  function handleDeleteThread(threadId: string) {
-    setThreads((prev) => prev.filter((t) => t.id !== threadId))
-  }
-
-  function handleRoleChange(userId: string, role: Role) {
-    setUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, role } : u))
-    )
-  }
-
-  function handleAddRolePoints(userId: string, amount: number) {
-    if (currentUser?.role !== "admin" || amount < 1) return
-    setUsers((prev) => prev.map((user) => (
-      user.id === userId
-        ? { ...user, rolePoints: (user.rolePoints || 0) + amount }
-        : user
-    )))
-    if (currentUser.id === userId) {
-      setCurrentUser((user) => user ? { ...user, rolePoints: (user.rolePoints || 0) + amount } : user)
+    if (error) {
+      console.error("Could not create reply", error)
+      return
     }
+    await refreshForumState()
+  }
+
+  async function handleStatusChange(threadId: string, status: ThreadStatus) {
+    const { error } = await supabase.from("threads").update({ status }).eq("id", threadId)
+    if (error) console.error("Could not update thread status", error)
+    else await refreshForumState()
+  }
+
+  async function handlePinToggle(threadId: string) {
+    const thread = threads.find((item) => item.id === threadId)
+    if (!thread) return
+    const { error } = await supabase.from("threads").update({ pinned: !thread.pinned }).eq("id", threadId)
+    if (error) console.error("Could not pin thread", error)
+    else await refreshForumState()
+  }
+
+  async function handleDeleteThread(threadId: string) {
+    const { error } = await supabase.from("threads").delete().eq("id", threadId)
+    if (error) console.error("Could not delete thread", error)
+    else {
+      await refreshForumState()
+      setView("forum")
+    }
+  }
+
+  async function handleRoleChange(userId: string, role: Role) {
+    const { error } = await supabase.from("profiles").update({ role }).eq("id", userId)
+    if (error) console.error("Could not update role", error)
+    else await refreshForumState()
+  }
+
+  async function handleAddRolePoints(userId: string, amount: number) {
+    if (currentUser?.role !== "admin" || amount < 1) return
+    const user = users.find((item) => item.id === userId)
+    if (!user) return
+    const { error } = await supabase.from("profiles").update({ role_points: (user.rolePoints || 0) + amount }).eq("id", userId)
+    if (error) console.error("Could not add role points", error)
+    else await refreshForumState()
   }
 
   function handleContactUser(userId: string, message: string) {
@@ -3014,17 +3139,14 @@ export default function App() {
     notifyUser(userId, `Mensaje de ${currentUser.username}: ${message.trim()}`)
   }
 
-  function handleRedeemRolePoints(userId: string) {
+  async function handleRedeemRolePoints(userId: string) {
     if (!currentUser || currentUser.id !== userId) return
     const availableRolePoints = (currentUser.rolePoints || 0) - (currentUser.redeemedRolePoints || 0)
     if (availableRolePoints < ROLE_REDEEM_COST) return
 
-    setUsers((prev) => prev.map((user) => (
-      user.id === userId
-        ? { ...user, redeemedRolePoints: (user.redeemedRolePoints || 0) + ROLE_REDEEM_COST }
-        : user
-    )))
-    setCurrentUser((user) => user ? { ...user, redeemedRolePoints: (user.redeemedRolePoints || 0) + ROLE_REDEEM_COST } : user)
+    const { error } = await supabase.from("profiles").update({ redeemed_role_points: (currentUser.redeemedRolePoints || 0) + ROLE_REDEEM_COST }).eq("id", userId)
+    if (error) console.error("Could not redeem role points", error)
+    else await refreshForumState()
   }
 
   function handleOpenProfile(user: User) {
@@ -3037,28 +3159,30 @@ export default function App() {
     setView("category")
   }
 
-  function handleSaveProfile(userId: string, updates: Partial<User>) {
-    setUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, ...updates } : u))
-    )
-    setCurrentUser((prev) => (prev && prev.id === userId ? { ...prev, ...updates } : prev))
+  async function handleSaveProfile(userId: string, updates: Partial<User>) {
+    const { error } = await supabase.from("profiles").update({
+      avatar_url: updates.avatarUrl,
+      bio: updates.bio,
+      banner_color: updates.bannerColor,
+    }).eq("id", userId)
+    if (error) console.error("Could not save profile", error)
+    else await hydrateSession(userId)
   }
 
-  function handleClearNotifications() {
+  async function handleClearNotifications() {
     if (!currentUser) return
-    setUsers((prev) =>
-      prev.map((u) => (u.id === currentUser.id ? { ...u, notifications: [] } : u))
-    )
-    setCurrentUser((prev) => (prev ? { ...prev, notifications: [] } : prev))
+    const { error } = await supabase.from("notifications").delete().eq("user_id", currentUser.id)
+    if (error) console.error("Could not clear notifications", error)
+    else await hydrateSession(currentUser.id)
   }
 
   if (!authReady) return null
 
   if (!currentUser) {
     if (view === "register") {
-      return <RegisterView users={users} onRegister={handleRegister} goLogin={() => setView("login")} />
+      return <RegisterView onRegister={handleRegister} goLogin={() => setView("login")} />
     }
-    return <LoginView users={users} onLogin={handleLogin} goRegister={() => setView("register")} />
+    return <LoginView onLogin={handleLogin} goRegister={() => setView("register")} />
   }
 
   return (

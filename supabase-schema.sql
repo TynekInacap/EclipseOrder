@@ -135,6 +135,11 @@ on public.profiles for update
 using (auth.uid() = id)
 with check (auth.uid() = id);
 
+create policy "Admins can update profiles"
+on public.profiles for update
+using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'))
+with check (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
+
 create policy "Authenticated users can read threads"
 on public.threads for select
 using (auth.role() = 'authenticated');

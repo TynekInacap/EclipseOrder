@@ -288,6 +288,19 @@ const SEED_THREADS: Thread[] = [
     adminOnly: true,
   },
   {
+    id: "t-rules-historias",
+    title: "Formato para fichas del personaje",
+    category: "historias",
+    authorId: "u0",
+    content:
+      "**FORMATO PARA FICHAS DEL PERSONAJE**\n\n**Nombre y Apellido:**\n**Edad:**\n**Historia Breve Del Personaje:**\n**Descripción Psicológica Del Personaje**\n**Foto/ilustración del personaje**\n\n---\n\n**Todo personaje** debe presentar una biografía breve y básica antes de su participación activa. La biografía define únicamente el punto de partida del personaje y no su desarrollo completo. Debe establecer de forma clara un origen general, rasgos psicológicos principales, motivaciones iniciales y límites concretos, como miedos, debilidades o conflictos internos. No se exige profundidad ni extensión inicial, ya que el desarrollo del personaje ocurre dentro del mismo servidor.\n\nEl desarrollo activo de la biografía durante el juego otorga peso narrativo real. Las decisiones tomadas, los vínculos construidos, los conflictos sostenidos y la evolución psicológica forman parte del canon personal del personaje. Las biografías que se desarrollen de manera coherente y sostenida serán recompensadas ya sea con **PDR** o **FDR** de manera casual.\n\nEn el caso que el usuario no interprete humanamente un personaje, fuerce situaciones conflictivas o innecesarias, será bloqueado por nula interpretación.\n\nLos usuarios que realicen roles relevantes para el futuro deberán guardar capturas de sus roles previos.\n\nAl cierre de cada temporada, el staff podrá reconocer a aquellos personajes que hayan demostrado un desarrollo, coherencia narrativa sostenida. Estas premiaciones más que nada es para incentivar el rolear y mantener un personaje bien construído.\n\nCada personaje creado por un usuario debe ser único e irrepetible. No está permitido reutilizar historias, perfiles psicológicos, rasgos, antecedentes ni recrear vínculos familiares con personajes anteriores.\n\nTodos los personajes deben tener un mínimo de **16 años**, sin excepciones.",
+    status: "abierto",
+    createdAt: "2026-08-03T11:00:00Z",
+    replies: [],
+    pinned: true,
+    adminOnly: true,
+  },
+  {
     id: "t4",
     title: "Facción: Eventos semanales de supervivencia",
     category: "facciones",

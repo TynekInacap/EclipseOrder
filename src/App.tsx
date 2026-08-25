@@ -3292,6 +3292,10 @@ export default function App() {
     else await hydrateSession(currentUser.id)
   }
 
+  if (isLoading) {
+    return <LoadingScreen />
+  }
+
   if (!authReady) return null
 
   if (!currentUser) {
@@ -3299,10 +3303,6 @@ export default function App() {
       return <RegisterView onRegister={handleRegister} goLogin={() => setView("login")} />
     }
     return <LoginView onLogin={handleLogin} goRegister={() => setView("register")} />
-  }
-
-  if (isLoading) {
-    return <LoadingScreen />
   }
 
   return (

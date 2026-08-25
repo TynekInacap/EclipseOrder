@@ -637,7 +637,7 @@ function LoginView({
         <div
           className="login-panel"
           style={{
-            background: "linear-gradient(180deg, rgba(15,23,42,0.88), rgba(11,16,23,0.9))",
+            background: "linear-gradient(180deg, var(--surface), var(--surface2))",
             border: "1px solid var(--border)",
             borderRadius: 24,
             padding: "32px 28px",
@@ -709,7 +709,7 @@ function LoginView({
             style={{
               marginTop: 24,
               paddingTop: 24,
-              borderTop: "1px solid #252830",
+              borderTop: "1px solid var(--border)",
               textAlign: "center",
               fontSize: 13,
               color: "var(--text-muted)",
@@ -801,7 +801,7 @@ function RegisterView({
         <div style={{ textAlign: "center", marginBottom: 40 }}>
           <Logo />
         </div>
-        <div style={{ background: "linear-gradient(180deg, rgba(15,23,42,0.96), rgba(11,16,23,0.94))", border: "1px solid var(--border)", borderRadius: 24, padding: "32px 28px", boxShadow: "0 30px 60px rgba(2, 6, 23, 0.3)" }}>
+        <div style={{ background: "linear-gradient(180deg, var(--surface), var(--surface2))", border: "1px solid var(--border)", borderRadius: 24, padding: "32px 28px", boxShadow: "0 30px 60px rgba(2, 6, 23, 0.3)" }}>
           {error && (
             <div style={{ background: "#c0392b18", border: "1px solid #c0392b55", borderRadius: 4, padding: "10px 14px", color: "#e74c3c", fontSize: 13, marginBottom: 20 }}>
               {error}
@@ -827,7 +827,7 @@ function RegisterView({
             <button type="submit" style={primaryBtn}>CREAR CUENTA</button>
           </form>
 
-          <div style={{ marginTop: 24, paddingTop: 24, borderTop: "1px solid #252830", textAlign: "center", fontSize: 13, color: "var(--text-muted)" }}>
+          <div style={{ marginTop: 24, paddingTop: 24, borderTop: "1px solid var(--border)", textAlign: "center", fontSize: 13, color: "var(--text-muted)" }}>
             ¿Ya tienes cuenta?{" "}
             <button onClick={goLogin} style={{ background: "none", border: "none", color: "#e74c3c", cursor: "pointer", fontWeight: 600, padding: 0, fontSize: 13 }}>
               Iniciar sesión
@@ -1975,7 +1975,7 @@ function NewThreadView({
         </div>
       )}
 
-      <form onSubmit={handleSubmit} style={{ background: "var(--surface)", border: "1px solid #252830", borderRadius: 8, padding: "28px 28px" }}>
+      <form onSubmit={handleSubmit} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "28px 28px" }}>
         {!initialCategory && !isReportMode && (
           <div style={{ marginBottom: 18 }}>
             <label style={labelStyle}>Categoría</label>
@@ -2081,7 +2081,7 @@ function NewThreadView({
               alignItems: "center",
               justifyContent: "center",
               gap: 10,
-              border: "1px dashed #252830",
+              border: "1px dashed var(--border)",
               borderRadius: 6,
               padding: "18px 20px",
               cursor: "pointer",
@@ -2109,7 +2109,7 @@ function NewThreadView({
               {attachments.map((att, idx) => (
                 <div
                   key={idx}
-                  style={{ position: "relative", borderRadius: 4, overflow: "hidden", border: "1px solid #252830", background: "var(--bg)" }}
+                  style={{ position: "relative", borderRadius: 4, overflow: "hidden", border: "1px solid var(--border)", background: "var(--bg)" }}
                 >
                   {att.type === "image" ? (
                     <img src={att.dataUrl} alt={att.name} style={{ display: "block", width: 90, height: 70, objectFit: "cover" }} />
@@ -2136,7 +2136,7 @@ function NewThreadView({
           <button type="submit" disabled={isSubmitting} style={{ ...primaryBtn, opacity: isSubmitting ? 0.65 : 1, cursor: isSubmitting ? "wait" : "pointer" }}>
             {isSubmitting ? "PUBLICANDO..." : isReportMode ? "PUBLICAR REPORTE" : "PUBLICAR HILO"}
           </button>
-          <button type="button" onClick={goBack} style={{ ...primaryBtn, background: "transparent", border: "1px solid #252830", color: "var(--text-muted)" }}>
+          <button type="button" onClick={goBack} style={{ ...primaryBtn, background: "transparent", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
             CANCELAR
           </button>
         </div>
@@ -2586,7 +2586,7 @@ function ThreadView({
 
       {/* Reply form */}
       {canReply ? (
-        <div style={{ background: "var(--surface)", border: "1px solid #252830", borderRadius: 8, padding: "20px 24px" }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "20px 24px" }}>
           <div style={{ fontSize: 12, fontFamily: "Oswald, sans-serif", fontWeight: 500, letterSpacing: "0.06em", color: "var(--text-muted)", marginBottom: 14 }}>
             AÑADIR RESPUESTA
           </div>
@@ -2609,7 +2609,7 @@ function ThreadView({
                 {attachments.map((att, idx) => (
                   <div
                     key={idx}
-                    style={{ position: "relative", borderRadius: 4, overflow: "hidden", border: "1px solid #252830", background: "var(--bg)" }}
+                    style={{ position: "relative", borderRadius: 4, overflow: "hidden", border: "1px solid var(--border)", background: "var(--bg)" }}
                   >
                     {att.type === "image" ? (
                       <img src={att.dataUrl} alt={att.name} style={{ display: "block", width: 80, height: 60, objectFit: "cover" }} />
@@ -2689,7 +2689,7 @@ function ThreadView({
                   alignItems: "center",
                   gap: 6,
                   background: "var(--surface2)",
-                  border: "1px solid #252830",
+                  border: "1px solid var(--border)",
                   borderRadius: 4,
                   color: "var(--text-muted)",
                   cursor: "pointer",
@@ -2721,7 +2721,7 @@ function ThreadView({
           </form>
         </div>
       ) : (
-        <div style={{ background: "var(--surface)", border: "1px solid #252830", borderRadius: 8, padding: "16px 24px", color: "var(--text-dim)", fontSize: 13, textAlign: "center" }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "16px 24px", color: "var(--text-dim)", fontSize: 13, textAlign: "center" }}>
           {thread.adminOnly ? "Este hilo es informativo y no acepta respuestas." : "Este hilo está cerrado. No se aceptan más respuestas."}
         </div>
       )}
@@ -2841,7 +2841,7 @@ function AdminView({
                     onChange={(e) => onStatusChange(thread.id, e.target.value as ThreadStatus)}
                     style={{
                       background: "var(--bg)",
-                      border: "1px solid #252830",
+                      border: "1px solid var(--border)",
                       borderRadius: 3,
                       color: "var(--text)",
                       padding: "4px 8px",
@@ -2914,7 +2914,7 @@ function AdminView({
                       onChange={(e) => onRoleChange(user.id, e.target.value as Role)}
                       style={{
                         background: "var(--bg)",
-                        border: "1px solid #252830",
+                        border: "1px solid var(--border)",
                         borderRadius: 3,
                         color: "var(--text)",
                         padding: "4px 8px",

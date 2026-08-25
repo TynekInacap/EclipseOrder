@@ -1458,6 +1458,8 @@ function CategoryView({
     { status: "en_revision" as ThreadStatus, label: "Rechazados", description: "Reportes revisados que no requieren más acciones.", color: "#ef4444" },
     { status: "abierto" as ThreadStatus, label: "Activos", description: "Reportes abiertos pendientes de una resolución.", color: "#f59e0b" },
   ]
+  const reportThreads = tabThreads.filter((thread) => thread.id !== "t-rules-reportes")
+  const reportRulesThread = tabThreads.find((thread) => thread.id === "t-rules-reportes")
 
   return (
     <div style={{ maxWidth: 1360, margin: "0 auto", padding: "18px 14px 40px" }}>
@@ -1534,8 +1536,31 @@ function CategoryView({
               <span>Mensajes</span>
               <span>Último mensaje</span>
             </div>
+            {reportRulesThread && (
+              <button
+                className="report-directory-row report-directory-pinned"
+                onClick={() => {
+                  setSelectedThread(reportRulesThread.id)
+                  setView("thread")
+                  onSound("select")
+                }}
+                style={{ "--report-color": "#fbbf24" } as React.CSSProperties}
+              >
+                <span className="report-directory-icon">📌</span>
+                <span className="report-directory-copy">
+                  <strong>{reportRulesThread.title}</strong>
+                  <small>Consulta obligatoria antes de publicar un reporte.</small>
+                </span>
+                <span>FIJO</span>
+                <span>{reportRulesThread.replies.length}</span>
+                <span className="report-directory-last">
+                  <strong>Administración</strong>
+                  <small>{formatDate(reportRulesThread.createdAt)}</small>
+                </span>
+              </button>
+            )}
             {reportSections.map((section) => {
-              const sectionThreads = tabThreads.filter((thread) => thread.status === section.status)
+              const sectionThreads = reportThreads.filter((thread) => thread.status === section.status)
               const latestThread = sectionThreads[0]
               const latestAuthor = latestThread ? users.find((user) => user.id === latestThread.authorId) : undefined
               const messageCount = sectionThreads.reduce((total, thread) => total + thread.replies.length, 0)

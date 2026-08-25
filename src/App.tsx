@@ -298,7 +298,7 @@ const SEED_THREADS: Thread[] = [
     createdAt: "2026-08-03T11:00:00Z",
     replies: [],
     pinned: true,
-    adminOnly: true,
+    adminOnly: false,
   },
   {
     id: "t4",

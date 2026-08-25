@@ -625,14 +625,7 @@ function RegisterView({
       avatar: username[0].toUpperCase(),
       avatarUrl: logoImg,
       bannerColor: DEFAULT_BANNER_URL,
-      notifications: [
-        {
-          id: uid(),
-          text: `Bienvenido a Eclipse Order, ${username.trim()}! Tu aventura dentro de la comunidad ya ha comenzado.`,
-          createdAt: new Date().toISOString(),
-          read: false,
-        },
-      ],
+      notifications: [],
       rolePoints: 0,
       redeemedRolePoints: 0,
     }
@@ -640,44 +633,12 @@ function RegisterView({
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "var(--bg)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "24px 16px",
-        backgroundImage:
-          "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(192,57,43,0.1) 0%, transparent 60%)",
-      }}
-    >
+    <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 16px", backgroundImage: "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(192,57,43,0.1) 0%, transparent 60%)" }}>
       <div style={{ width: "100%", maxWidth: 420 }}>
         <div style={{ textAlign: "center", marginBottom: 40 }}>
           <Logo />
         </div>
-
-        <div
-          style={{
-            background: "linear-gradient(180deg, rgba(15,23,42,0.96), rgba(11,16,23,0.94))",
-            border: "1px solid var(--border)",
-            borderRadius: 24,
-            padding: "32px 28px",
-            boxShadow: "0 30px 60px rgba(2, 6, 23, 0.3)",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
-            <span style={{ background: "rgba(245, 158, 11, 0.12)", border: "1px solid rgba(245,158,11,0.35)", color: "#fbbf24", borderRadius: 999, padding: "6px 12px", fontSize: 10, fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>
-              NUEVO SUPERVIVIENTE
-            </span>
-          </div>
-          <h2 style={{ fontFamily: "Oswald, sans-serif", fontSize: 22, fontWeight: 600, letterSpacing: "0.08em", color: "var(--text)", marginBottom: 6 }}>
-            CREAR CUENTA
-          </h2>
-          <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 28 }}>
-            Únete al foro de supervivientes
-          </p>
-
+        <div style={{ background: "linear-gradient(180deg, rgba(15,23,42,0.96), rgba(11,16,23,0.94))", border: "1px solid var(--border)", borderRadius: 24, padding: "32px 28px", boxShadow: "0 30px 60px rgba(2, 6, 23, 0.3)" }}>
           {error && (
             <div style={{ background: "#c0392b18", border: "1px solid #c0392b55", borderRadius: 4, padding: "10px 14px", color: "#e74c3c", fontSize: 13, marginBottom: 20 }}>
               {error}
@@ -709,44 +670,6 @@ function RegisterView({
               Iniciar sesión
             </button>
           </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Logout Confirm Modal ─────────────────────────────────────────────────────
-
-function LogoutModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
-  return (
-    <div
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center" }}
-      onClick={onCancel}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "32px 36px", maxWidth: 380, width: "90%", textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}
-      >
-        <img src={logoImg} alt="logo" style={{ width: 64, height: 64, objectFit: "contain", marginBottom: 16, filter: "drop-shadow(0 0 8px rgba(192,57,43,0.4))" }} />
-        <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 700, fontSize: 20, letterSpacing: "0.08em", color: "var(--text)", marginBottom: 10 }}>
-          ¿CERRAR SESIÓN?
-        </div>
-        <p style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 28, lineHeight: 1.5 }}>
-          ¿Estás seguro de que quieres salir del foro de Eclipse Order?
-        </p>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
-            onClick={onCancel}
-            style={{ flex: 1, background: "transparent", border: "1px solid var(--border2)", borderRadius: 4, color: "var(--text-muted)", cursor: "pointer", padding: "10px", fontSize: 12, fontFamily: "Oswald, sans-serif", fontWeight: 600, letterSpacing: "0.08em" }}
-          >
-            CANCELAR
-          </button>
-          <button
-            onClick={onConfirm}
-            style={{ flex: 1, background: "linear-gradient(135deg, #c0392b 0%, #922b21 100%)", border: "none", borderRadius: 4, color: "#fff", cursor: "pointer", padding: "10px", fontSize: 12, fontFamily: "Oswald, sans-serif", fontWeight: 600, letterSpacing: "0.08em" }}
-          >
-            SÍ, SALIR
-          </button>
         </div>
       </div>
     </div>
@@ -2893,7 +2816,9 @@ const navBtn: React.CSSProperties = {
 
 export default function App() {
   const [users, setUsers] = useState<User[]>(SEED_USERS)
-  const [threads, setThreads] = useState<Thread[]>(SEED_THREADS)
+  const [threads, setThreads] = useState<Thread[]>(
+    SEED_THREADS.filter((thread) => thread.category === "normativa")
+  )
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [view, setView] = useState<View>("login")
   const [selectedThread, setSelectedThread] = useState<string>("")

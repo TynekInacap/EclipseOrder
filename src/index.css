@@ -878,6 +878,26 @@ select:hover,
   font-family: 'JetBrains Mono', monospace;
 }
 
+.profile-save-success,
+.profile-save-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.profile-save-success {
+  border: 1px solid rgba(39, 174, 96, 0.38);
+  background: rgba(39, 174, 96, 0.1);
+  color: #86efac;
+}
+
+.profile-save-error {
+  border: 1px solid rgba(239, 68, 68, 0.42);
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+}
+
 .profile-main-body label[style*="dashed"] {
   min-height: 76px;
   border-color: rgba(56, 189, 248, 0.28) !important;

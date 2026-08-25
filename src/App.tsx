@@ -1768,7 +1768,7 @@ function ProfileView({
   currentUser: User
   users: User[]
   selectedUserId: string
-  onSaveProfile: (userId: string, updates: Partial<User>) => void
+  onSaveProfile: (userId: string, updates: Partial<User>) => Promise<void>
   onBack: () => void
   onSelectUser: (userId: string) => void
 }) {
@@ -1779,12 +1779,15 @@ function ProfileView({
   const [bannerColor, setBannerColor] = useState(selectedUser.bannerColor || "#ef4444")
   const [bannerUrl, setBannerUrl] = useState<string>("")
   const [avatarUrl, setAvatarUrl] = useState(selectedUser.avatarUrl || "")
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [profileSaveMessage, setProfileSaveMessage] = useState("")
 
   useEffect(() => {
     setBio(selectedUser.bio || "")
     setBannerColor(selectedUser.bannerColor || DEFAULT_BANNER_URL)
     setBannerUrl("")
     setAvatarUrl(selectedUser.avatarUrl || "")
+    setProfileSaveMessage("")
   }, [selectedUserId, selectedUser.bio, selectedUser.bannerColor, selectedUser.avatarUrl])
 
   const filteredUsers = users.filter((user) =>
@@ -1966,18 +1969,35 @@ function ProfileView({
 
                 <div style={{ marginTop: 18, display: "flex", justifyContent: "flex-end" }}>
                   <button
-                    onClick={() =>
-                      onSaveProfile(currentUser.id, {
-                        avatarUrl,
-                        bio,
-                        bannerColor: bannerUrl || bannerColor,
-                      })
-                    }
-                    style={{ ...primaryBtn, width: "auto", padding: "12px 22px" }}
+                    onClick={async () => {
+                      if (isSavingProfile) return
+                      setIsSavingProfile(true)
+                      setProfileSaveMessage("")
+                      try {
+                        await onSaveProfile(currentUser.id, {
+                          avatarUrl,
+                          bio,
+                          bannerColor: bannerUrl || bannerColor,
+                        })
+                        setBannerUrl("")
+                        setProfileSaveMessage("Perfil guardado correctamente.")
+                      } catch (saveError) {
+                        setProfileSaveMessage(saveError instanceof Error ? saveError.message : "No se pudo guardar el perfil.")
+                      } finally {
+                        setIsSavingProfile(false)
+                      }
+                    }}
+                    disabled={isSavingProfile}
+                    style={{ ...primaryBtn, width: "auto", padding: "12px 22px", opacity: isSavingProfile ? 0.65 : 1, cursor: isSavingProfile ? "wait" : "pointer" }}
                   >
-                    GUARDAR PERFIL
+                    {isSavingProfile ? "GUARDANDO..." : "GUARDAR PERFIL"}
                   </button>
                 </div>
+                {profileSaveMessage && (
+                  <div className={profileSaveMessage === "Perfil guardado correctamente." ? "profile-save-success" : "profile-save-error"}>
+                    {profileSaveMessage}
+                  </div>
+                )}
               </>
             ) : (
               <>

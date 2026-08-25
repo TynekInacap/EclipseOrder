@@ -108,6 +108,16 @@ type ReplyRow = {
   created_at: string
 }
 
+type AttachmentRow = {
+  id: string
+  thread_id?: string
+  reply_id?: string
+  name: string
+  type: "image" | "video"
+  data_url?: string | null
+  storage_path?: string | null
+}
+
 function mapProfile(row: ProfileRow): User {
   return {
     id: row.id,
@@ -136,22 +146,29 @@ function mapReply(row: ReplyRow): Reply {
 }
 
 async function loadSupabaseForum() {
-  const [{ data: profileRows, error: profilesError }, { data: threadRows, error: threadsError }] = await Promise.all([
+  const [
+    { data: profileRows, error: profilesError },
+    { data: threadRows, error: threadsError },
+    { data: replyRows, error: repliesError },
+    { data: threadAttachmentRows, error: threadAttachmentsError },
+    { data: replyAttachmentRows, error: replyAttachmentsError },
+  ] = await Promise.all([
     supabase.from("profiles").select("*").order("joined_at", { ascending: true }),
     supabase.from("threads").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
+    supabase.from("replies").select("*").order("created_at", { ascending: true }),
+    supabase.from("thread_attachments").select("*"),
+    supabase.from("reply_attachments").select("*"),
   ])
 
   if (profilesError) throw profilesError
   if (threadsError) throw threadsError
-
-  const { data: replyRows, error: repliesError } = await supabase
-    .from("replies")
-    .select("*")
-    .order("created_at", { ascending: true })
-
   if (repliesError) throw repliesError
+  if (threadAttachmentsError) throw threadAttachmentsError
+  if (replyAttachmentsError) throw replyAttachmentsError
 
   const users = (profileRows || []).map((row) => mapProfile(row as ProfileRow))
+  const threadAttachments = (threadAttachmentRows || []) as AttachmentRow[]
+  const replyAttachments = (replyAttachmentRows || []) as AttachmentRow[]
   const threads = (threadRows || []).map((row) => {
     const thread = row as ThreadRow
     return {
@@ -164,9 +181,16 @@ async function loadSupabaseForum() {
       pinned: thread.pinned,
       adminOnly: thread.admin_only,
       createdAt: thread.created_at,
-      replies: (replyRows || [])
-        .filter((reply) => (reply as ReplyRow).thread_id === thread.id)
-        .map((reply) => mapReply(reply as ReplyRow)),
+      attachments: threadAttachments
+        .filter((attachment) => attachment.thread_id === thread.id)
+        .map((attachment) => ({ name: attachment.name, type: attachment.type, dataUrl: attachment.data_url || "" })),
+      replies: (replyRows || []).filter((reply) => (reply as ReplyRow).thread_id === thread.id).map((reply) => {
+        const mappedReply = mapReply(reply as ReplyRow)
+        mappedReply.attachments = replyAttachments
+          .filter((attachment) => attachment.reply_id === mappedReply.id)
+          .map((attachment) => ({ name: attachment.name, type: attachment.type, dataUrl: attachment.data_url || "" }))
+        return mappedReply
+      }),
     }
   })
 
@@ -3057,7 +3081,7 @@ export default function App() {
 
   async function handleNewThread(thread: Thread, _mentionedUserIds: string[] = []) {
     if (!currentUser || (thread.category === "normativa" && currentUser.role !== "admin")) return
-    const { error } = await supabase.from("threads").insert({
+    const { data: createdThread, error } = await supabase.from("threads").insert({
       title: thread.title,
       category: thread.category,
       author_id: currentUser.id,
@@ -3065,10 +3089,21 @@ export default function App() {
       status: thread.status,
       pinned: thread.pinned || false,
       admin_only: thread.adminOnly || false,
-    })
-    if (error) {
+    }).select().single()
+    if (error || !createdThread) {
       console.error("Could not create thread", error)
       return
+    }
+    if (thread.attachments && thread.attachments.length > 0) {
+      const { error: attachmentsError } = await supabase.from("thread_attachments").insert(
+        thread.attachments.map((attachment) => ({
+          thread_id: createdThread.id,
+          name: attachment.name,
+          type: attachment.type,
+          data_url: attachment.dataUrl,
+        }))
+      )
+      if (attachmentsError) console.error("Could not save thread attachments", attachmentsError)
     }
     await refreshForumState()
     setView("forum")
@@ -3085,15 +3120,26 @@ export default function App() {
     if (!currentUser) return
     const targetThread = threads.find((thread) => thread.id === threadId)
     if (!targetThread || targetThread.adminOnly) return
-    const { error } = await supabase.from("replies").insert({
+    const { data: createdReply, error } = await supabase.from("replies").insert({
       thread_id: threadId,
       author_id: currentUser.id,
       content,
       is_staff: currentUser.role !== "user",
-    })
-    if (error) {
+    }).select().single()
+    if (error || !createdReply) {
       console.error("Could not create reply", error)
       return
+    }
+    if (_attachments.length > 0) {
+      const { error: attachmentsError } = await supabase.from("reply_attachments").insert(
+        _attachments.map((attachment) => ({
+          reply_id: createdReply.id,
+          name: attachment.name,
+          type: attachment.type,
+          data_url: attachment.dataUrl,
+        }))
+      )
+      if (attachmentsError) console.error("Could not save reply attachments", attachmentsError)
     }
     await refreshForumState()
   }

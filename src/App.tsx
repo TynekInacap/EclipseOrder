@@ -943,8 +943,6 @@ function Header({
   onLogout,
   setView,
   view,
-  isDark,
-  onToggleTheme,
   onOpenProfile,
   onClearNotifications,
 }: {
@@ -952,8 +950,6 @@ function Header({
   onLogout: () => void
   setView: (v: View) => void
   view: View
-  isDark: boolean
-  onToggleTheme: () => void
   onOpenProfile: (user: User) => void
   onClearNotifications: () => void
 }) {
@@ -998,40 +994,6 @@ function Header({
             }}
           >
             FORO
-          </button>
-
-          <button
-            onClick={onToggleTheme}
-            title={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-            style={{
-              background: "linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(22, 33, 47, 0.8))",
-              border: "1px solid var(--border2)",
-              borderRadius: 999,
-              cursor: "pointer",
-              width: 62,
-              height: 32,
-              position: "relative",
-              flexShrink: 0,
-              boxShadow: "inset 0 1px 2px rgba(255,255,255,0.04)",
-            }}
-          >
-            <div style={{
-              position: "absolute",
-              top: 3,
-              left: isDark ? 4 : 31,
-              width: 24,
-              height: 24,
-              borderRadius: "50%",
-              background: isDark ? "linear-gradient(135deg, #f97316 0%, #f59e0b 100%)" : "linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 12,
-              transition: "left 0.2s ease",
-              boxShadow: "0 10px 18px rgba(245,158,11,0.3)",
-            }}>
-              {isDark ? "🌙" : "☀️"}
-            </div>
           </button>
 
           <div style={{ position: "relative" }}>
@@ -2546,9 +2508,12 @@ function ThreadView({
                     alt={att.name}
                     style={{
                       display: "block",
-                      width: "100%",
-                      maxHeight: 420,
-                      objectFit: "cover",
+                      width: "auto",
+                      maxWidth: "100%",
+                      height: "auto",
+                      maxHeight: 520,
+                      objectFit: "contain",
+                      margin: "0 auto",
                     }}
                   />
                 </div>
@@ -2624,7 +2589,7 @@ function ThreadView({
                             <img
                               src={att.dataUrl}
                               alt={att.name}
-                              style={{ display: "block", width: "100%", maxHeight: 280, objectFit: "cover" }}
+                              style={{ display: "block", maxWidth: "100%", width: "auto", height: "auto", maxHeight: 420, objectFit: "contain", margin: "0 auto" }}
                             />
                           </div>
                         ) : (
@@ -3110,7 +3075,6 @@ export default function App() {
   const [selectedThread, setSelectedThread] = useState<string>("")
   const [selectedProfileId, setSelectedProfileId] = useState<string>("")
   const [selectedCategory, setSelectedCategory] = useState<Category>("reportes")
-  const [isDark, setIsDark] = useState(true)
   const [authReady, setAuthReady] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const currentUserRef = useRef<User | null>(null)
@@ -3149,10 +3113,6 @@ export default function App() {
 
     setTimeout(() => audioCtx.close(), duration * 1000 + 30)
   }, [])
-
-  useEffect(() => {
-    document.documentElement.classList.toggle("light", !isDark)
-  }, [isDark])
 
   async function hydrateSession(userId: string) {
     setIsLoading(true)
@@ -3440,8 +3400,6 @@ export default function App() {
         onLogout={handleLogout}
         setView={setView}
         view={view}
-        isDark={isDark}
-        onToggleTheme={() => setIsDark((d) => !d)}
         onOpenProfile={handleOpenProfile}
         onClearNotifications={handleClearNotifications}
       />

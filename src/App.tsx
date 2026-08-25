@@ -3285,17 +3285,38 @@ export default function App() {
   }
 
   useEffect(() => {
-    const localUsers = readLocalUsers()
     setStoreProducts(readStoreProducts())
-    const sessionId = localStorage.getItem(SESSION_STORAGE_KEY)
-    const localUser = localUsers.find((user) => user.id === sessionId)
-    setUsers(localUsers)
-    if (localUser) {
-      setCurrentUser(localUser)
-      setSelectedProfileId(localUser.id)
-      setView("forum")
+    let mounted = true
+    const restoreSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session && mounted) await hydrateSession(session.user.id)
+      } catch (sessionError) {
+        console.error("Could not restore Supabase session", sessionError)
+      } finally {
+        if (mounted) setAuthReady(true)
+      }
     }
-    setAuthReady(true)
+
+    void restoreSession()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return
+      if (!session) {
+        setCurrentUser(null)
+        setUsers([])
+        setThreads([])
+        setView("login")
+      } else if (!currentUserRef.current || currentUserRef.current.id !== session.user.id) {
+        void hydrateSession(session.user.id).catch((sessionError) => {
+          console.error("Could not load Supabase profile", sessionError)
+        })
+      }
+    })
+
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   useEffect(() => {
@@ -3324,50 +3345,25 @@ export default function App() {
   }, [currentUser])
 
   async function handleLogin(characterName: string, password: string) {
-    const user = readLocalUsers().find(
-      (candidate) => candidate.username.toLowerCase() === characterName.trim().toLowerCase() && candidate.password === password,
-    )
-    if (!user) throw new Error("El nombre del personaje o la contraseña no son correctos.")
-    if (user.suspended) throw new Error("Esta cuenta está suspendida por un administrador.")
-    localStorage.setItem(SESSION_STORAGE_KEY, user.id)
-    setUsers(readLocalUsers())
-    setCurrentUser(user)
-    setSelectedProfileId(user.id)
-    setView("forum")
+    const { error } = await supabase.auth.signInWithPassword({
+      email: authEmailForCharacter(characterName),
+      password,
+    })
+    if (error) throw new Error(error.message)
   }
 
   async function handleRegister(username: string, password: string) {
-    const users = readLocalUsers()
-    if (users.some((user) => user.username.toLowerCase() === username.trim().toLowerCase())) {
-      throw new Error("Ese personaje ya está registrado en este dispositivo.")
-    }
-
-    const user: User = {
-      id: uid(),
-      username: username.trim(),
+    const { error } = await supabase.auth.signUp({
+      email: authEmailForCharacter(username),
       password,
-      role: "user",
-      joinedAt: new Date().toISOString(),
-      avatar: username.trim().charAt(0).toUpperCase(),
-      notifications: [],
-      rolePoints: 0,
-      redeemedRolePoints: 0,
-    }
-    const nextUsers = [...users, user]
-    localStorage.setItem(LOCAL_USERS_STORAGE_KEY, JSON.stringify(nextUsers))
-    localStorage.setItem(SESSION_STORAGE_KEY, user.id)
-    setUsers(nextUsers)
-    setCurrentUser(user)
-    setSelectedProfileId(user.id)
-    setView("forum")
+      options: { data: { username } },
+    })
+    if (error) throw new Error(error.message)
   }
 
   async function handleLogout() {
-    localStorage.removeItem(SESSION_STORAGE_KEY)
-    setCurrentUser(null)
-    setUsers([])
-    setThreads([])
-    setView("login")
+    const { error } = await supabase.auth.signOut()
+    if (error) console.error("Could not sign out from Supabase", error)
   }
 
   function handleCreateProduct(product: StoreProduct) {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 import logoImg from "@/imports/bg,f8f8f8-flat,750x,075,f-pad,750x1000,f8f8f8.jpg"
 import siteLogoImg from "@/imports/final123.png"
@@ -3048,6 +3048,7 @@ export default function App() {
   const [isDark, setIsDark] = useState(true)
   const [authReady, setAuthReady] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const currentUserRef = useRef<User | null>(null)
 
   const playInteractionSound = useCallback((type: "click" | "select" | "success") => {
     const AudioCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
@@ -3130,15 +3131,17 @@ export default function App() {
     restoreSession()
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!mounted) return
-      if (session) {
-        void hydrateSession(session.user.id).catch((sessionError) => {
-          console.error("Could not load Supabase profile", sessionError)
-        })
-      } else {
+      // Only reload if user session changed or logged out (don't reload on tab visibility changes)
+      if (!session) {
         setCurrentUser(null)
         setUsers([])
         setThreads([])
         setView("login")
+      } else if (!currentUserRef.current || currentUserRef.current.id !== session.user.id) {
+        // Only hydrate if user changed or not yet loaded
+        void hydrateSession(session.user.id).catch((sessionError) => {
+          console.error("Could not load Supabase profile", sessionError)
+        })
       }
     })
 
@@ -3147,6 +3150,10 @@ export default function App() {
       subscription.unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    currentUserRef.current = currentUser
+  }, [currentUser])
 
   useEffect(() => {
     if (currentUser) {

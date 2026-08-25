@@ -566,6 +566,23 @@ function Avatar({ letter, role, size = 32, imageUrl }: { letter: string; role: R
 
 // ─── Login View ───────────────────────────────────────────────────────────────
 
+function ZombieCharacter({ delay = 0 }: { delay?: number }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        fontSize: 48,
+        animation: `zombie-sway ${4 + delay}s ease-in-out infinite`,
+        animationDelay: `${delay * 0.3}s`,
+        textShadow: "0 0 20px rgba(192, 57, 43, 0.6)",
+        filter: "brightness(0.8) hue-rotate(-10deg)",
+      }}
+    >
+      🧟
+    </div>
+  )
+}
+
 function LoginView({
   onLogin,
   goRegister,
@@ -717,8 +734,30 @@ function LoginView({
 
         </div>
       </div>
+
+      {/* Zombie decorations */}
+      <div style={{ position: "absolute", left: "5%", top: "20%" }}>
+        <ZombieCharacter delay={0} />
+      </div>
+      <div style={{ position: "absolute", right: "8%", top: "40%", transform: "scaleX(-1)" }}>
+        <ZombieCharacter delay={1} />
+      </div>
+      <div style={{ position: "absolute", left: "3%", bottom: "25%", opacity: 0.6 }}>
+        <ZombieCharacter delay={2} />
+      </div>
+      <div style={{ position: "absolute", right: "6%", bottom: "30%", transform: "scaleX(-1)", opacity: 0.7 }}>
+        <ZombieCharacter delay={1.5} />
+      </div>
+
+      <style>{`
+        @keyframes zombie-sway {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-15px); }
+        }
+      `}</style>
     </div>
   )
+}
 }
 
 // ─── Register View ────────────────────────────────────────────────────────────
@@ -797,6 +836,24 @@ function RegisterView({
           </div>
         </div>
       </div>
+
+      {/* Zombie decorations */}
+      <div style={{ position: "absolute", left: "5%", top: "20%" }}>
+        <ZombieCharacter delay={0} />
+      </div>
+      <div style={{ position: "absolute", right: "8%", top: "40%", transform: "scaleX(-1)" }}>
+        <ZombieCharacter delay={1} />
+      </div>
+      <div style={{ position: "absolute", left: "3%", bottom: "25%", opacity: 0.6 }}>
+        <ZombieCharacter delay={2} />
+      </div>
+
+      <style>{`
+        @keyframes zombie-sway {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-15px); }
+        }
+      `}</style>
     </div>
   )
 }

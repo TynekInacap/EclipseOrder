@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase"
 import logoImg from "@/imports/bg,f8f8f8-flat,750x,075,f-pad,750x1000,f8f8f8.jpg"
 import siteLogoImg from "@/imports/final123.png"
 import defaultBannerImg from "@/imports/default-banner.jpg"
+import eclipseGif from "@/imports/giphy.gif"
 
 const DEFAULT_BANNER_URL = `url(${defaultBannerImg})`
 
@@ -32,6 +33,17 @@ interface User {
   notifications?: NotificationItem[]
   rolePoints?: number
   redeemedRolePoints?: number
+  ownedProductIds?: string[]
+  suspended?: boolean
+}
+
+interface StoreProduct {
+  id: string
+  title: string
+  price: number
+  description: string
+  imageUrl?: string
+  createdAt: string
 }
 
 interface Attachment {
@@ -78,6 +90,7 @@ type View =
   | "thread"
   | "new_thread"
   | "profile"
+  | "store"
   | "admin"
 
 type ProfileRow = {
@@ -412,6 +425,8 @@ const CATEGORY_THREAD_ACTIONS: Record<Category, string> = {
 
 const ROLE_REDEEM_COST = 100
 const SESSION_STORAGE_KEY = "eclipse-order-session"
+const LOCAL_USERS_STORAGE_KEY = "eclipse-order-local-users"
+const STORE_PRODUCTS_STORAGE_KEY = "eclipse-order-store-products"
 
 const STATUS_LABELS: Record<ThreadStatus, string> = {
   abierto: "Abierto",
@@ -442,6 +457,28 @@ function uid() {
 function authEmailForCharacter(name: string) {
   const slug = name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
   return `${slug || "personaje"}@eclipse-order.local`
+}
+
+function roleLabel(role: Role) {
+  return role === "user" ? "USUARIO" : role.toUpperCase()
+}
+
+function readLocalUsers(): User[] {
+  try {
+    const storedUsers = JSON.parse(localStorage.getItem(LOCAL_USERS_STORAGE_KEY) || "[]")
+    return Array.isArray(storedUsers) ? storedUsers : []
+  } catch {
+    return []
+  }
+}
+
+function readStoreProducts(): StoreProduct[] {
+  try {
+    const storedProducts = JSON.parse(localStorage.getItem(STORE_PRODUCTS_STORAGE_KEY) || "[]")
+    return Array.isArray(storedProducts) ? storedProducts : []
+  } catch {
+    return []
+  }
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -604,23 +641,6 @@ function Avatar({ letter, role, size = 32, imageUrl }: { letter: string; role: R
 
 // ─── Login View ───────────────────────────────────────────────────────────────
 
-function ZombieCharacter({ delay = 0 }: { delay?: number }) {
-  return (
-    <div
-      style={{
-        position: "absolute",
-        fontSize: 48,
-        animation: `zombie-sway ${4 + delay}s ease-in-out infinite`,
-        animationDelay: `${delay * 0.3}s`,
-        textShadow: "0 0 20px rgba(192, 57, 43, 0.6)",
-        filter: "brightness(0.8) hue-rotate(-10deg)",
-      }}
-    >
-      🧟
-    </div>
-  )
-}
-
 function LoginView({
   onLogin,
   goRegister,
@@ -658,7 +678,7 @@ function LoginView({
     >
       <div className="login-orbit login-orbit-one" />
       <div className="login-orbit login-orbit-two" />
-      <div className="login-content" style={{ width: "100%", maxWidth: 420 }}>
+      <div className="login-content" style={{ width: "100%", maxWidth: 1040 }}>
         <div className="login-brand" style={{ textAlign: "center", marginBottom: 40 }}>
           <Logo />
           <div className="login-brand-line">
@@ -668,131 +688,115 @@ function LoginView({
           </div>
         </div>
         <div className="login-eclipse" aria-hidden="true">
-          <div className="login-eclipse-corona" />
-          <div className="login-eclipse-disc" />
+          <img src={eclipseGif} alt="" />
         </div>
 
-        <div
-          className="login-panel"
-          style={{
-            background: "linear-gradient(180deg, var(--surface), var(--surface2))",
-            border: "1px solid var(--border)",
-            borderRadius: 24,
-            padding: "32px 28px",
-            boxShadow: "0 30px 60px rgba(2, 6, 23, 0.32)",
-          }}
-        >
-          <h2
-            style={{
-              fontFamily: "Oswald, sans-serif",
-              fontSize: 22,
-              fontWeight: 600,
-              letterSpacing: "0.08em",
-              color: "var(--text)",
-              marginBottom: 6,
-            }}
-          >
-            INICIAR SESIÓN
-          </h2>
-          <p className="login-subtitle" style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 28 }}>
-            Accede al foro del servidor Eclipse Order
-          </p>
-
-          {error && (
-            <div
-              style={{
-                background: "#c0392b18",
-                border: "1px solid #c0392b55",
-                borderRadius: 4,
-                padding: "10px 14px",
-                color: "#e74c3c",
-                fontSize: 13,
-                marginBottom: 20,
-              }}
-            >
-              {error}
+        <div className="login-layout">
+          <div className="login-brief">
+            <span className="login-eyebrow">REFUGIO // ECLIPSE ORDER</span>
+            <h1>
+              SOBREVIVE.
+              <br />
+              <span>CONECTA.</span>
+            </h1>
+            <p>El mundo cambió. Las historias que quedan se escriben aquí.</p>
+            <div className="login-brief-line">
+              <span />
+              <small>COMUNIDAD DE SUPERVIVIENTES</small>
             </div>
-          )}
-
-          <form onSubmit={handleSubmit}>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Nombre del personaje</label>
-              <input
-                className="login-input"
-                style={inputStyle}
-                value={characterName}
-                onChange={(e) => setCharacterName(e.target.value)}
-                placeholder="Tu nombre en Project Zomboid"
-                autoFocus
-              />
-            </div>
-            <div style={{ marginBottom: 24 }}>
-              <label style={labelStyle}>Contraseña</label>
-              <input
-                className="login-input"
-                style={inputStyle}
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-              />
-            </div>
-            <button type="submit" className="login-submit" style={primaryBtn}>
-              ENTRAR AL FORO
-            </button>
-          </form>
-
-          <div
-            className="login-register"
-            style={{
-              marginTop: 24,
-              paddingTop: 24,
-              borderTop: "1px solid var(--border)",
-              textAlign: "center",
-              fontSize: 13,
-              color: "var(--text-muted)",
-            }}
-          >
-            ¿No tienes cuenta?{" "}
-            <button
-              onClick={goRegister}
-              style={{
-                background: "none",
-                border: "none",
-                color: "#e74c3c",
-                cursor: "pointer",
-                fontWeight: 600,
-                padding: 0,
-                fontSize: 13,
-              }}
-            >
-              Registrarse
-            </button>
           </div>
 
+          <div
+            className="login-panel"
+            style={{
+              background: "linear-gradient(180deg, var(--surface), var(--surface2))",
+              border: "1px solid var(--border)",
+              borderRadius: 24,
+              padding: "32px 28px",
+              boxShadow: "0 30px 60px rgba(2, 6, 23, 0.32)",
+            }}
+          >
+            <div className="login-panel-heading">
+              <span className="login-eyebrow">ACCESO DE SUPERVIVIENTE</span>
+              <h2>INICIAR SESIÓN</h2>
+              <p className="login-subtitle">Vuelve a entrar en tu historia.</p>
+            </div>
+
+            {error && (
+              <div
+                style={{
+                  background: "#c0392b18",
+                  border: "1px solid #c0392b55",
+                  borderRadius: 4,
+                  padding: "10px 14px",
+                  color: "#e74c3c",
+                  fontSize: 13,
+                  marginBottom: 20,
+                }}
+              >
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Nombre del personaje</label>
+                <input
+                  className="login-input"
+                  style={inputStyle}
+                  value={characterName}
+                  onChange={(e) => setCharacterName(e.target.value)}
+                  placeholder="Tu nombre en Project Zomboid"
+                  autoFocus
+                />
+              </div>
+              <div style={{ marginBottom: 24 }}>
+                <label style={labelStyle}>Contraseña</label>
+                <input
+                  className="login-input"
+                  style={inputStyle}
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                />
+              </div>
+              <button type="submit" className="login-submit" style={primaryBtn}>
+                ENTRAR AL FORO
+              </button>
+            </form>
+
+            <div
+              className="login-register"
+              style={{
+                marginTop: 24,
+                paddingTop: 24,
+                borderTop: "1px solid var(--border)",
+                textAlign: "center",
+                fontSize: 13,
+                color: "var(--text-muted)",
+              }}
+            >
+              ¿No tienes cuenta?{" "}
+              <button
+                onClick={goRegister}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#e74c3c",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  padding: 0,
+                  fontSize: 13,
+                }}
+              >
+                Registrarse
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Zombie decorations */}
-      <div style={{ position: "absolute", left: "5%", top: "20%" }}>
-        <ZombieCharacter delay={0} />
-      </div>
-      <div style={{ position: "absolute", right: "8%", top: "40%", transform: "scaleX(-1)" }}>
-        <ZombieCharacter delay={1} />
-      </div>
-      <div style={{ position: "absolute", left: "3%", bottom: "25%", opacity: 0.6 }}>
-        <ZombieCharacter delay={2} />
-      </div>
-      <div style={{ position: "absolute", right: "6%", bottom: "30%", transform: "scaleX(-1)", opacity: 0.7 }}>
-        <ZombieCharacter delay={1.5} />
-      </div>
-
-      <style>{`
-        @keyframes zombie-sway {
-          0%, 100% { transform: translateY(0px); }
-          50% { transform: translateY(-15px); }
-        }
-      `}</style>
     </div>
   )
 }
@@ -842,67 +846,101 @@ function RegisterView({
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 16px", backgroundImage: "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(192,57,43,0.1) 0%, transparent 60%)" }}>
-      <div style={{ width: "100%", maxWidth: 420 }}>
-        <div style={{ textAlign: "center", marginBottom: 40 }}>
+    <div
+      className="login-shell register-shell"
+      style={{
+        minHeight: "100vh",
+        background: "var(--bg)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px 16px",
+        backgroundImage:
+          "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(192,57,43,0.12) 0%, transparent 60%)",
+      }}
+    >
+      <div className="login-content" style={{ width: "100%", maxWidth: 1040 }}>
+        <div className="login-brand" style={{ textAlign: "center", marginBottom: 40 }}>
           <Logo />
+          <div className="login-brand-line">
+            <span />
+            <small>COMUNIDAD DE PROJECT ZOMBOID</small>
+            <span />
+          </div>
         </div>
-        <div style={{ background: "linear-gradient(180deg, var(--surface), var(--surface2))", border: "1px solid var(--border)", borderRadius: 24, padding: "32px 28px", boxShadow: "0 30px 60px rgba(2, 6, 23, 0.3)" }}>
-          {error && (
-            <div style={{ background: "#c0392b18", border: "1px solid #c0392b55", borderRadius: 4, padding: "10px 14px", color: "#e74c3c", fontSize: 13, marginBottom: 20 }}>
-              {error}
-            </div>
-          )}
+        <div className="login-eclipse" aria-hidden="true">
+          <img src={eclipseGif} alt="" />
+        </div>
 
-          <form onSubmit={handleSubmit}>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Nombre de tu personaje</label>
-              <input style={inputStyle} value={characterFirstName} onChange={(e) => setCharacterFirstName(e.target.value)} placeholder="Nombre del personaje" />
+        <div className="login-layout">
+          <div className="login-brief">
+            <span className="login-eyebrow">NUEVO SUPERVIVIENTE</span>
+            <h1>
+              ENCUENTRA.
+              <br />
+              <span>RESISTE.</span>
+            </h1>
+            <p>Tu personaje. Tu historia. Tu lugar en la comunidad.</p>
+            <div className="login-brief-line">
+              <span />
+              <small>CREA TU IDENTIDAD</small>
             </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Apellido de tu personaje</label>
-              <input style={inputStyle} value={characterLastName} onChange={(e) => setCharacterLastName(e.target.value)} placeholder="Apellido del personaje" />
-              <p style={{ margin: "5px 0 0", fontSize: 11, color: "var(--text-dim)" }}>
-                Usa el mismo nombre y apellido de tu personaje en el servidor de Zomboid
-              </p>
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Contraseña</label>
-              <input style={inputStyle} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres" />
-            </div>
-            <div style={{ marginBottom: 28 }}>
-              <label style={labelStyle}>Confirmar contraseña</label>
-              <input style={inputStyle} type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Repite la contraseña" />
-            </div>
-            <button type="submit" style={primaryBtn}>CREAR CUENTA</button>
-          </form>
+          </div>
 
-          <div style={{ marginTop: 24, paddingTop: 24, borderTop: "1px solid var(--border)", textAlign: "center", fontSize: 13, color: "var(--text-muted)" }}>
-            ¿Ya tienes cuenta?{" "}
-            <button onClick={goLogin} style={{ background: "none", border: "none", color: "#e74c3c", cursor: "pointer", fontWeight: 600, padding: 0, fontSize: 13 }}>
-              Iniciar sesión
-            </button>
+          <div
+            className="login-panel"
+            style={{
+              background: "linear-gradient(180deg, var(--surface), var(--surface2))",
+              border: "1px solid var(--border)",
+              borderRadius: 24,
+              padding: "32px 28px",
+              boxShadow: "0 30px 60px rgba(2, 6, 23, 0.32)",
+            }}
+          >
+            <div className="login-panel-heading">
+              <span className="login-eyebrow">REGISTRO DE SUPERVIVIENTE</span>
+              <h2>CREAR CUENTA</h2>
+              <p className="login-subtitle">Prepara tu llegada al foro.</p>
+            </div>
+
+            {error && (
+              <div style={{ background: "#c0392b18", border: "1px solid #c0392b55", borderRadius: 4, padding: "10px 14px", color: "#e74c3c", fontSize: 13, marginBottom: 20 }}>
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Nombre de tu personaje</label>
+                <input className="login-input" style={inputStyle} value={characterFirstName} onChange={(e) => setCharacterFirstName(e.target.value)} placeholder="Nombre del personaje" autoFocus />
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Apellido de tu personaje</label>
+                <input className="login-input" style={inputStyle} value={characterLastName} onChange={(e) => setCharacterLastName(e.target.value)} placeholder="Apellido del personaje" />
+                <p style={{ margin: "5px 0 0", fontSize: 11, color: "var(--text-dim)" }}>
+                  Usa el mismo nombre y apellido de tu personaje en el servidor de Zomboid
+                </p>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Contraseña</label>
+                <input className="login-input" style={inputStyle} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres" />
+              </div>
+              <div style={{ marginBottom: 28 }}>
+                <label style={labelStyle}>Confirmar contraseña</label>
+                <input className="login-input" style={inputStyle} type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Repite la contraseña" />
+              </div>
+              <button type="submit" className="login-submit" style={primaryBtn}>CREAR CUENTA</button>
+            </form>
+
+            <div className="login-register" style={{ marginTop: 24, paddingTop: 24, borderTop: "1px solid var(--border)", textAlign: "center", fontSize: 13, color: "var(--text-muted)" }}>
+              ¿Ya tienes cuenta?{" "}
+              <button onClick={goLogin} style={{ background: "none", border: "none", color: "#e74c3c", cursor: "pointer", fontWeight: 600, padding: 0, fontSize: 13 }}>
+                Iniciar sesión
+              </button>
+            </div>
           </div>
         </div>
       </div>
-
-      {/* Zombie decorations */}
-      <div style={{ position: "absolute", left: "5%", top: "20%" }}>
-        <ZombieCharacter delay={0} />
-      </div>
-      <div style={{ position: "absolute", right: "8%", top: "40%", transform: "scaleX(-1)" }}>
-        <ZombieCharacter delay={1} />
-      </div>
-      <div style={{ position: "absolute", left: "3%", bottom: "25%", opacity: 0.6 }}>
-        <ZombieCharacter delay={2} />
-      </div>
-
-      <style>{`
-        @keyframes zombie-sway {
-          0%, 100% { transform: translateY(0px); }
-          50% { transform: translateY(-15px); }
-        }
-      `}</style>
     </div>
   )
 }
@@ -937,6 +975,109 @@ function LogoutModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel:
   )
 }
 
+function StoreView({
+  currentUser,
+  products,
+  onCreateProduct,
+  onRedeemProduct,
+  onBack,
+}: {
+  currentUser: User
+  products: StoreProduct[]
+  onCreateProduct: (product: StoreProduct) => void
+  onRedeemProduct: (product: StoreProduct) => void
+  onBack: () => void
+}) {
+  const [title, setTitle] = useState("")
+  const [price, setPrice] = useState("")
+  const [description, setDescription] = useState("")
+  const [imageUrl, setImageUrl] = useState("")
+  const [error, setError] = useState("")
+  const ownedProductIds = currentUser.ownedProductIds || []
+  const balance = Math.max(0, (currentUser.rolePoints || 0) - (currentUser.redeemedRolePoints || 0))
+
+  function handleImageChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => setImageUrl(String(reader.result || ""))
+    reader.readAsDataURL(file)
+    event.target.value = ""
+  }
+
+  function handleCreate(event: React.FormEvent) {
+    event.preventDefault()
+    const numericPrice = Number(price)
+    if (!title.trim() || !description.trim() || !Number.isInteger(numericPrice) || numericPrice < 1) {
+      setError("Completa título, descripción y un precio entero mayor a 0.")
+      return
+    }
+    onCreateProduct({ id: uid(), title: title.trim(), price: numericPrice, description: description.trim(), imageUrl, createdAt: new Date().toISOString() })
+    setTitle("")
+    setPrice("")
+    setDescription("")
+    setImageUrl("")
+    setError("")
+  }
+
+  return (
+    <div className="store-view">
+      <div className="store-heading">
+        <button onClick={onBack} className="store-back">← VOLVER AL FORO</button>
+        <span className="store-kicker">ECLIPSE ORDER // RECOMPENSAS</span>
+        <h1>Tienda</h1>
+        <p>Canjea tus puntos de rol por recompensas de la comunidad.</p>
+        <div className="store-balance"><span>●</span> SALDO DISPONIBLE <strong>{balance} PDR</strong></div>
+      </div>
+
+      <div className="store-layout">
+        <section className="store-catalog">
+          <div className="store-section-title"><span className="store-catalog-title">Catálogo</span><small>{products.length} PRODUCTOS</small></div>
+          {products.length === 0 ? (
+            <div className="store-empty">Todavía no hay productos disponibles.</div>
+          ) : (
+            <div className="store-products">
+              {products.map((product) => {
+                const owned = ownedProductIds.includes(product.id)
+                const canAfford = balance >= product.price
+                return (
+                  <article className="store-product" key={product.id}>
+                    <div className="store-product-image">
+                      {product.imageUrl ? <img src={product.imageUrl} alt="" /> : <span>✦</span>}
+                    </div>
+                    <div className="store-product-body">
+                      <div className="store-product-price">{product.price} PDR</div>
+                      <h2>{product.title}</h2>
+                      <p>{product.description}</p>
+                      <button onClick={() => onRedeemProduct(product)} disabled={owned || !canAfford} className="store-redeem">
+                        {owned ? "CANJEADO" : canAfford ? "CANJEAR PRODUCTO" : "PUNTOS INSUFICIENTES"}
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          )}
+        </section>
+
+        {currentUser.role === "admin" && (
+          <section className="store-admin-panel">
+            <div className="store-section-title"><span>Nuevo producto</span><small>SOLO ADMIN</small></div>
+            <form onSubmit={handleCreate}>
+              {error && <div className="store-error">{error}</div>}
+              <label style={labelStyle}>Título<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Nombre de la recompensa" style={inputStyle} /></label>
+              <label style={labelStyle}>Precio en puntos de rol<input type="number" min="1" step="1" value={price} onChange={(event) => setPrice(event.target.value)} placeholder="100" style={inputStyle} /></label>
+              <label style={labelStyle}>Descripción<textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Describe qué recibe el superviviente..." style={{ ...inputStyle, minHeight: 100, resize: "vertical" }} /></label>
+              <label className="store-upload">{imageUrl ? <img src={imageUrl} alt="Vista previa" /> : <span>＋ Añadir imagen</span>}<input type="file" accept="image/*" onChange={handleImageChange} /></label>
+              <button type="submit" className="store-create">PUBLICAR EN TIENDA</button>
+            </form>
+          </section>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Header ───────────────────────────────────────────────────────────────────
 
 function Header({
@@ -946,6 +1087,7 @@ function Header({
   view,
   onOpenProfile,
   onClearNotifications,
+  onOpenAdmin,
 }: {
   currentUser: User
   onLogout: () => void
@@ -953,6 +1095,7 @@ function Header({
   view: View
   onOpenProfile: (user: User) => void
   onClearNotifications: () => void
+  onOpenAdmin: () => void
 }) {
   const [showLogoutModal, setShowLogoutModal] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
@@ -996,6 +1139,25 @@ function Header({
           >
             FORO
           </button>
+
+          <button
+            onClick={() => setView("store")}
+            style={{
+              ...navBtn,
+              color: view === "store" ? "#f8fafc" : "var(--text-dim)",
+              borderBottom: view === "store" ? "2px solid #f59e0b" : "2px solid transparent",
+              background: view === "store" ? "rgba(245, 158, 11, 0.08)" : "transparent",
+              padding: "9px 12px",
+            }}
+          >
+            TIENDA
+          </button>
+
+          {isStaff && (
+            <button onClick={onOpenAdmin} style={{ ...navBtn, color: view === "admin" ? "#f8fafc" : "var(--text-dim)", borderBottom: view === "admin" ? "2px solid #ef4444" : "2px solid transparent", background: view === "admin" ? "rgba(239, 68, 68, 0.08)" : "transparent", padding: "9px 12px" }}>
+              ADMIN
+            </button>
+          )}
 
           <div style={{ position: "relative" }}>
             <button
@@ -1055,7 +1217,7 @@ function Header({
                 {currentUser.username}
               </div>
               <div style={{ fontSize: 9, color: currentUser.role === "admin" ? "#f87171" : currentUser.role === "moderator" ? "#60a5fa" : "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>
-                {currentUser.role.toUpperCase()}
+                {roleLabel(currentUser.role)}
               </div>
             </div>
           </button>
@@ -1261,6 +1423,7 @@ function CategoryView({
   category,
   threads,
   users,
+  currentUser,
   setView,
   setSelectedThread,
   onSound,
@@ -1269,12 +1432,12 @@ function CategoryView({
   category: Category
   threads: Thread[]
   users: User[]
+  currentUser: User
   setView: (v: View) => void
   setSelectedThread: (id: string) => void
-  onSound: (type: "click" | "select" | "success") => void
+  onSound: (type: "click" | "select" | "success" | "notification") => void
   onSelectCategory: (category: Category) => void
 }) {
-  const [reportSubTab, setReportSubTab] = useState<"abierto" | "en_revision" | "cerrado">("abierto")
   const color = CATEGORY_COLORS[category]
 
   const sortThreads = (list: Thread[], cat: Category) =>
@@ -1289,9 +1452,12 @@ function CategoryView({
     })
 
   const tabThreads = sortThreads(threads.filter((t) => t.category === category), category)
-  const visibleThreads = category === "reportes"
-    ? tabThreads.filter((thread) => thread.status === reportSubTab)
-    : tabThreads
+  const visibleThreads = tabThreads
+  const reportSections = [
+    { status: "cerrado" as ThreadStatus, label: "Aceptados", description: "Todos los reportes aceptados y resueltos.", color: "#60a5fa" },
+    { status: "en_revision" as ThreadStatus, label: "Rechazados", description: "Reportes revisados que no requieren más acciones.", color: "#ef4444" },
+    { status: "abierto" as ThreadStatus, label: "Activos", description: "Reportes abiertos pendientes de una resolución.", color: "#f59e0b" },
+  ]
 
   return (
     <div style={{ maxWidth: 1360, margin: "0 auto", padding: "18px 14px 40px" }}>
@@ -1325,6 +1491,29 @@ function CategoryView({
         >
           ← VOLVER
         </button>
+        {(category !== "normativa" || currentUser.role === "admin") && (
+          <button
+            className="forum-action forum-action-secondary"
+            onClick={() => {
+              onSelectCategory(category)
+              setView("new_thread")
+              onSound("success")
+            }}
+            style={{
+              background: "linear-gradient(135deg, rgba(249,115,22,0.2), rgba(120,53,15,0.14))",
+              border: "1px solid rgba(249,115,22,0.35)",
+              borderRadius: 10,
+              color: "#fdba74",
+              cursor: "pointer",
+              padding: "10px 14px",
+              fontSize: 11,
+              fontFamily: "Oswald, sans-serif",
+              letterSpacing: "0.08em",
+            }}
+          >
+            {CATEGORY_THREAD_ACTIONS[category]}
+          </button>
+        )}
       </div>
 
       <main style={{ width: "100%", background: "linear-gradient(180deg, rgba(13, 20, 30, 0.96), rgba(11, 17, 25, 0.9))", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden", boxShadow: "0 20px 40px rgba(2, 6, 23, 0.18)" }}>
@@ -1338,37 +1527,48 @@ function CategoryView({
         </div>
 
         {category === "reportes" && (
-          <div style={{ borderBottom: "1px solid var(--border)", background: "rgba(15,23,42,0.6)", display: "flex", gap: 8, padding: "10px 14px" }}>
-            {([
-              { key: "abierto", label: "Abiertos", color: "#27ae60" },
-              { key: "en_revision", label: "En revisión", color: "#f39c12" },
-              { key: "cerrado", label: "Cerrados", color: "#7f8c8d" },
-            ] as const).map((sub) => (
-              <button
-                key={sub.key}
-                onClick={() => {
-                  setReportSubTab(sub.key)
-                  onSound("select")
-                }}
-                style={{
-                  background: reportSubTab === sub.key ? sub.color + "22" : "transparent",
-                  border: `1px solid ${reportSubTab === sub.key ? sub.color : "var(--border)"}`,
-                  borderRadius: 8,
-                  color: reportSubTab === sub.key ? sub.color : "var(--text-dim)",
-                  cursor: "pointer",
-                  padding: "6px 10px",
-                  fontSize: 10,
-                  fontFamily: "JetBrains Mono, monospace",
-                  letterSpacing: "0.08em",
-                }}
-              >
-                {sub.label}
-              </button>
-            ))}
+          <div className="report-directory">
+            <div className="report-directory-head">
+              <span>Foro</span>
+              <span>Temas</span>
+              <span>Mensajes</span>
+              <span>Último mensaje</span>
+            </div>
+            {reportSections.map((section) => {
+              const sectionThreads = tabThreads.filter((thread) => thread.status === section.status)
+              const latestThread = sectionThreads[0]
+              const latestAuthor = latestThread ? users.find((user) => user.id === latestThread.authorId) : undefined
+              const messageCount = sectionThreads.reduce((total, thread) => total + thread.replies.length, 0)
+              return (
+                <button
+                  key={section.status}
+                  className="report-directory-row"
+                  onClick={() => {
+                    if (latestThread) {
+                      setSelectedThread(latestThread.id)
+                      setView("thread")
+                    }
+                    onSound("select")
+                  }}
+                  style={{ "--report-color": section.color } as React.CSSProperties}
+                >
+                  <span className="report-directory-icon">●</span>
+                  <span className="report-directory-copy">
+                    <strong>{section.label}</strong>
+                    <small>{section.description}</small>
+                  </span>
+                  <span>{sectionThreads.length}</span>
+                  <span>{messageCount}</span>
+                  <span className="report-directory-last">
+                    {latestThread ? <><strong>{latestAuthor?.username || "Usuario"}</strong><small>{formatDate(latestThread.createdAt)}</small></> : <small>Sin actividad</small>}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         )}
 
-        <div style={{ display: "flex", flexDirection: "column" }}>
+        <div style={{ display: category === "reportes" ? "none" : "flex", flexDirection: "column" }}>
           {visibleThreads.length === 0 ? (
             <div style={{ padding: "28px 20px", textAlign: "center", color: "var(--text-dim)" }}>
               {category === "reportes"
@@ -1435,36 +1635,25 @@ function ForumView({
   onSound,
   selectedCategory,
   onOpenCategory,
-  onSelectCategory,
 }: {
   threads: Thread[]
   users: User[]
   currentUser: User
   setView: (v: View) => void
   setSelectedThread: (id: string) => void
-  onSound: (type: "click" | "select" | "success") => void
+  onSound: (type: "click" | "select" | "success" | "notification") => void
   selectedCategory: Category
   onOpenCategory: (category: Category) => void
-  onSelectCategory: (category: Category) => void
 }) {
-  const color = CATEGORY_COLORS[selectedCategory]
-
-  const sortThreads = (list: Thread[], cat: Category) =>
-    [...list].sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1
-      if (!a.pinned && b.pinned) return 1
-      // Normativa orders oldest first (ascending), others newest first (descending)
-      if (cat === "normativa") {
-        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      }
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    })
-
-  const tabThreads = sortThreads(threads.filter((t) => t.category === selectedCategory), selectedCategory)
-
   return (
     <div className="forum-shell" style={{ maxWidth: 1360, margin: "0 auto", padding: "18px 14px 40px" }}>
-      <div className="forum-layout" style={{ display: "grid", gridTemplateColumns: "260px minmax(0, 1fr)", gap: 18 }}>
+      <div className="forum-hero">
+        <div>
+          <span className="forum-hero-kicker">ECLIPSE ORDER</span>
+          <p>Comparte información, historias y decisiones que mantienen viva la comunidad.</p>
+        </div>
+      </div>
+      <div className="forum-layout" style={{ display: "grid", gridTemplateColumns: "1fr", gap: 18 }}>
         <aside
           className="forum-sidebar"
           style={{
@@ -1477,8 +1666,8 @@ function ForumView({
             top: 86,
           }}
         >
-          <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.12em", textTransform: "uppercase" }}>
-            Categorías
+          <div className="forum-sidebar-heading" style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.12em", textTransform: "uppercase" }}>
+            <span>General</span>
           </div>
           <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
             {CATEGORIES_ORDER.map((cat) => {
@@ -1491,7 +1680,7 @@ function ForumView({
                   key={cat}
                   className="forum-category-button"
                   onClick={() => {
-                    onSelectCategory(cat)
+                    onOpenCategory(cat)
                     onSound("select")
                   }}
                   style={{
@@ -1536,87 +1725,6 @@ function ForumView({
           </div>
         </aside>
 
-        <main className="forum-main" style={{ width: "100%", background: "linear-gradient(180deg, rgba(13, 20, 30, 0.96), rgba(11, 17, 25, 0.9))", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden", boxShadow: "0 20px 40px rgba(2, 6, 23, 0.18)" }}>
-          <div className="forum-topbar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "14px 18px", background: "linear-gradient(90deg, rgba(17,24,39,0.9) 0%, rgba(15,23,32,0.7) 100%)", borderBottom: "1px solid var(--border)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
-              <div style={{ width: 5, height: 18, background: color, borderRadius: 999, boxShadow: `0 0 18px ${color}` }} />
-              <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 18, letterSpacing: "0.08em", color: "var(--text)" }}>
-                {selectedCategory === "bugs" ? "BUGS" : selectedCategory === "reportes" ? "REPORTES" : selectedCategory === "historias" ? "HISTORIAS" : selectedCategory === "facciones" ? "FACCIONES" : "NORMATIVA"}
-              </div>
-            </div>
-          </div>
-
-          <div className="forum-intro" style={{ padding: "26px 20px", color: "var(--text-muted)", lineHeight: 1.7 }}>
-            <div style={{ fontSize: 12, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em", marginBottom: 10, textTransform: "uppercase" }}>
-              {CATEGORY_LABELS[selectedCategory]}
-            </div>
-            <h2 style={{ fontFamily: "Oswald, sans-serif", fontSize: 28, margin: "0 0 10px", color: "var(--text)", letterSpacing: "0.06em" }}>
-              {selectedCategory === "bugs" ? "Reporte de fallos" : selectedCategory === "reportes" ? "Reportes del servidor" : selectedCategory === "historias" ? "Historias de supervivientes" : selectedCategory === "facciones" ? "Facciones y clanes" : "Normativa del servidor"}
-            </h2>
-            <p style={{ margin: 0, maxWidth: 660, color: "var(--text-muted)" }}>
-              {CATEGORY_DESCRIPTIONS[selectedCategory]}
-            </p>
-
-            <div style={{ marginTop: 20, display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button
-                className="forum-action forum-action-primary"
-                onClick={() => {
-                  onOpenCategory(selectedCategory)
-                  onSound("success")
-                }}
-                style={{
-                  background: "linear-gradient(135deg, rgba(239,68,68,0.18), rgba(153,27,27,0.12))",
-                  border: "1px solid rgba(239,68,68,0.35)",
-                  borderRadius: 10,
-                  color: "#fca5a5",
-                  cursor: "pointer",
-                  padding: "10px 14px",
-                  fontSize: 11,
-                  fontFamily: "Oswald, sans-serif",
-                  letterSpacing: "0.08em",
-                }}
-              >
-                ABRIR CATEGORÍA
-              </button>
-
-              {(selectedCategory !== "normativa" || currentUser.role === "admin") && (
-                <button
-                  className="forum-action forum-action-secondary"
-                  onClick={() => {
-                    onSelectCategory(selectedCategory)
-                    setView("new_thread")
-                    onSound("success")
-                  }}
-                  style={{
-                    background: "linear-gradient(135deg, rgba(249,115,22,0.2), rgba(120,53,15,0.14))",
-                    border: "1px solid rgba(249,115,22,0.35)",
-                    borderRadius: 10,
-                    color: "#fdba74",
-                    cursor: "pointer",
-                    padding: "10px 14px",
-                    fontSize: 11,
-                    fontFamily: "Oswald, sans-serif",
-                    letterSpacing: "0.08em",
-                  }}
-                >
-                  {CATEGORY_THREAD_ACTIONS[selectedCategory]}
-                </button>
-              )}
-            </div>
-
-            <div style={{ marginTop: 22, padding: "12px 14px", borderRadius: 10, border: "1px solid var(--border)", background: "rgba(15,23,42,0.45)", color: "var(--text-dim)", fontSize: 13 }}>
-              {selectedCategory === "reportes"
-                ? "Puedes señalar al usuario implicado y dejar evidencia del caso."
-                : selectedCategory === "bugs"
-                ? "Describe el fallo, pasos para reproducirlo y cualquier captura o video útil."
-                : selectedCategory === "historias"
-                ? "Comparte la historia de tu personaje, su evolución y momentos clave."
-                : selectedCategory === "facciones"
-                ? "Presenta una idea de facción, clán o estructura de rol para la comunidad."
-                : "Consulta y debate las normas del servidor."}
-            </div>
-          </div>
-        </main>
       </div>
     </div>
   )
@@ -1629,7 +1737,6 @@ function ProfileView({
   users,
   selectedUserId,
   onSaveProfile,
-  onRedeemRolePoints,
   onBack,
   onSelectUser,
 }: {
@@ -1637,7 +1744,6 @@ function ProfileView({
   users: User[]
   selectedUserId: string
   onSaveProfile: (userId: string, updates: Partial<User>) => void
-  onRedeemRolePoints: (userId: string) => void
   onBack: () => void
   onSelectUser: (userId: string) => void
 }) {
@@ -1668,7 +1774,6 @@ function ProfileView({
   }
   const rolePoints = selectedUser.rolePoints || 0
   const redeemedRolePoints = selectedUser.redeemedRolePoints || 0
-  const availableRolePoints = Math.max(0, rolePoints - redeemedRolePoints)
   const canSeeRolePointDetails = isOwnProfile || currentUser.role === "admin"
 
   function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1700,15 +1805,25 @@ function ProfileView({
 
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "30px 20px 40px" }}>
+    <div className="profile-view" style={{ maxWidth: 1100, margin: "0 auto", padding: "30px 20px 40px" }}>
       <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
         ← Volver al foro
       </button>
 
+      <div className="profile-page-heading">
+        <div>
+          <span>ARCHIVO DE SUPERVIVIENTE</span>
+          <h1>Perfil</h1>
+          <p>Configura la identidad con la que te reconocerá la comunidad.</p>
+        </div>
+        <div className="profile-page-mark">EO / {roleLabel(selectedUser.role)}</div>
+      </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "300px minmax(0, 1fr)", gap: 18 }}>
-        <aside style={{ background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden" }}>
-          <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.12em", textTransform: "uppercase" }}>
-            Usuarios
+        <aside className="profile-directory" style={{ background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden" }}>
+          <div className="profile-directory-heading" style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.12em", textTransform: "uppercase" }}>
+            <span>Directorio</span>
+            <small>{users.length} PERFILES</small>
           </div>
           <div style={{ padding: 12 }}>
             <input
@@ -1740,7 +1855,7 @@ function ProfileView({
                   <Avatar letter={user.avatar} role={user.role} size={28} imageUrl={user.avatarUrl} />
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: 13 }}>{user.username}</div>
-                    <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace" }}>{user.role.toUpperCase()}</div>
+                    <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace" }}>{roleLabel(user.role)}</div>
                   </div>
                 </button>
               ))}
@@ -1748,7 +1863,7 @@ function ProfileView({
           </div>
         </aside>
 
-        <section style={{ background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden" }}>
+        <section className="profile-main" style={{ background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden" }}>
           <div
             style={{
               height: 120,
@@ -1761,50 +1876,40 @@ function ProfileView({
               borderBottom: "1px solid var(--border)",
             }}
           >
-            <div style={{ position: "absolute", left: 24, bottom: -28, display: "flex", alignItems: "center", gap: 16 }}>
+            <div className="profile-identity" style={{ position: "absolute", left: 24, bottom: -28, display: "flex", alignItems: "center", gap: 16 }}>
               <Avatar letter={profileUser.avatar} role={profileUser.role} size={72} imageUrl={profileUser.avatarUrl} />
               <div>
                 <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 26, letterSpacing: "0.06em", color: "#fff" }}>{profileUser.username}</div>
-                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.8)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>{profileUser.role.toUpperCase()}</div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.8)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>{roleLabel(profileUser.role)}</div>
               </div>
             </div>
           </div>
 
-          <div style={{ padding: "42px 22px 22px" }}>
-            <div style={{ marginBottom: 22, padding: "16px", borderRadius: 14, border: "1px solid rgba(245,158,11,0.3)", background: "linear-gradient(135deg, rgba(245,158,11,0.12), rgba(15,23,42,0.45))" }}>
+          <div className="profile-main-body" style={{ padding: "42px 22px 22px" }}>
+            <div className="profile-points" style={{ marginBottom: 22, padding: "16px", borderRadius: 14, border: "1px solid rgba(245,158,11,0.3)", background: "linear-gradient(135deg, rgba(245,158,11,0.12), rgba(15,23,42,0.45))" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                 <div>
-                  <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "0.1em", color: "#fbbf24", textTransform: "uppercase" }}>
+                  <div className="role-points-title" style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "0.1em", color: "#fbbf24", textTransform: "uppercase" }}>
                     Puntos de rol
                   </div>
                   <div style={{ marginTop: 4, fontFamily: "Oswald, sans-serif", fontSize: 28, color: "var(--text)" }}>
                     {rolePoints} puntos
                   </div>
-                  {canSeeRolePointDetails && (
+                  {canSeeRolePointDetails && redeemedRolePoints > 0 && (
                     <div style={{ marginTop: 2, fontSize: 11, color: "var(--text-dim)" }}>
-                      Disponibles para canjear: {availableRolePoints}
+                      Puntos utilizados: {redeemedRolePoints}
                     </div>
                   )}
                 </div>
-                {isOwnProfile && (
-                  <button
-                    onClick={() => onRedeemRolePoints(selectedUser.id)}
-                    disabled={availableRolePoints < ROLE_REDEEM_COST}
-                    style={{ ...primaryBtn, width: "auto", background: availableRolePoints >= ROLE_REDEEM_COST ? "linear-gradient(135deg, #f59e0b, #b45309)" : "var(--surface2)", color: availableRolePoints >= ROLE_REDEEM_COST ? "#fff" : "var(--text-dim)", boxShadow: "none", cursor: availableRolePoints >= ROLE_REDEEM_COST ? "pointer" : "not-allowed", opacity: availableRolePoints >= ROLE_REDEEM_COST ? 1 : 0.7 }}
-                  >
-                    CANJEAR PUNTOS DE ROL ({ROLE_REDEEM_COST})
-                  </button>
-                )}
               </div>
-              {canSeeRolePointDetails && redeemedRolePoints > 0 && (
-                <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(245,158,11,0.2)", fontSize: 11, color: "var(--text-dim)" }}>
-                  Puntos canjeados: {redeemedRolePoints}
-                </div>
-              )}
             </div>
             {isOwnProfile ? (
               <>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
+                <div className="profile-section-heading">
+                  <span>Personalización</span>
+                  <small>IDENTIDAD VISUAL</small>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 18 }}>
                   <div>
                     <label style={labelStyle}>Logo / avatar</label>
                     <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: "1px dashed var(--border)", borderRadius: 12, padding: "18px 12px", background: "rgba(15,23,42,0.5)", cursor: "pointer", color: "var(--text-muted)" }}>
@@ -1812,18 +1917,6 @@ function ProfileView({
                       <span>Subir imagen</span>
                       <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: "none" }} />
                     </label>
-                  </div>
-
-                  <div>
-                    <label style={labelStyle}>Color de banner</label>
-                    <input
-                      type="color"
-                      value={bannerColor}
-                      onChange={(e) => {
-                        setBannerColor(e.target.value)
-                      }}
-                      style={{ width: "100%", height: 48, borderRadius: 10, border: "1px solid var(--border)", background: "transparent", cursor: "pointer" }}
-                    />
                   </div>
                 </div>
 
@@ -1834,13 +1927,6 @@ function ProfileView({
                     <span>Subir imagen de banner</span>
                     <input type="file" accept="image/*" onChange={handleBannerUpload} style={{ display: "none" }} />
                   </label>
-                </div>
-
-                <div style={{ marginTop: 18 }}>
-                  <label style={labelStyle}>Banner global</label>
-                  <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                    Todos los perfiles nuevos empiezan con el banner predeterminado del servidor.
-                  </div>
                 </div>
 
                 <div style={{ marginTop: 18 }}>
@@ -1904,6 +1990,28 @@ function NewThreadView({
   const [category, setCategory] = useState<Category>(initialCategory || "reportes")
   const [content, setContent] = useState("")
   const isReportMode = initialCategory === "reportes" || category === "reportes"
+  const formCopy: Record<Category, { title: string; description: string }> = {
+    bugs: {
+      title: "Resume el fallo encontrado",
+      description: "Explica qué ocurrió, cómo reproducirlo, dónde sucedió y qué esperabas que pasara.",
+    },
+    reportes: {
+      title: "Indica el motivo del reporte",
+      description: "Describe la situación con hechos concretos y añade evidencias si las tienes.",
+    },
+    historias: {
+      title: "Título de la historia de tu personaje",
+      description: "Cuenta el pasado, las motivaciones o un momento importante de tu personaje.",
+    },
+    facciones: {
+      title: "Nombre de la facción o propuesta",
+      description: "Presenta la idea, objetivos, integrantes y forma de participar en la facción.",
+    },
+    normativa: {
+      title: "Título de la norma o consulta",
+      description: "Explica la norma, el contexto y cualquier detalle que deba conocer la comunidad.",
+    },
+  }
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [error, setError] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -2035,7 +2143,7 @@ function NewThreadView({
             style={inputStyle}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Describe brevemente el problema o sugerencia"
+            placeholder={formCopy[category].title}
           />
         </div>
         <div style={{ marginBottom: 18 }}>
@@ -2044,7 +2152,7 @@ function NewThreadView({
             style={{ ...inputStyle, height: 160, resize: "vertical" } as React.CSSProperties}
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="Explica con el mayor detalle posible. Para bugs: pasos para reproducirlo, coordenadas, hora del incidente. Para reportes: evidencia, nombre exacto del jugador."
+            placeholder={formCopy[category].description}
           />
         </div>
 
@@ -2182,6 +2290,7 @@ function ThreadView({
   onStatusChange,
   onPinToggle,
   onDeleteThread,
+  onDeleteReply,
   goBack,
 }: {
   threadId: string
@@ -2194,6 +2303,7 @@ function ThreadView({
   onStatusChange: (threadId: string, status: ThreadStatus) => void
   onPinToggle: (threadId: string) => void
   onDeleteThread: (threadId: string) => void
+  onDeleteReply: (threadId: string, replyId: string) => void
   goBack: () => void
 }) {
   const thread = threads.find((t) => t.id === threadId)
@@ -2214,6 +2324,7 @@ function ThreadView({
   const author = users.find((u) => u.id === thread.authorId)
   const isStaff = currentUser.role !== "user"
   const canEditThread = thread.category === "historias" && currentUser.id === thread.authorId
+  const canDeleteThread = currentUser.id === thread.authorId || currentUser.role === "admin"
   const canAddThreadRolePoints = thread.category === "historias" && currentUser.role === "admin"
   const canReply = thread.category !== "normativa" && !thread.adminOnly && (thread.status === "abierto" || thread.status === "en_revision" || isStaff)
 
@@ -2446,7 +2557,7 @@ function ThreadView({
           )}
         </div>
 
-        {(canEditThread || canAddThreadRolePoints) && (
+        {(canEditThread || canAddThreadRolePoints || canDeleteThread) && (
           <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             {canEditThread && !isEditing && (
               <button onClick={startEditing} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11 }}>
@@ -2468,6 +2579,11 @@ function ThreadView({
                   AÑADIR PUNTOS
                 </button>
               </div>
+            )}
+            {canDeleteThread && currentUser.role !== "admin" && (
+              <button onClick={() => onDeleteThread(thread.id)} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)", color: "#fca5a5", boxShadow: "none" }}>
+                ELIMINAR PUBLICACIÓN
+              </button>
             )}
           </div>
         )}
@@ -2559,7 +2675,8 @@ function ThreadView({
                     padding: "16px 18px",
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                     <Avatar letter={replyAuthor?.avatar || "?"} role={replyAuthor?.role || "user"} size={26} />
                     <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
                       <strong style={{ color: reply.isStaff ? "#3498db" : "var(--text)" }}>
@@ -2572,6 +2689,12 @@ function ThreadView({
                       )}
                       {" "}· {formatDate(reply.createdAt)}
                     </div>
+                    </div>
+                    {reply.authorId === currentUser.id && (
+                      <button onClick={() => onDeleteReply(thread.id, reply.id)} style={{ background: "transparent", border: "1px solid rgba(239,68,68,0.32)", borderRadius: 6, color: "#fca5a5", cursor: "pointer", padding: "5px 8px", fontSize: 9, fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.06em", flexShrink: 0 }}>
+                        ELIMINAR
+                      </button>
+                    )}
                   </div>
                   {reply.content && (
                     <div style={{ color: "var(--text-muted)", lineHeight: 1.7, fontSize: 14, whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
@@ -2773,6 +2896,8 @@ function AdminView({
   onRoleChange,
   onAddRolePoints,
   onContactUser,
+  onToggleSuspend,
+  onDeleteUser,
   setView,
   setSelectedThread,
 }: {
@@ -2785,6 +2910,8 @@ function AdminView({
   onRoleChange: (userId: string, role: Role) => void
   onAddRolePoints: (userId: string, amount: number) => void
   onContactUser: (userId: string, message: string) => void
+  onToggleSuspend: (userId: string) => void
+  onDeleteUser: (userId: string) => void
   setView: (v: View) => void
   setSelectedThread: (id: string) => void
 }) {
@@ -2929,13 +3056,13 @@ function AdminView({
                     {user.username}
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace" }}>
-                    Registrado: {user.joinedAt} · Puntos de rol: {user.rolePoints || 0}
+                    Registrado: {user.joinedAt} · Puntos de rol: {user.rolePoints || 0} · {user.suspended ? "CUENTA SUSPENDIDA" : "CUENTA ACTIVA"}
                   </div>
                 </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <Badge
-                  label={user.role.toUpperCase()}
+                  label={roleLabel(user.role)}
                   color={user.role === "admin" ? "#e74c3c" : user.role === "moderator" ? "#3498db" : "var(--text-muted)"}
                 />
                 {currentUser.role === "admin" && user.id !== currentUser.id && (
@@ -2995,6 +3122,18 @@ function AdminView({
                       style={{ ...primaryBtn, width: "auto", padding: "6px 9px", fontSize: 10, boxShadow: "none", background: "linear-gradient(135deg, #0ea5e9, #0369a1)", opacity: contactMessages[user.id]?.trim() ? 1 : 0.45, cursor: contactMessages[user.id]?.trim() ? "pointer" : "not-allowed" }}
                     >
                       CONTACTAR
+                    </button>
+                    <button
+                      onClick={() => onToggleSuspend(user.id)}
+                      style={{ ...primaryBtn, width: "auto", padding: "6px 9px", fontSize: 10, boxShadow: "none", background: user.suspended ? "rgba(39,174,96,0.16)" : "rgba(245,158,11,0.16)", border: `1px solid ${user.suspended ? "#27ae60" : "#f59e0b"}`, color: user.suspended ? "#86efac" : "#fbbf24" }}
+                    >
+                      {user.suspended ? "REACTIVAR" : "SUSPENDER"}
+                    </button>
+                    <button
+                      onClick={() => onDeleteUser(user.id)}
+                      style={{ ...primaryBtn, width: "auto", padding: "6px 9px", fontSize: 10, boxShadow: "none", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)", color: "#fca5a5" }}
+                    >
+                      ELIMINAR CUENTA
                     </button>
                   </>
                 )}
@@ -3071,6 +3210,7 @@ const navBtn: React.CSSProperties = {
 export default function App() {
   const [users, setUsers] = useState<User[]>([])
   const [threads, setThreads] = useState<Thread[]>([])
+  const [storeProducts, setStoreProducts] = useState<StoreProduct[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [view, setView] = useState<View>("login")
   const [selectedThread, setSelectedThread] = useState<string>("")
@@ -3079,8 +3219,9 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const currentUserRef = useRef<User | null>(null)
+  const notificationCountRef = useRef<{ userId: string; count: number } | null>(null)
 
-  const playInteractionSound = useCallback((type: "click" | "select" | "success") => {
+  const playInteractionSound = useCallback((type: "click" | "select" | "success" | "notification") => {
     const AudioCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
     if (!AudioCtor) return
 
@@ -3092,18 +3233,20 @@ export default function App() {
       click: 180,
       select: 260,
       success: 420,
+      notification: 620,
     }
     const durations = {
       click: 0.14,
       select: 0.18,
       success: 0.2,
+      notification: 0.28,
     }
     const duration = durations[type]
 
     oscillator.type = "sine"
     oscillator.frequency.value = frequencies[type]
     gainNode.gain.setValueAtTime(0.0001, audioCtx.currentTime)
-    gainNode.gain.linearRampToValueAtTime(type === "success" ? 0.022 : 0.014, audioCtx.currentTime + 0.02)
+    gainNode.gain.linearRampToValueAtTime(type === "notification" ? 0.026 : type === "success" ? 0.022 : 0.014, audioCtx.currentTime + 0.02)
 
     oscillator.connect(gainNode)
     gainNode.connect(audioCtx.destination)
@@ -3142,44 +3285,37 @@ export default function App() {
   }
 
   useEffect(() => {
-    let mounted = true
-    const restoreSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (session && mounted) await hydrateSession(session.user.id)
-      } catch (sessionError) {
-        console.error("Could not restore Supabase session", sessionError)
-      } finally {
-        if (mounted) setAuthReady(true)
-      }
+    const localUsers = readLocalUsers()
+    setStoreProducts(readStoreProducts())
+    const sessionId = localStorage.getItem(SESSION_STORAGE_KEY)
+    const localUser = localUsers.find((user) => user.id === sessionId)
+    setUsers(localUsers)
+    if (localUser) {
+      setCurrentUser(localUser)
+      setSelectedProfileId(localUser.id)
+      setView("forum")
     }
-
-    restoreSession()
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mounted) return
-      // Only reload if user session changed or logged out (don't reload on tab visibility changes)
-      if (!session) {
-        setCurrentUser(null)
-        setUsers([])
-        setThreads([])
-        setView("login")
-      } else if (!currentUserRef.current || currentUserRef.current.id !== session.user.id) {
-        // Only hydrate if user changed or not yet loaded
-        void hydrateSession(session.user.id).catch((sessionError) => {
-          console.error("Could not load Supabase profile", sessionError)
-        })
-      }
-    })
-
-    return () => {
-      mounted = false
-      subscription.unsubscribe()
-    }
+    setAuthReady(true)
   }, [])
 
   useEffect(() => {
     currentUserRef.current = currentUser
   }, [currentUser])
+
+  useEffect(() => {
+    if (!currentUser) {
+      notificationCountRef.current = null
+      return
+    }
+
+    const count = currentUser.notifications?.filter((notification) => !notification.read).length || 0
+    const previous = notificationCountRef.current
+    notificationCountRef.current = { userId: currentUser.id, count }
+
+    if (previous?.userId === currentUser.id && count > previous.count) {
+      playInteractionSound("notification")
+    }
+  }, [currentUser, playInteractionSound])
 
   useEffect(() => {
     if (currentUser) {
@@ -3188,26 +3324,93 @@ export default function App() {
   }, [currentUser])
 
   async function handleLogin(characterName: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({
-      email: authEmailForCharacter(characterName),
-      password,
-    })
-    if (error) throw new Error(error.message)
+    const user = readLocalUsers().find(
+      (candidate) => candidate.username.toLowerCase() === characterName.trim().toLowerCase() && candidate.password === password,
+    )
+    if (!user) throw new Error("El nombre del personaje o la contraseña no son correctos.")
+    if (user.suspended) throw new Error("Esta cuenta está suspendida por un administrador.")
+    localStorage.setItem(SESSION_STORAGE_KEY, user.id)
+    setUsers(readLocalUsers())
+    setCurrentUser(user)
+    setSelectedProfileId(user.id)
+    setView("forum")
   }
 
   async function handleRegister(username: string, password: string) {
-    const { data, error } = await supabase.auth.signUp({
-      email: authEmailForCharacter(username),
+    const users = readLocalUsers()
+    if (users.some((user) => user.username.toLowerCase() === username.trim().toLowerCase())) {
+      throw new Error("Ese personaje ya está registrado en este dispositivo.")
+    }
+
+    const user: User = {
+      id: uid(),
+      username: username.trim(),
       password,
-      options: { data: { username } },
-    })
-    if (error) throw new Error(error.message)
-    if (!data.session) throw new Error("El administrador debe desactivar la confirmación de email en Supabase para usar nombres de personaje.")
+      role: "user",
+      joinedAt: new Date().toISOString(),
+      avatar: username.trim().charAt(0).toUpperCase(),
+      notifications: [],
+      rolePoints: 0,
+      redeemedRolePoints: 0,
+    }
+    const nextUsers = [...users, user]
+    localStorage.setItem(LOCAL_USERS_STORAGE_KEY, JSON.stringify(nextUsers))
+    localStorage.setItem(SESSION_STORAGE_KEY, user.id)
+    setUsers(nextUsers)
+    setCurrentUser(user)
+    setSelectedProfileId(user.id)
+    setView("forum")
   }
 
   async function handleLogout() {
-    const { error } = await supabase.auth.signOut()
-    if (error) console.error("Could not sign out from Supabase", error)
+    localStorage.removeItem(SESSION_STORAGE_KEY)
+    setCurrentUser(null)
+    setUsers([])
+    setThreads([])
+    setView("login")
+  }
+
+  function handleCreateProduct(product: StoreProduct) {
+    if (currentUser?.role !== "admin") return
+    const nextProducts = [...storeProducts, product]
+    setStoreProducts(nextProducts)
+    localStorage.setItem(STORE_PRODUCTS_STORAGE_KEY, JSON.stringify(nextProducts))
+  }
+
+  function handleRedeemProduct(product: StoreProduct) {
+    if (!currentUser) return
+    const balance = Math.max(0, (currentUser.rolePoints || 0) - (currentUser.redeemedRolePoints || 0))
+    if (balance < product.price || currentUser.ownedProductIds?.includes(product.id)) return
+    const updatedUser = {
+      ...currentUser,
+      redeemedRolePoints: (currentUser.redeemedRolePoints || 0) + product.price,
+      ownedProductIds: [...(currentUser.ownedProductIds || []), product.id],
+    }
+    const nextUsers = readLocalUsers().map((user) => user.id === updatedUser.id ? updatedUser : user)
+    localStorage.setItem(LOCAL_USERS_STORAGE_KEY, JSON.stringify(nextUsers))
+    setUsers(nextUsers)
+    setCurrentUser(updatedUser)
+  }
+
+  function handleToggleSuspend(userId: string) {
+    if (currentUser?.role !== "admin" || userId === currentUser.id) return
+    const user = readLocalUsers().find((item) => item.id === userId)
+    if (!user) return
+    const action = user.suspended ? "reactivar" : "suspender"
+    if (!window.confirm(`¿Seguro que quieres ${action} la cuenta de ${user.username}?`)) return
+    const nextUsers = readLocalUsers().map((item) => item.id === userId ? { ...item, suspended: !item.suspended } : item)
+    localStorage.setItem(LOCAL_USERS_STORAGE_KEY, JSON.stringify(nextUsers))
+    setUsers(nextUsers)
+  }
+
+  function handleDeleteUser(userId: string) {
+    if (currentUser?.role !== "admin" || userId === currentUser.id) return
+    const user = readLocalUsers().find((item) => item.id === userId)
+    if (!user || !window.confirm(`¿Eliminar permanentemente la cuenta de ${user.username}? Esta acción no se puede deshacer.`)) return
+    const nextUsers = readLocalUsers().filter((item) => item.id !== userId)
+    localStorage.setItem(LOCAL_USERS_STORAGE_KEY, JSON.stringify(nextUsers))
+    setUsers(nextUsers)
+    setThreads((previousThreads) => previousThreads.filter((thread) => thread.authorId !== userId).map((thread) => ({ ...thread, replies: thread.replies.filter((reply) => reply.authorId !== userId) })))
   }
 
   function notifyUser(userId: string, text: string) {
@@ -3316,12 +3519,19 @@ export default function App() {
   }
 
   async function handleDeleteThread(threadId: string) {
-    const { error } = await supabase.from("threads").delete().eq("id", threadId)
-    if (error) console.error("Could not delete thread", error)
-    else {
-      await refreshForumState()
-      setView("forum")
-    }
+    const thread = threads.find((item) => item.id === threadId)
+    if (!thread || (currentUser?.role !== "admin" && thread.authorId !== currentUser?.id)) return
+    if (!window.confirm("¿Seguro que quieres eliminar este hilo? Esta acción no se puede deshacer.")) return
+    setThreads((previousThreads) => previousThreads.filter((item) => item.id !== threadId))
+    setView("forum")
+  }
+
+  function handleDeleteReply(threadId: string, replyId: string) {
+    const thread = threads.find((item) => item.id === threadId)
+    const reply = thread?.replies.find((item) => item.id === replyId)
+    if (!thread || !reply || reply.authorId !== currentUser?.id) return
+    if (!window.confirm("¿Seguro que quieres eliminar esta respuesta? Esta acción no se puede deshacer.")) return
+    setThreads((previousThreads) => previousThreads.map((item) => item.id === threadId ? { ...item, replies: item.replies.filter((entry) => entry.id !== replyId) } : item))
   }
 
   async function handleRoleChange(userId: string, role: Role) {
@@ -3365,13 +3575,14 @@ export default function App() {
   }
 
   async function handleSaveProfile(userId: string, updates: Partial<User>) {
-    const { error } = await supabase.from("profiles").update({
-      avatar_url: updates.avatarUrl,
-      bio: updates.bio,
-      banner_color: updates.bannerColor,
-    }).eq("id", userId)
-    if (error) console.error("Could not save profile", error)
-    else await hydrateSession(userId)
+    const nextUsers = readLocalUsers().map((user) => user.id === userId ? { ...user, ...updates } : user)
+    const savedUser = nextUsers.find((user) => user.id === userId)
+    localStorage.setItem(LOCAL_USERS_STORAGE_KEY, JSON.stringify(nextUsers))
+    setUsers(nextUsers)
+    if (savedUser) {
+      setCurrentUser(savedUser)
+      setSelectedProfileId(savedUser.id)
+    }
   }
 
   async function handleClearNotifications() {
@@ -3403,8 +3614,18 @@ export default function App() {
         view={view}
         onOpenProfile={handleOpenProfile}
         onClearNotifications={handleClearNotifications}
+        onOpenAdmin={() => setView("admin")}
       />
 
+      {view === "store" && (
+        <StoreView
+          currentUser={currentUser}
+          products={storeProducts}
+          onCreateProduct={handleCreateProduct}
+          onRedeemProduct={handleRedeemProduct}
+          onBack={() => setView("forum")}
+        />
+      )}
       {view === "forum" && (
         <ForumView
           threads={threads}
@@ -3423,6 +3644,7 @@ export default function App() {
           category={selectedCategory}
           threads={threads}
           users={users}
+          currentUser={currentUser}
           setView={setView}
           setSelectedThread={setSelectedThread}
           onSound={playInteractionSound}
@@ -3441,6 +3663,7 @@ export default function App() {
           onStatusChange={handleStatusChange}
           onPinToggle={handlePinToggle}
           onDeleteThread={handleDeleteThread}
+          onDeleteReply={handleDeleteReply}
           goBack={() => setView("forum")}
         />
       )}
@@ -3459,7 +3682,6 @@ export default function App() {
           users={users}
           selectedUserId={selectedProfileId || currentUser.id}
           onSaveProfile={handleSaveProfile}
-          onRedeemRolePoints={handleRedeemRolePoints}
           onBack={() => setView("forum")}
           onSelectUser={(userId) => setSelectedProfileId(userId)}
         />
@@ -3475,6 +3697,8 @@ export default function App() {
           onRoleChange={handleRoleChange}
           onAddRolePoints={handleAddRolePoints}
           onContactUser={handleContactUser}
+          onToggleSuspend={handleToggleSuspend}
+          onDeleteUser={handleDeleteUser}
           setView={setView}
           setSelectedThread={setSelectedThread}
         />

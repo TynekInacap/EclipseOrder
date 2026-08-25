@@ -1146,6 +1146,10 @@ function CategorySection({
   const sorted = [...threads].sort((a, b) => {
     if (a.pinned && !b.pinned) return -1
     if (!a.pinned && b.pinned) return 1
+    // Normativa orders oldest first (ascending), others newest first (descending)
+    if (category === "normativa") {
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    }
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   })
 
@@ -1261,14 +1265,18 @@ function CategoryView({
   const [reportSubTab, setReportSubTab] = useState<"abierto" | "en_revision" | "cerrado">("abierto")
   const color = CATEGORY_COLORS[category]
 
-  const sortThreads = (list: Thread[]) =>
+  const sortThreads = (list: Thread[], cat: Category) =>
     [...list].sort((a, b) => {
       if (a.pinned && !b.pinned) return -1
       if (!a.pinned && b.pinned) return 1
+      // Normativa orders oldest first (ascending), others newest first (descending)
+      if (cat === "normativa") {
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      }
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     })
 
-  const tabThreads = sortThreads(threads.filter((t) => t.category === category))
+  const tabThreads = sortThreads(threads.filter((t) => t.category === category), category)
   const visibleThreads = category === "reportes"
     ? tabThreads.filter((thread) => thread.status === reportSubTab)
     : tabThreads
@@ -1429,14 +1437,18 @@ function ForumView({
 }) {
   const color = CATEGORY_COLORS[selectedCategory]
 
-  const sortThreads = (list: Thread[]) =>
+  const sortThreads = (list: Thread[], cat: Category) =>
     [...list].sort((a, b) => {
       if (a.pinned && !b.pinned) return -1
       if (!a.pinned && b.pinned) return 1
+      // Normativa orders oldest first (ascending), others newest first (descending)
+      if (cat === "normativa") {
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      }
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     })
 
-  const tabThreads = sortThreads(threads.filter((t) => t.category === selectedCategory))
+  const tabThreads = sortThreads(threads.filter((t) => t.category === selectedCategory), selectedCategory)
 
   return (
     <div className="forum-shell" style={{ maxWidth: 1360, margin: "0 auto", padding: "18px 14px 40px" }}>

@@ -212,6 +212,7 @@ async function loadSupabaseForum() {
     createdAt: "2026-08-03T11:00:00Z",
     pinned: true,
     replies: [],
+    adminOnly: true,
   }
 
   const reportRulesThread: Thread = {

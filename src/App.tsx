@@ -1766,7 +1766,7 @@ function NewThreadView({
 }: {
   currentUser: User
   users: User[]
-  onSubmit: (t: Thread, mentionedUserIds?: string[]) => void
+  onSubmit: (t: Thread, mentionedUserIds?: string[]) => Promise<void> | void
   goBack: () => void
   initialCategory?: Category
 }) {
@@ -1776,6 +1776,7 @@ function NewThreadView({
   const isReportMode = initialCategory === "reportes" || category === "reportes"
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [error, setError] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [mentionQuery, setMentionQuery] = useState("")
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([])
 
@@ -1810,8 +1811,9 @@ function NewThreadView({
     setAttachments((prev) => prev.filter((_, i) => i !== idx))
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (isSubmitting) return
     if (title.trim().length < 5) { setError("El título debe tener al menos 5 caracteres."); return }
     if (content.trim().length < 20 && attachments.length === 0) { setError("Añade una descripción o adjunta al menos un archivo."); return }
     if (category === "reportes" && mentionedUserIds.length === 0) {
@@ -1840,7 +1842,15 @@ function NewThreadView({
       replies: [],
       attachments,
     }
-    onSubmit(t, mentionedUserIds)
+    setIsSubmitting(true)
+    setError("")
+    try {
+      await onSubmit(t, mentionedUserIds)
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "No se pudo publicar el hilo.")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -2017,7 +2027,9 @@ function NewThreadView({
         </div>
 
         <div style={{ display: "flex", gap: 10 }}>
-          <button type="submit" style={primaryBtn}>{isReportMode ? "PUBLICAR REPORTE" : "PUBLICAR HILO"}</button>
+          <button type="submit" disabled={isSubmitting} style={{ ...primaryBtn, opacity: isSubmitting ? 0.65 : 1, cursor: isSubmitting ? "wait" : "pointer" }}>
+            {isSubmitting ? "PUBLICANDO..." : isReportMode ? "PUBLICAR REPORTE" : "PUBLICAR HILO"}
+          </button>
           <button type="button" onClick={goBack} style={{ ...primaryBtn, background: "transparent", border: "1px solid #252830", color: "var(--text-muted)" }}>
             CANCELAR
           </button>
@@ -3092,7 +3104,7 @@ export default function App() {
     }).select().single()
     if (error || !createdThread) {
       console.error("Could not create thread", error)
-      return
+      throw new Error(error?.message || "No se pudo crear el hilo.")
     }
     if (thread.attachments && thread.attachments.length > 0) {
       const { error: attachmentsError } = await supabase.from("thread_attachments").insert(
@@ -3103,7 +3115,7 @@ export default function App() {
           data_url: attachment.dataUrl,
         }))
       )
-      if (attachmentsError) console.error("Could not save thread attachments", attachmentsError)
+      if (attachmentsError) throw new Error(attachmentsError.message)
     }
     await refreshForumState()
     setView("forum")

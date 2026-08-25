@@ -2191,7 +2191,7 @@ function ThreadView({
   const isStaff = currentUser.role !== "user"
   const canEditThread = thread.category === "historias" && currentUser.id === thread.authorId
   const canAddThreadRolePoints = thread.category === "historias" && currentUser.role === "admin"
-  const canReply = !thread.adminOnly && (thread.status === "abierto" || thread.status === "en_revision" || isStaff)
+  const canReply = thread.category !== "normativa" && !thread.adminOnly && (thread.status === "abierto" || thread.status === "en_revision" || isStaff)
 
   function startEditing() {
     setEditTitle(thread.title)
@@ -2251,6 +2251,10 @@ function ThreadView({
 
   function handleReply(e: React.FormEvent) {
     e.preventDefault()
+    if (thread.category === "normativa") {
+      setError("No se pueden añadir respuestas en la sección de Normativa.")
+      return
+    }
     if (replyContent.trim().length < 5 && attachments.length === 0) {
       setError("Escribe al menos un mensaje o adjunta un archivo.")
       return
@@ -3250,7 +3254,7 @@ export default function App() {
   async function handleReply(threadId: string, content: string, _attachments: Attachment[], _mentionedUserIds: string[] = []) {
     if (!currentUser) return
     const targetThread = threads.find((thread) => thread.id === threadId)
-    if (!targetThread || targetThread.adminOnly) return
+    if (!targetThread || targetThread.adminOnly || targetThread.category === "normativa") return
     const { data: createdReply, error } = await supabase.from("replies").insert({
       thread_id: threadId,
       author_id: currentUser.id,

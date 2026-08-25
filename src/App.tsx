@@ -5,7 +5,7 @@ import siteLogoImg from "@/imports/final123.png"
 import defaultBannerImg from "@/imports/default-banner.jpg"
 import eclipseGif from "@/imports/giphy.gif"
 
-const DEFAULT_BANNER_URL = `url(${defaultBannerImg})`
+const DEFAULT_BANNER_URL = defaultBannerImg
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1794,6 +1794,10 @@ function ProfileView({
     user.username.toLowerCase().includes(search.toLowerCase())
   )
 
+  const bannerBackground = bannerUrl && bannerUrl !== DEFAULT_BANNER_URL
+    ? `url(${bannerUrl}) center/cover no-repeat`
+    : `url(${DEFAULT_BANNER_URL}) center/cover no-repeat`
+
   const profileUser = {
     ...selectedUser,
     avatarUrl,
@@ -1895,9 +1899,7 @@ function ProfileView({
           <div
             style={{
               height: 120,
-              background: bannerUrl.startsWith("url(")
-                ? `${bannerUrl} center/cover no-repeat`
-                : bannerUrl || `url(${defaultBannerImg}) center/cover no-repeat`,
+              background: bannerBackground,
               position: "relative",
               borderBottom: "1px solid var(--border)",
             }}
@@ -1972,10 +1974,11 @@ function ProfileView({
                       setIsSavingProfile(true)
                       setProfileSaveMessage("")
                       try {
+                        const nextBannerUrl = pendingBannerUrl || (bannerUrl && bannerUrl !== DEFAULT_BANNER_URL ? bannerUrl : null)
                         await onSaveProfile(currentUser.id, {
                           avatarUrl,
                           bio,
-                          bannerUrl: pendingBannerUrl || bannerUrl,
+                          bannerUrl: nextBannerUrl,
                         })
                         setPendingBannerUrl("")
                         setProfileSaveMessage("Perfil guardado correctamente.")

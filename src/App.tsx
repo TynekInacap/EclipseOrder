@@ -214,9 +214,22 @@ async function loadSupabaseForum() {
     replies: [],
   }
 
+  const reportRulesThread: Thread = {
+    id: "t-rules-reportes",
+    title: "Normativa de la Sección y plantilla de reporte",
+    category: "reportes",
+    authorId: "u0",
+    content: "**Reglas específicas de la sección de reportes**\n\n- En los reportes solo hablan los acusados, el que reporta y el miembro del Staff que tome el reporte. Aunque hayas estado involucrado (como testigo o con pruebas) no podrás participar.\n\n- El motivo de sanción debe ser claro.\n\n- El título del reporte debe seguir el formato: **Nombre Apellido**.\n\n- Si el usuario que reporta o el usuario reportado están baneados permanentemente o de forma indefinida, el reporte será rechazado.\n\n- El denunciante, luego de 72 horas, puede solicitar al Encargado de Staff que coloque un encargado para responder su reporte. Aun así esto no quiere decir que el reporte sea tomado sí o cuando el usuario lo solicite. El Equipo del Staff y los Administradores se reserva el derecho de tomar el reporte cuando sea conveniente.\n\n- Cualquier reporte hecho con la intención de molestar, hostigar o con pruebas editadas para incriminar a un usuario/staff terminará con tu cuenta baneada de la comunidad.\n\n- El reporte estará en estado de pendiente hasta que el acusado responda o un Staff pida la respuesta del acusado (con un mínimo de 24 horas de espera). Esto quiere decir que si se excede el límite de tiempo y todavía el acusado no ha respondido se podrá tomar como aceptado el reporte sin problema alguno, basándose en los hechos que aclaró el denunciante.\n\n- En caso de que el Staff considere que las pruebas entregadas son suficientes para una resolución, no estará obligado a esperar la respuesta del acusado.\n\n- El caso no se tomará en cuenta si se reporta luego de 2 semanas de lo ocurrido.\n\n- Las pruebas no pueden estar manipuladas de ninguna forma. Si se muestran dichas pruebas, deben de estar en su formato original. Esto incluye el ocultado de información como puede ser tapar el chat o los nombres de los personajes. En caso de que esto se realice, el reporte será cerrado a favor del contrincante (si las pruebas son editadas por el acusado, el reporte es aceptado mientras que si las pruebas son editadas por el denunciante, el reporte es rechazado).\n\n- Además, la manipulación de pruebas puede llevar a una sanción, llegando hasta la expulsión de nuestra comunidad en ciertos casos.\n\n- La explicación de los hechos no puede superar los 1000 caracteres.\n\n**Modus operandi**\n\n**General:**\n\nAl realizar el reporte, el denunciante o creador del mismo deberá de dar toda la información que pueda al respecto del caso. Si es un reporte múltiple (con varios acusados) los motivos de sanción deben de ser idénticos para cada persona. Por ejemplo, en caso de que un acusado haya sido denunciado erróneamente por DM y este lo remarque, el reporte será rechazado para todos. Si quiere reportar a un grupo de personas por distintos motivos, realice distintos reportes.\n\nLas pruebas deben de ser claras y la explicación breve y concisa, no se vaya por las ramas porque solo entorpecerá la resolución de dicha denuncia/reporte. Procure explicar todo lo que pueda teniendo chances limitadas para defender su palabra. Una vez cree el reporte, no podrá contestarlo hasta que un Staff le permita hacerlo. Deberá de esperar a la respuesta del acusado o del Staff que se haga cargo de dicha denuncia.\n\nSi usted fue el acusado, deberá de responder el reporte lo más rápido que pueda. No es necesario que cuente con pruebas a excepción de que comente que las tiene o que hable sobre sucesos los cuales las pruebas del contrincante no los muestran. El comentar tener pruebas y luego no mostrarlas es un indicativo que tomará el Staff para creerle más al denunciante que al acusado. Usted deberá de responder el reporte y esperar a la respuesta del Staff.\n\nSi el acusado vuelve a responder sin que el Staff le dé el permiso, el Staff podrá aceptar el reporte por este mismo motivo aun si las pruebas no son del todo convincentes. A la vez, si el acusado responde al denunciante sin el permiso del Staff, el Staff podrá rechazar el reporte aun si las pruebas son convincentes.\n\nEl denunciante luego de crear el post solo podrá volver a comentar en el mismo si el Staff le da permiso, mientras que el acusado luego de dar una respuesta al post solo podrá volver a comentar si el Staff le otorga el permiso.\n\nEl editar o eliminar el post luego de una respuesta podrá resultar en una sanción por parte del Staff a cargo de dicho reporte.\n\n**Contra usuarios:**\n\nEs obligatorio que dicho reporte cuente con pruebas sobre lo relatado. En caso de no tenerlas, el reporte será rechazado a excepción de que el Staff vea conveniente no hacerlo.\n\n**Plantilla/formato del reporte**\n\n**Nombre del denunciante:** Responder aquí.\n\n**Nombre del acusado:** Responder aquí.\n\n**Fecha de lo ocurrido:** Responder aquí.\n\n**Motivos de sanción:** Responder aquí.\n\n**Breve explicación de los hechos:** Responder aquí.\n\n**Pruebas sobre lo relatado:** Responder aquí.",
+    status: "abierto",
+    createdAt: "2026-08-03T10:00:00Z",
+    pinned: true,
+    replies: [],
+    adminOnly: true,
+  }
+
   // Filter out duplicate rules thread and add it at the beginning
-  const filteredThreads = threads.filter((t) => t.id !== "t-rules-historias")
-  const allThreads = [rulesThread, ...filteredThreads]
+  const filteredThreads = threads.filter((t) => t.id !== "t-rules-historias" && t.id !== "t-rules-reportes")
+  const allThreads = [rulesThread, reportRulesThread, ...filteredThreads]
 
   return { users, threads: allThreads }
 }
@@ -300,7 +313,7 @@ const SEED_THREADS: Thread[] = [
   },
   {
     id: "t-rules-reportes",
-    title: "Formato y reglas para reportes del servidor",
+    title: "Normativa de la Sección y plantilla de reporte",
     category: "reportes",
     authorId: "u0",
     content:

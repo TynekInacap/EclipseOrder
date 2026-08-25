@@ -87,42 +87,6 @@ const SEED_USERS: User[] = [
     bannerColor: DEFAULT_BANNER_URL,
     notifications: [],
   },
-  {
-    id: "u1",
-    username: "Moderator_Rex",
-    password: "mod123",
-    role: "moderator",
-    joinedAt: "2024-02-10",
-    avatar: "R",
-    avatarUrl: logoImg,
-    bio: "Coordinador de vigilancia y control de rondas. Cuento historias y mantengo a la comunidad viva.",
-    bannerColor: DEFAULT_BANNER_URL,
-    notifications: [],
-  },
-  {
-    id: "u2",
-    username: "ZombieHunter99",
-    password: "pass",
-    role: "user",
-    joinedAt: "2024-03-15",
-    avatar: "Z",
-    avatarUrl: logoImg,
-    bio: "Superviviente del Eclipse, cazador más activo del sector norte y coleccionista de relatos post-apocalípticos.",
-    bannerColor: DEFAULT_BANNER_URL,
-    notifications: [],
-  },
-  {
-    id: "u3",
-    username: "SurvivorMika",
-    password: "pass",
-    role: "user",
-    joinedAt: "2024-04-20",
-    avatar: "S",
-    avatarUrl: logoImg,
-    bio: "Exploradora de restos urbanos y narradora de historias de supervivencia. Busco escudos, comida y conexiones.",
-    bannerColor: DEFAULT_BANNER_URL,
-    notifications: [],
-  },
 ]
 
 const SEED_THREADS: Thread[] = [
@@ -2871,9 +2835,12 @@ export default function App() {
       const savedSession = localStorage.getItem(SESSION_STORAGE_KEY)
       if (savedSession) {
         const savedUser = JSON.parse(savedSession) as User
-        if (savedUser?.id && savedUser?.username) {
-          setCurrentUser(savedUser)
+        const existingUser = users.find((user) => user.id === savedUser?.id)
+        if (existingUser) {
+          setCurrentUser(existingUser)
           setView("forum")
+        } else {
+          localStorage.removeItem(SESSION_STORAGE_KEY)
         }
       }
     } catch {

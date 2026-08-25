@@ -63,6 +63,13 @@ interface Thread {
   adminOnly?: boolean
 }
 
+function renderFormattedText(content: string) {
+  return content.split(/(\*\*[^*\n]+?\*\*)/g).map((part, index) => {
+    const isBold = part.startsWith("**") && part.endsWith("**")
+    return isBold ? <strong key={index}>{part.slice(2, -2)}</strong> : part
+  })
+}
+
 type View =
   | "login"
   | "register"
@@ -2490,7 +2497,7 @@ function ThreadView({
             wordBreak: "break-word",
           }}
         >
-          {isEditing ? "Revisa el contenido en el formulario superior antes de guardar." : thread.content}
+          {isEditing ? "Revisa el contenido en el formulario superior antes de guardar." : renderFormattedText(thread.content)}
         </div>
 
         {thread.attachments && thread.attachments.length > 0 && (
@@ -2577,7 +2584,7 @@ function ThreadView({
                   </div>
                   {reply.content && (
                     <div style={{ color: "var(--text-muted)", lineHeight: 1.7, fontSize: 14, whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
-                      {reply.content}
+                      {renderFormattedText(reply.content)}
                     </div>
                   )}
                   {reply.attachments && reply.attachments.length > 0 && (

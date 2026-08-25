@@ -3307,12 +3307,40 @@ export default function App() {
   async function hydrateSession(userId: string) {
     setIsLoading(true)
     try {
-      const [{ data: profileRow, error: profileError }, forum] = await Promise.all([
-        supabase.from("profiles").select("*").eq("id", userId).single(),
+      let { data: profileRow, error: profileError } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle()
+
+      if (profileError && profileError.code !== "PGRST116") {
+        throw profileError
+      }
+
+      if (!profileRow) {
+        const fallbackUsername = `Usuario ${userId.slice(0, 6)}`
+        const insertResult = await supabase
+          .from("profiles")
+          .upsert(
+            {
+              id: userId,
+              username: fallbackUsername,
+              avatar: fallbackUsername.charAt(0).toUpperCase(),
+              role: "user",
+              joined_at: new Date().toISOString(),
+            },
+            { onConflict: "id" },
+          )
+          .select("*")
+          .single()
+
+        if (insertResult.error) {
+          throw insertResult.error
+        }
+
+        profileRow = insertResult.data
+      }
+
+      const [forum] = await Promise.all([
         loadSupabaseForum(),
       ])
 
-      if (profileError) throw profileError
       const profile = mapProfile(profileRow as ProfileRow)
       setUsers(forum.users)
       setThreads(forum.threads)
@@ -3391,20 +3419,30 @@ export default function App() {
   }, [currentUser])
 
   async function handleLogin(characterName: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data: authData, error } = await supabase.auth.signInWithPassword({
       email: authEmailForCharacter(characterName),
       password,
     })
     if (error) throw new Error(error.message)
+
+    if (authData.session?.user?.id) {
+      setView("forum")
+      await hydrateSession(authData.session.user.id)
+    }
   }
 
   async function handleRegister(username: string, password: string) {
-    const { error } = await supabase.auth.signUp({
+    const { data: authData, error } = await supabase.auth.signUp({
       email: authEmailForCharacter(username),
       password,
       options: { data: { username } },
     })
     if (error) throw new Error(error.message)
+
+    if (authData.session?.user?.id) {
+      setView("forum")
+      await hydrateSession(authData.session.user.id)
+    }
   }
 
   async function handleLogout() {

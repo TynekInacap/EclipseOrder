@@ -408,6 +408,56 @@ function authEmailForCharacter(name: string) {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
+function LoadingScreen() {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "var(--bg)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexDirection: "column",
+        gap: "24px",
+        backgroundImage:
+          "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(192,57,43,0.12) 0%, transparent 60%)",
+      }}
+    >
+      <div
+        style={{
+          width: 60,
+          height: 60,
+          border: "3px solid rgba(148, 163, 184, 0.2)",
+          borderTop: "3px solid #f97316",
+          borderRadius: "50%",
+          animation: "spin 1s linear infinite",
+        }}
+      />
+      <div
+        style={{
+          color: "var(--text-muted)",
+          fontSize: 14,
+          fontFamily: "JetBrains Mono, monospace",
+          letterSpacing: "0.05em",
+          animation: "pulse 2s ease-in-out infinite",
+        }}
+      >
+        Cargando foro...
+      </div>
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 0.5; }
+          50% { opacity: 1; }
+        }
+      `}</style>
+    </div>
+  )
+}
+
 function Logo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
   const imgSize = size === "lg" ? 80 : size === "sm" ? 32 : 44
   const titleSize = size === "lg" ? 28 : size === "sm" ? 15 : 20
@@ -2941,6 +2991,7 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<Category>("reportes")
   const [isDark, setIsDark] = useState(true)
   const [authReady, setAuthReady] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
   const playInteractionSound = useCallback((type: "click" | "select" | "success") => {
     const AudioCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
@@ -2982,18 +3033,23 @@ export default function App() {
   }, [isDark])
 
   async function hydrateSession(userId: string) {
-    const [{ data: profileRow, error: profileError }, forum] = await Promise.all([
-      supabase.from("profiles").select("*").eq("id", userId).single(),
-      loadSupabaseForum(),
-    ])
+    setIsLoading(true)
+    try {
+      const [{ data: profileRow, error: profileError }, forum] = await Promise.all([
+        supabase.from("profiles").select("*").eq("id", userId).single(),
+        loadSupabaseForum(),
+      ])
 
-    if (profileError) throw profileError
-    const profile = mapProfile(profileRow as ProfileRow)
-    setUsers(forum.users)
-    setThreads(forum.threads)
-    setCurrentUser(profile)
-    setSelectedProfileId(profile.id)
-    setView("forum")
+      if (profileError) throw profileError
+      const profile = mapProfile(profileRow as ProfileRow)
+      setUsers(forum.users)
+      setThreads(forum.threads)
+      setCurrentUser(profile)
+      setSelectedProfileId(profile.id)
+      setView("forum")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   async function refreshForumState() {
@@ -3243,6 +3299,10 @@ export default function App() {
       return <RegisterView onRegister={handleRegister} goLogin={() => setView("login")} />
     }
     return <LoginView onLogin={handleLogin} goRegister={() => setView("register")} />
+  }
+
+  if (isLoading) {
+    return <LoadingScreen />
   }
 
   return (

@@ -1,0 +1,10 @@
+{
+  "description": "Connect with fellow players on Eclipse Horder through a dedicated forum for reporting issues and sharing suggestions, featuring user login and admin tools.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

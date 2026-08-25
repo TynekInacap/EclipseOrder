@@ -377,6 +377,11 @@ function uid() {
   return Math.random().toString(36).slice(2, 10)
 }
 
+function authEmailForCharacter(name: string) {
+  const slug = name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+  return `${slug || "personaje"}@eclipse-order.local`
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function Logo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
@@ -491,17 +496,17 @@ function LoginView({
   onLogin,
   goRegister,
 }: {
-  onLogin: (email: string, password: string) => Promise<void>
+  onLogin: (characterName: string, password: string) => Promise<void>
   goRegister: () => void
 }) {
-  const [email, setEmail] = useState("")
+  const [characterName, setCharacterName] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     try {
-      await onLogin(email.trim(), password)
+      await onLogin(characterName.trim(), password)
       setError("")
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : "No se pudo iniciar sesión.")
@@ -582,14 +587,13 @@ function LoginView({
 
           <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Correo electrónico</label>
+              <label style={labelStyle}>Nombre del personaje</label>
               <input
                 className="login-input"
                 style={inputStyle}
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="tu-correo@ejemplo.com"
+                value={characterName}
+                onChange={(e) => setCharacterName(e.target.value)}
+                placeholder="Tu nombre en Project Zomboid"
                 autoFocus
               />
             </div>
@@ -649,10 +653,9 @@ function RegisterView({
   onRegister,
   goLogin,
 }: {
-  onRegister: (email: string, username: string, password: string) => Promise<void>
+  onRegister: (username: string, password: string) => Promise<void>
   goLogin: () => void
 }) {
-  const [email, setEmail] = useState("")
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
@@ -673,7 +676,7 @@ function RegisterView({
       return
     }
     try {
-      await onRegister(email.trim(), username.trim(), password)
+      await onRegister(username.trim(), password)
       setError("")
     } catch (registerError) {
       setError(registerError instanceof Error ? registerError.message : "No se pudo crear la cuenta.")
@@ -694,10 +697,6 @@ function RegisterView({
           )}
 
           <form onSubmit={handleSubmit}>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Correo electrónico</label>
-              <input style={inputStyle} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu-correo@ejemplo.com" autoFocus />
-            </div>
             <div style={{ marginBottom: 16 }}>
               <label style={labelStyle}>Nombre de usuario</label>
               <input style={inputStyle} value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Usa el mismo nombre del servidor" />
@@ -3007,19 +3006,22 @@ export default function App() {
     }
   }, [currentUser])
 
-  async function handleLogin(email: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+  async function handleLogin(characterName: string, password: string) {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: authEmailForCharacter(characterName),
+      password,
+    })
     if (error) throw new Error(error.message)
   }
 
-  async function handleRegister(email: string, username: string, password: string) {
+  async function handleRegister(username: string, password: string) {
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: authEmailForCharacter(username),
       password,
       options: { data: { username } },
     })
     if (error) throw new Error(error.message)
-    if (!data.session) throw new Error("Revisa tu correo para confirmar la cuenta antes de iniciar sesión.")
+    if (!data.session) throw new Error("El administrador debe desactivar la confirmación de email en Supabase para usar nombres de personaje.")
   }
 
   async function handleLogout() {

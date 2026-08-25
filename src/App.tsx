@@ -3596,14 +3596,13 @@ export default function App() {
   }
 
   async function handleSaveProfile(userId: string, updates: Partial<User>) {
-    const nextUsers = readLocalUsers().map((user) => user.id === userId ? { ...user, ...updates } : user)
-    const savedUser = nextUsers.find((user) => user.id === userId)
-    localStorage.setItem(LOCAL_USERS_STORAGE_KEY, JSON.stringify(nextUsers))
-    setUsers(nextUsers)
-    if (savedUser) {
-      setCurrentUser(savedUser)
-      setSelectedProfileId(savedUser.id)
-    }
+    const { error } = await supabase.from("profiles").update({
+      avatar_url: updates.avatarUrl,
+      bio: updates.bio,
+      banner_color: updates.bannerColor,
+    }).eq("id", userId)
+    if (error) throw new Error(error.message)
+    await hydrateSession(userId)
   }
 
   async function handleClearNotifications() {

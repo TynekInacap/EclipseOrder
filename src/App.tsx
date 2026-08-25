@@ -805,15 +805,23 @@ function RegisterView({
   onRegister: (username: string, password: string) => Promise<void>
   goLogin: () => void
 }) {
-  const [username, setUsername] = useState("")
+  const [characterFirstName, setCharacterFirstName] = useState("")
+  const [characterLastName, setCharacterLastName] = useState("")
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
   const [error, setError] = useState("")
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (username.trim().length < 3) {
-      setError("El nombre de usuario debe tener al menos 3 caracteres.")
+    const firstName = characterFirstName.trim()
+    const lastName = characterLastName.trim()
+    const username = `${firstName} ${lastName}`.trim()
+    if (firstName.length < 1 || lastName.length < 1) {
+      setError("Debes indicar el nombre y apellido de tu personaje.")
+      return
+    }
+    if (username.length < 3) {
+      setError("El nombre completo del personaje debe tener al menos 3 caracteres.")
       return
     }
     if (password.length < 6) {
@@ -847,10 +855,14 @@ function RegisterView({
 
           <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Nombre de usuario</label>
-              <input style={inputStyle} value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Usa el mismo nombre del servidor" />
+              <label style={labelStyle}>Nombre de tu personaje</label>
+              <input style={inputStyle} value={characterFirstName} onChange={(e) => setCharacterFirstName(e.target.value)} placeholder="Nombre del personaje" />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Apellido de tu personaje</label>
+              <input style={inputStyle} value={characterLastName} onChange={(e) => setCharacterLastName(e.target.value)} placeholder="Apellido del personaje" />
               <p style={{ margin: "5px 0 0", fontSize: 11, color: "var(--text-dim)" }}>
-                Recomendamos usar tu nombre en el servidor de Zomboid
+                Usa el mismo nombre y apellido de tu personaje en el servidor de Zomboid
               </p>
             </div>
             <div style={{ marginBottom: 16 }}>

@@ -14,13 +14,28 @@ create table public.profiles (
   avatar text not null default '',
   avatar_url text,
   bio text,
-  banner_color text,
+  banner_url text,
   role_points integer not null default 0 check (role_points >= 0),
   redeemed_role_points integer not null default 0 check (redeemed_role_points >= 0),
   joined_at timestamptz not null default timezone('utc', now()),
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
+
+-- Migration for existing installations: preserve saved banners while renaming the field.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'profiles' and column_name = 'banner_color'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'profiles' and column_name = 'banner_url'
+  ) then
+    alter table public.profiles rename column banner_color to banner_url;
+  end if;
+end
+$$;
 
 create table public.threads (
   id uuid primary key default gen_random_uuid(),

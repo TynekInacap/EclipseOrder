@@ -29,7 +29,7 @@ interface User {
   avatar: string
   avatarUrl?: string
   bio?: string
-  bannerColor?: string
+  bannerUrl?: string
   notifications?: NotificationItem[]
   rolePoints?: number
   redeemedRolePoints?: number
@@ -100,7 +100,7 @@ type ProfileRow = {
   avatar: string
   avatar_url?: string | null
   bio?: string | null
-  banner_color?: string | null
+  banner_url?: string | null
   notifications?: NotificationItem[]
   role_points?: number
   redeemed_role_points?: number
@@ -148,7 +148,7 @@ function mapProfile(row: ProfileRow): User {
     avatar: row.avatar,
     avatarUrl: row.avatar_url || undefined,
     bio: row.bio || undefined,
-    bannerColor: row.banner_color || undefined,
+    bannerUrl: row.banner_url || undefined,
     notifications: row.notifications || [],
     rolePoints: row.role_points || 0,
     redeemedRolePoints: row.redeemed_role_points || 0,
@@ -260,7 +260,7 @@ const SEED_USERS: User[] = [
     avatar: "H",
     avatarUrl: logoImg,
     bio: "Moderador principal del servidor. Mantengo el orden dentro de la comunidad y reviso los reportes de jugadores.",
-    bannerColor: DEFAULT_BANNER_URL,
+    bannerUrl: DEFAULT_BANNER_URL,
     notifications: [],
   },
 ]
@@ -1776,19 +1776,19 @@ function ProfileView({
   const isOwnProfile = currentUser.id === selectedUser.id
   const [search, setSearch] = useState("")
   const [bio, setBio] = useState(selectedUser.bio || "")
-  const [bannerColor, setBannerColor] = useState(selectedUser.bannerColor || "#ef4444")
-  const [bannerUrl, setBannerUrl] = useState<string>("")
+  const [bannerUrl, setBannerUrl] = useState(selectedUser.bannerUrl || DEFAULT_BANNER_URL)
+  const [pendingBannerUrl, setPendingBannerUrl] = useState<string>("")
   const [avatarUrl, setAvatarUrl] = useState(selectedUser.avatarUrl || "")
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [profileSaveMessage, setProfileSaveMessage] = useState("")
 
   useEffect(() => {
     setBio(selectedUser.bio || "")
-    setBannerColor(selectedUser.bannerColor || DEFAULT_BANNER_URL)
-    setBannerUrl("")
+    setBannerUrl(selectedUser.bannerUrl || DEFAULT_BANNER_URL)
+    setPendingBannerUrl("")
     setAvatarUrl(selectedUser.avatarUrl || "")
     setProfileSaveMessage("")
-  }, [selectedUserId, selectedUser.bio, selectedUser.bannerColor, selectedUser.avatarUrl])
+  }, [selectedUserId, selectedUser.bio, selectedUser.bannerUrl, selectedUser.avatarUrl])
 
   const filteredUsers = users.filter((user) =>
     user.username.toLowerCase().includes(search.toLowerCase())
@@ -1798,7 +1798,7 @@ function ProfileView({
     ...selectedUser,
     avatarUrl,
     bio,
-    bannerColor,
+    bannerUrl,
   }
   const rolePoints = selectedUser.rolePoints || 0
   const redeemedRolePoints = selectedUser.redeemedRolePoints || 0
@@ -1824,8 +1824,8 @@ function ProfileView({
     const reader = new FileReader()
     reader.onload = (ev) => {
       const imageData = String(ev.target?.result || "")
+      setPendingBannerUrl(imageData)
       setBannerUrl(imageData)
-      setBannerColor("#111827")
     }
     reader.readAsDataURL(file)
     e.target.value = ""
@@ -1895,11 +1895,9 @@ function ProfileView({
           <div
             style={{
               height: 120,
-              background: bannerUrl
-                ? `url(${bannerUrl}) center/cover no-repeat`
-                : bannerColor.startsWith("url(")
-                  ? `${bannerColor} center/cover no-repeat`
-                  : bannerColor || "linear-gradient(135deg, #ef4444, #0ea5e9)",
+              background: bannerUrl.startsWith("url(")
+                ? `${bannerUrl} center/cover no-repeat`
+                : bannerUrl || `url(${defaultBannerImg}) center/cover no-repeat`,
               position: "relative",
               borderBottom: "1px solid var(--border)",
             }}
@@ -1977,9 +1975,9 @@ function ProfileView({
                         await onSaveProfile(currentUser.id, {
                           avatarUrl,
                           bio,
-                          bannerColor: bannerUrl || bannerColor,
+                          bannerUrl: pendingBannerUrl || bannerUrl,
                         })
-                        setBannerUrl("")
+                        setPendingBannerUrl("")
                         setProfileSaveMessage("Perfil guardado correctamente.")
                       } catch (saveError) {
                         setProfileSaveMessage(saveError instanceof Error ? saveError.message : "No se pudo guardar el perfil.")
@@ -3619,7 +3617,7 @@ export default function App() {
     const { error } = await supabase.from("profiles").update({
       avatar_url: updates.avatarUrl,
       bio: updates.bio,
-      banner_color: updates.bannerColor,
+      banner_url: updates.bannerUrl,
     }).eq("id", userId)
     if (error) throw new Error(error.message)
     await hydrateSession(userId)

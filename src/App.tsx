@@ -761,7 +761,7 @@ function LogoutModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel:
         onClick={(event) => event.stopPropagation()}
         style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "32px 36px", maxWidth: 380, width: "90%", textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}
       >
-        <img src={logoImg} alt="logo" style={{ width: 64, height: 64, objectFit: "contain", marginBottom: 16 }} />
+        <img src={siteLogoImg} alt="Eclipse Order" style={{ width: 64, height: 64, objectFit: "contain", marginBottom: 16 }} />
         <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 700, fontSize: 20, letterSpacing: "0.08em", color: "var(--text)", marginBottom: 10 }}>
           ¿CERRAR SESIÓN?
         </div>

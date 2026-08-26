@@ -95,6 +95,16 @@ interface Thread {
   visitorCount?: number
 }
 
+interface ServerStatus {
+  online: boolean
+  player_count: number
+  checked_at: string
+}
+
+interface ServerPlayer {
+  username: string
+}
+
 function MarkdownText({ content, inline = false }: { content: string; inline?: boolean }) {
   const normalizedContent = content.replace(/:::\s*(left|center|right)\s*\n([\s\S]*?)\n:::/g, '<div class="markdown-align-$1">\n$2\n</div>')
   const html = DOMPurify.sanitize(marked.parse(normalizedContent, { async: false, breaks: true, gfm: true }) as string)
@@ -1432,9 +1442,26 @@ function Header({
   onOpenControl: () => void
 }) {
   const [showLogoutModal, setShowLogoutModal] = useState(false)
+  const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null)
   const isStaff = currentUser.role !== "user"
   const notifications = currentUser.notifications || []
   const unreadNotifications = notifications.filter((notification) => !notification.read)
+
+  useEffect(() => {
+    let mounted = true
+
+    async function loadServerStatus() {
+      const { data } = await supabase.from("server_status").select("online, player_count, checked_at").eq("id", "main").maybeSingle()
+      if (mounted) setServerStatus((data as ServerStatus | null) || null)
+    }
+
+    void loadServerStatus()
+    const refreshTimer = window.setInterval(loadServerStatus, 30_000)
+    return () => {
+      mounted = false
+      window.clearInterval(refreshTimer)
+    }
+  }, [])
 
   return (
     <>
@@ -1484,6 +1511,34 @@ function Header({
             >
               MIEMBROS
             </button>
+
+            <div className="header-account-menu">
+              <button className="header-account-trigger" onClick={() => onOpenProfile(currentUser)} aria-haspopup="true">
+                <Avatar letter={currentUser.avatar} role={currentUser.role} size={30} imageUrl={currentUser.avatarUrl} />
+                <span className="header-account-copy">
+                  <strong>{currentUser.username}</strong>
+                  <small>{roleLabel(currentUser.role)}</small>
+                </span>
+                {unreadNotifications.length > 0 && <span className="header-account-count">{unreadNotifications.length}</span>}
+              </button>
+
+              <div className="header-account-dropdown">
+                <div className="header-account-heading">CENTRO DE CUENTA</div>
+                {unreadNotifications.length > 0 && <div className="header-account-alert">Tienes {unreadNotifications.length} {unreadNotifications.length === 1 ? "notificación sin leer" : "notificaciones sin leer"}</div>}
+                <button className="header-account-item" onClick={() => onOpenProfile(currentUser)}><span>◉</span> Mi perfil</button>
+                <button className="header-account-item" onClick={onOpenControl}><span>▦</span> Panel de control</button>
+                <div className="header-account-notifications">
+                  <div className="header-account-section-title"><span>Notificaciones</span>{notifications.length > 0 && <button onClick={onClearNotifications}>Limpiar</button>}</div>
+                  {notifications.length === 0 ? <div className="header-account-empty">No tienes notificaciones.</div> : notifications.slice(0, 4).map((item) => <div key={item.id} className="header-account-notification">{item.text}</div>)}
+                </div>
+                <button className="header-account-logout" onClick={() => setShowLogoutModal(true)}><span>↪</span> Cerrar sesión</button>
+              </div>
+            </div>
+          </div>
+
+          <div className={`header-server-presence ${serverStatus?.online ? "is-online" : ""}`} aria-label={serverStatus?.online ? `${serverStatus.player_count} jugadores conectados` : "Estado del servidor no disponible"}>
+            <span className="header-server-dot" aria-hidden="true" />
+            <span>{serverStatus?.online ? `${serverStatus.player_count} conectados` : "sin datos"}</span>
           </div>
 
           {isStaff && (
@@ -1491,29 +1546,6 @@ function Header({
               ADMIN
             </button>
           )}
-
-          <div className="header-account-menu">
-            <button className="header-account-trigger" onClick={() => onOpenProfile(currentUser)} aria-haspopup="true">
-              <Avatar letter={currentUser.avatar} role={currentUser.role} size={30} imageUrl={currentUser.avatarUrl} />
-              <span className="header-account-copy">
-                <strong>{currentUser.username}</strong>
-                <small>{roleLabel(currentUser.role)}</small>
-              </span>
-              {unreadNotifications.length > 0 && <span className="header-account-count">{unreadNotifications.length}</span>}
-            </button>
-
-            <div className="header-account-dropdown">
-              <div className="header-account-heading">CENTRO DE CUENTA</div>
-              {unreadNotifications.length > 0 && <div className="header-account-alert">Tienes {unreadNotifications.length} {unreadNotifications.length === 1 ? "notificación sin leer" : "notificaciones sin leer"}</div>}
-              <button className="header-account-item" onClick={() => onOpenProfile(currentUser)}><span>◉</span> Mi perfil</button>
-              <button className="header-account-item" onClick={onOpenControl}><span>▦</span> Panel de control</button>
-              <div className="header-account-notifications">
-                <div className="header-account-section-title"><span>Notificaciones</span>{notifications.length > 0 && <button onClick={onClearNotifications}>Limpiar</button>}</div>
-                {notifications.length === 0 ? <div className="header-account-empty">No tienes notificaciones.</div> : notifications.slice(0, 4).map((item) => <div key={item.id} className="header-account-notification">{item.text}</div>)}
-              </div>
-              <button className="header-account-logout" onClick={() => setShowLogoutModal(true)}><span>↪</span> Cerrar sesión</button>
-            </div>
-          </div>
         </nav>
       </header>
     </>
@@ -2526,7 +2558,31 @@ function MembersView({ users, onOpenProfile, onBack }: {
   onBack: () => void
 }) {
   const [search, setSearch] = useState("")
+  const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null)
+  const [serverPlayers, setServerPlayers] = useState<ServerPlayer[]>([])
   const filteredUsers = users.filter((user) => user.username.toLowerCase().includes(search.toLowerCase()))
+
+  useEffect(() => {
+    let mounted = true
+
+    async function loadServerPresence() {
+      const [{ data: status }, { data: players }] = await Promise.all([
+        supabase.from("server_status").select("online, player_count, checked_at").eq("id", "main").maybeSingle(),
+        supabase.from("server_players").select("username").order("username", { ascending: true }),
+      ])
+
+      if (!mounted) return
+      setServerStatus((status as ServerStatus | null) || null)
+      setServerPlayers((players as ServerPlayer[] | null) || [])
+    }
+
+    loadServerPresence()
+    const refreshTimer = window.setInterval(loadServerPresence, 30_000)
+    return () => {
+      mounted = false
+      window.clearInterval(refreshTimer)
+    }
+  }, [])
 
   return (
     <main className="members-view" style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 20px 50px" }}>
@@ -2545,6 +2601,24 @@ function MembersView({ users, onOpenProfile, onBack }: {
         <span className="members-toolbar-label">DIRECTORIO DE MIEMBROS</span>
         <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar usuario..." style={{ ...inputStyle, maxWidth: 280 }} />
       </div>
+      <section aria-label="Jugadores conectados" style={{ marginBottom: 24, padding: "18px 20px", border: "1px solid rgba(114, 200, 191, 0.22)", background: "rgba(15, 35, 47, 0.72)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ color: "var(--text-dim)", fontSize: 11, letterSpacing: "0.12em", fontFamily: "JetBrains Mono, monospace" }}>SERVIDOR PROJECT ZOMBOID</div>
+            <strong style={{ display: "block", marginTop: 7, color: "var(--text-main)", fontSize: 18 }}>
+              {serverStatus?.online ? `${serverStatus.player_count} jugadores conectados` : "Servidor sin datos recientes"}
+            </strong>
+          </div>
+          <span style={{ color: serverStatus?.online ? "#65d6a7" : "var(--text-dim)", fontSize: 12, fontFamily: "JetBrains Mono, monospace" }}>
+            {serverStatus?.online ? "● EN LÍNEA" : "● FUERA DE LÍNEA"}
+          </span>
+        </div>
+        {serverPlayers.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }}>
+            {serverPlayers.map((player) => <span key={player.username} style={{ padding: "5px 9px", border: "1px solid rgba(114, 200, 191, 0.24)", color: "var(--text-muted)", fontSize: 12 }}>{player.username}</span>)}
+          </div>
+        )}
+      </section>
       <div className="members-grid">
         {filteredUsers.map((user) => (
           <button key={user.id} className="member-card" onClick={() => onOpenProfile(user)}>

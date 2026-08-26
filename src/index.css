@@ -1458,14 +1458,51 @@ select:hover,
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 158px;
-  padding: 6px 12px 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(17, 24, 39, 0.7));
-  color: var(--text);
+  min-width: 150px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
   cursor: pointer;
   text-align: left;
+}
+
+.header-account-trigger:hover {
+  background: rgba(230, 162, 60, 0.1);
+  color: var(--text);
+}
+
+.header-server-presence {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  color: var(--text-dimmer);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.header-server-presence.is-online {
+  border-color: rgba(101, 214, 167, 0.26);
+  color: #8be0bb;
+}
+
+.header-server-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-dimmer);
+}
+
+.header-server-presence.is-online .header-server-dot {
+  background: #65d6a7;
+  box-shadow: 0 0 0 0 rgba(101, 214, 167, 0.65);
+  animation: serverPresencePulse 1.8s ease-out infinite;
 }
 
 .header-account-trigger::after {
@@ -1491,7 +1528,7 @@ select:hover,
 
 .header-account-copy strong {
   overflow: hidden;
-  color: var(--text);
+  color: currentColor;
   font-size: 12px;
   line-height: 1.2;
   text-overflow: ellipsis;
@@ -1846,6 +1883,12 @@ select:hover,
 @keyframes notificationAlertPulse {
   0%, 100% { box-shadow: 0 0 0 rgba(45, 212, 191, 0); }
   50% { box-shadow: 0 0 16px rgba(45, 212, 191, 0.14); }
+}
+
+@keyframes serverPresencePulse {
+  0% { box-shadow: 0 0 0 0 rgba(101, 214, 167, 0.65); }
+  70% { box-shadow: 0 0 0 6px rgba(101, 214, 167, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(101, 214, 167, 0); }
 }
 
 @media (max-width: 820px) {

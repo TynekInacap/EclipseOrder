@@ -142,12 +142,14 @@ select:hover,
 
 .markdown-toolbar-wrap { margin-top: 6px; }
 .visual-editor-shell {
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--border2);
   border-radius: 10px;
   background: var(--input-bg);
 }
 .visual-editor {
+  resize: vertical;
+  overflow: auto;
   min-height: 160px;
   padding: 12px 14px;
   outline: none;
@@ -168,6 +170,7 @@ select:hover,
 .visual-editor blockquote { margin: 8px 0; padding-left: 12px; border-left: 3px solid var(--highlight); color: var(--text-muted); }
 .visual-editor pre { margin: 8px 0; padding: 8px 10px; border-radius: 5px; background: rgba(2, 6, 23, 0.72); }
 .visual-editor a { color: var(--highlight); }
+.visual-editor img { display: block; max-width: 100%; height: auto; margin: 8px 0; border-radius: 6px; }
 .markdown-toolbar {
   margin-left: auto;
   display: flex;

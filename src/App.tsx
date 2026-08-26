@@ -111,7 +111,7 @@ function AlignmentIcon({ mode }: { mode: "left" | "center" | "right" }) {
   return <span className={`markdown-align-icon markdown-align-icon-${mode}`} aria-hidden="true"><i /><i /><i /><i /></span>
 }
 
-function MarkdownToolbar({ editorRef }: { editorRef: React.RefObject<HTMLDivElement | null> }) {
+function MarkdownToolbar({ editorRef, onInsertImage }: { editorRef: React.RefObject<HTMLDivElement | null>; onInsertImage: (file: File) => void }) {
   const savedSelectionRef = useRef<Range | null>(null)
 
   function saveSelection() {
@@ -157,6 +157,7 @@ function MarkdownToolbar({ editorRef }: { editorRef: React.RefObject<HTMLDivElem
 
   const colors = ["#000000", "#ffffff", "#ef4444", "#f97316", "#fbbf24", "#22c55e", "#14b8a6", "#38bdf8", "#3b82f6", "#8b5cf6", "#ec4899", "#94a3b8", "#475569", "#7f1d1d", "#854d0e"]
   const fonts = ["Arial", "Arial Black", "Comic Sans MS", "Courier New", "Georgia", "Impact", "Sans-serif", "Serif", "Times New Roman", "Trebuchet MS", "Verdana"]
+  const imageInputRef = useRef<HTMLInputElement>(null)
 
   return <div className="markdown-toolbar" role="toolbar" aria-label="Formato visual">
     {tools.map((tool) => <button key={tool.title} type="button" title={tool.title} aria-label={tool.title} data-tooltip={tool.title} onMouseDown={(event) => { event.preventDefault(); saveSelection() }} onClick={() => applyFormat(tool.command, tool.value)}>{tool.label}</button>)}
@@ -173,6 +174,8 @@ function MarkdownToolbar({ editorRef }: { editorRef: React.RefObject<HTMLDivElem
         {colors.map((color) => <button key={color} type="button" title={`Color ${color}`} aria-label={`Color ${color}`} onMouseDown={(event) => { event.preventDefault(); saveSelection() }} onClick={() => applyFormat("foreColor", color)}><span className="markdown-color-swatch" style={{ background: color }} /></button>)}
       </div>
     </details>
+    <button type="button" title="Insertar imagen" aria-label="Insertar imagen" data-tooltip="Insertar imagen" onMouseDown={(event) => event.preventDefault()} onClick={() => imageInputRef.current?.click()}>▧</button>
+    <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) onInsertImage(file); event.target.value = "" }} />
     <span>Formato visual</span>
   </div>
 }
@@ -310,6 +313,29 @@ async function uploadAttachment(attachment: Attachment, folder: string) {
   })
   if (error) throw new Error(`No se pudo subir ${attachment.name}: ${error.message}`)
   return { name: attachment.name, type: attachment.type, storage_path: path }
+}
+
+async function uploadInlineImages(content: string, folder: string) {
+  if (!content.includes("<img")) return content
+  const documentParser = new DOMParser()
+  const documentFragment = documentParser.parseFromString(content, "text/html")
+  const images = Array.from(documentFragment.querySelectorAll("img"))
+
+  await Promise.all(images.map(async (image) => {
+    if (!image.src.startsWith("data:")) return
+    const response = await fetch(image.src)
+    const blob = await response.blob()
+    const extension = blob.type.split("/")[1] || "png"
+    const path = `${folder}/${crypto.randomUUID()}.${extension}`
+    const { error } = await supabase.storage.from(ATTACHMENTS_BUCKET).upload(path, blob, {
+      contentType: blob.type || "image/png",
+      upsert: false,
+    })
+    if (error) throw new Error(`No se pudo subir una imagen insertada: ${error.message}`)
+    image.src = supabase.storage.from(ATTACHMENTS_BUCKET).getPublicUrl(path).data.publicUrl
+  }))
+
+  return documentFragment.body.innerHTML
 }
 
 function mapProfile(row: ProfileRow): User {
@@ -2748,7 +2774,15 @@ function NewThreadView({
           <label style={labelStyle}>Descripción</label>
           <div className="visual-editor-shell">
             <VisualEditor editorRef={contentRef} onChange={(html, text) => { setContent(html); setContentText(text) }} />
-            <MarkdownToolbar editorRef={contentRef} />
+            <MarkdownToolbar editorRef={contentRef} onInsertImage={(file) => {
+              const reader = new FileReader()
+              reader.onload = () => {
+                contentRef.current?.focus()
+                document.execCommand("insertImage", false, String(reader.result))
+                setContent(contentRef.current?.innerHTML || "")
+              }
+              reader.readAsDataURL(file)
+            }} />
           </div>
         </div>
 
@@ -4311,11 +4345,12 @@ export default function App() {
         throw new Error("No puedes publicar directamente en FORMATO u OFICIAL. Usa NO OFICIAL y luego un administrador puede moverlo.")
       }
     }
+    const contentWithUploadedImages = await uploadInlineImages(thread.content, `inline/${currentUser.id}/${crypto.randomUUID()}`)
     const threadPayload = {
       title: thread.title,
       category: thread.category,
       author_id: currentUser.id,
-      content: thread.content,
+      content: contentWithUploadedImages,
       status: thread.status,
       pinned: thread.pinned || false,
       admin_only: thread.adminOnly || false,

@@ -4109,8 +4109,14 @@ export default function App() {
   async function handleDeleteThread(threadId: string) {
     const thread = threads.find((item) => item.id === threadId)
     if (!thread || (currentUser?.role !== "admin" && thread.authorId !== currentUser?.id)) return
+    if (thread.id === "t-rules-historias" || thread.id === "t-rules-reportes" || thread.id === "t-rules-facciones-formato") return
     if (!window.confirm("¿Seguro que quieres eliminar este hilo? Esta acción no se puede deshacer.")) return
-    setThreads((previousThreads) => previousThreads.filter((item) => item.id !== threadId))
+    const { error } = await supabase.from("threads").delete().eq("id", threadId)
+    if (error) {
+      console.error("Could not delete thread", error)
+      return
+    }
+    await refreshForumState()
     setView("forum")
   }
 

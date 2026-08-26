@@ -204,9 +204,12 @@ using (
   or exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'moderator'))
 );
 
-create policy "Admins can delete threads"
+create policy "Authors and staff can delete threads"
 on public.threads for delete
-using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
+using (
+  auth.uid() = author_id
+  or exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'moderator'))
+);
 
 create policy "Authenticated users can read replies"
 on public.replies for select
@@ -252,3 +255,14 @@ using (auth.role() = 'authenticated');
 create policy "Users can register their own thread views"
 on public.thread_views for insert
 with check (auth.uid() = user_id);
+
+-- Migration for existing installations: allow authors to delete their own threads.
+drop policy if exists "Admins can delete threads" on public.threads;
+drop policy if exists "Authors and staff can delete threads" on public.threads;
+
+create policy "Authors and staff can delete threads"
+on public.threads for delete
+using (
+  auth.uid() = author_id
+  or exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'moderator'))
+);

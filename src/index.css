@@ -141,6 +141,33 @@ select:hover,
 .markdown-align-right { text-align: right; }
 
 .markdown-toolbar-wrap { margin-top: 6px; }
+.visual-editor-shell {
+  overflow: hidden;
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  background: var(--input-bg);
+}
+.visual-editor {
+  min-height: 160px;
+  padding: 12px 14px;
+  outline: none;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.visual-editor:empty::before {
+  color: var(--text-dimmer);
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+.visual-editor h1,
+.visual-editor h2,
+.visual-editor h3 { margin: 8px 0; color: var(--text); font-family: 'Oswald', sans-serif; line-height: 1.25; }
+.visual-editor blockquote { margin: 8px 0; padding-left: 12px; border-left: 3px solid var(--highlight); color: var(--text-muted); }
+.visual-editor pre { margin: 8px 0; padding: 8px 10px; border-radius: 5px; background: rgba(2, 6, 23, 0.72); }
+.visual-editor a { color: var(--highlight); }
 .markdown-toolbar {
   display: flex;
   align-items: center;

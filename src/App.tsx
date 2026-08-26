@@ -107,63 +107,45 @@ function MarkdownText({ content, inline = false }: { content: string; inline?: b
   return <div className="markdown-content" dangerouslySetInnerHTML={{ __html: html }} />
 }
 
-function MarkdownToolbar({
-  textareaRef,
-  value,
-  onChange,
-}: {
-  textareaRef: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>
-  value: string
-  onChange: (value: string) => void
-}) {
-  function insertMarkdown(prefix: string, suffix = "", fallback = "texto") {
-    const field = textareaRef.current
-    if (!field) return
-    const start = field.selectionStart || 0
-    const end = field.selectionEnd || 0
-    const selectedText = value.slice(start, end) || fallback
-    const nextValue = `${value.slice(0, start)}${prefix}${selectedText}${suffix}${value.slice(end)}`
-    onChange(nextValue)
-    requestAnimationFrame(() => {
-      field.focus()
-      const selectionStart = start + prefix.length
-      field.setSelectionRange(selectionStart, selectionStart + selectedText.length)
-    })
-  }
+function AlignmentIcon({ mode }: { mode: "left" | "center" | "right" }) {
+  return <span className={`markdown-align-icon markdown-align-icon-${mode}`} aria-hidden="true"><i /><i /><i /><i /></span>
+}
 
-  function AlignmentIcon({ mode }: { mode: "left" | "center" | "right" }) {
-    return (
-      <span className={`markdown-align-icon markdown-align-icon-${mode}`} aria-hidden="true">
-        <i /><i /><i /><i />
-      </span>
-    )
+function MarkdownToolbar({ editorRef }: { editorRef: React.RefObject<HTMLDivElement | null> }) {
+  function applyFormat(command: string, value?: string) {
+    editorRef.current?.focus()
+    if (command === "createLink") {
+      const url = window.prompt("URL del enlace", "https://")
+      if (!url) return
+      document.execCommand(command, false, url)
+      return
+    }
+    document.execCommand(command, false, value)
   }
 
   const tools = [
-    { label: "H1", title: "Encabezado", action: () => insertMarkdown("# ", "", "Título") },
-    { label: "B", title: "Negrita", action: () => insertMarkdown("**", "**") },
-    { label: "I", title: "Cursiva", action: () => insertMarkdown("*", "*") },
-    { label: "S", title: "Tachado", action: () => insertMarkdown("~~", "~~") },
-    { label: ">", title: "Cita", action: () => insertMarkdown("> ", "", "Cita") },
-    { label: "</>", title: "Código", action: () => insertMarkdown("`", "`") },
-    { label: "•", title: "Lista", action: () => insertMarkdown("- ", "", "Elemento") },
-    { label: "1.", title: "Lista numerada", action: () => insertMarkdown("1. ", "", "Elemento") },
-    { label: "🔗", title: "Enlace", action: () => insertMarkdown("[", "](https://)", "texto del enlace") },
-    { label: <AlignmentIcon mode="left" />, title: "Alinear a la izquierda", action: () => insertMarkdown("::: left\n", "\n:::", "Texto alineado a la izquierda") },
-    { label: <AlignmentIcon mode="center" />, title: "Centrar", action: () => insertMarkdown("::: center\n", "\n:::", "Texto centrado") },
-    { label: <AlignmentIcon mode="right" />, title: "Alinear a la derecha", action: () => insertMarkdown("::: right\n", "\n:::", "Texto alineado a la derecha") },
+    { label: "H1", title: "Encabezado", command: "formatBlock", value: "h1" },
+    { label: "B", title: "Negrita", command: "bold" },
+    { label: "I", title: "Cursiva", command: "italic" },
+    { label: "S", title: "Tachado", command: "strikeThrough" },
+    { label: ">", title: "Cita", command: "formatBlock", value: "blockquote" },
+    { label: "</>", title: "Código", command: "formatBlock", value: "pre" },
+    { label: "•", title: "Lista", command: "insertUnorderedList" },
+    { label: "1.", title: "Lista numerada", command: "insertOrderedList" },
+    { label: "🔗", title: "Enlace", command: "createLink" },
+    { label: <AlignmentIcon mode="left" />, title: "Alinear a la izquierda", command: "justifyLeft" },
+    { label: <AlignmentIcon mode="center" />, title: "Centrar", command: "justifyCenter" },
+    { label: <AlignmentIcon mode="right" />, title: "Alinear a la derecha", command: "justifyRight" },
   ]
 
-  return (
-    <div className="markdown-toolbar" role="toolbar" aria-label="Formato Markdown">
-      {tools.map((tool) => (
-        <button key={tool.title} type="button" title={tool.title} aria-label={tool.title} data-tooltip={tool.title} onClick={tool.action}>
-          {tool.label}
-        </button>
-      ))}
-      <span>Markdown compatible</span>
-    </div>
-  )
+  return <div className="markdown-toolbar" role="toolbar" aria-label="Formato visual">
+    {tools.map((tool) => <button key={tool.title} type="button" title={tool.title} aria-label={tool.title} data-tooltip={tool.title} onMouseDown={(event) => event.preventDefault()} onClick={() => applyFormat(tool.command, tool.value)}>{tool.label}</button>)}
+    <span>Formato visual</span>
+  </div>
+}
+
+function VisualEditor({ editorRef, onChange }: { editorRef: React.RefObject<HTMLDivElement | null>; onChange: (html: string, text: string) => void }) {
+  return <div ref={editorRef} contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" onInput={(event) => { const element = event.currentTarget; onChange(element.innerHTML, element.textContent || "") }} className="visual-editor" data-placeholder="Escribe el contenido del hilo..." />
 }
 
 type View =
@@ -2564,6 +2546,7 @@ function NewThreadView({
   const [title, setTitle] = useState("")
   const [category, setCategory] = useState<Category>(initialCategory || "reportes")
   const [content, setContent] = useState("")
+  const [contentText, setContentText] = useState("")
   const isReportMode = initialCategory === "reportes" || category === "reportes"
   const formCopy: Record<Category, { title: string; description: string }> = {
     bugs: {
@@ -2592,7 +2575,7 @@ function NewThreadView({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [mentionQuery, setMentionQuery] = useState("")
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([])
-  const contentRef = useRef<HTMLTextAreaElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
 
   const mentionList = users.filter((user) =>
     user.id !== currentUser.id &&
@@ -2629,7 +2612,7 @@ function NewThreadView({
     e.preventDefault()
     if (isSubmitting) return
     if (title.trim().length < 5) { setError("El título debe tener al menos 5 caracteres."); return }
-    if (content.trim().length < 20 && attachments.length === 0) { setError("Añade una descripción o adjunta al menos un archivo."); return }
+    if (contentText.trim().length < 20 && attachments.length === 0) { setError("Añade una descripción o adjunta al menos un archivo."); return }
     if (category === "reportes" && mentionedUserIds.length === 0) {
       setError("Debes mencionar al menos a un usuario para crear este reporte.")
       return
@@ -2726,14 +2709,10 @@ function NewThreadView({
         </div>
         <div style={{ marginBottom: 18 }}>
           <label style={labelStyle}>Descripción</label>
-          <textarea
-            ref={contentRef}
-            style={{ ...inputStyle, height: 160, resize: "vertical" } as React.CSSProperties}
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder={formCopy[category].description}
-          />
-          <MarkdownToolbar textareaRef={contentRef} value={content} onChange={setContent} />
+          <div className="visual-editor-shell">
+            <VisualEditor editorRef={contentRef} onChange={(html, text) => { setContent(html); setContentText(text) }} />
+            <MarkdownToolbar editorRef={contentRef} />
+          </div>
         </div>
 
         {category === "reportes" && (

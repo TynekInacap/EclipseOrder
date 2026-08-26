@@ -1969,6 +1969,7 @@ function FactionSubforumView({
       <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
         {subforumThreads.length > 0 && (
           <div className="faction-thread-head">
+            <span aria-hidden="true" />
             <span>Hilo</span>
             <span>Respuestas</span>
             <span>Visitas</span>
@@ -1997,7 +1998,6 @@ function FactionSubforumView({
                   <small style={{ color: "var(--text-dim)", fontSize: 12 }}>por {author?.username || "Usuario"} · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes</small>
                 </span>
                 <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, textAlign: "center" }}>{thread.replies.length} RESP.</span>
-                <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, textAlign: "center" }}>{thread.visitorCount || 0}</span>
                 <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, textAlign: "center" }}>{thread.visitorCount || 0}</span>
               </button>
             )

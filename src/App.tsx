@@ -302,19 +302,6 @@ function attachmentUrl(row: AttachmentRow) {
   return row.data_url || ""
 }
 
-async function uploadAttachment(attachment: Attachment, folder: string) {
-  const response = await fetch(attachment.dataUrl)
-  const blob = await response.blob()
-  const extension = attachment.name.split(".").pop()?.toLowerCase() || (attachment.type === "video" ? "mp4" : "jpg")
-  const path = `${folder}/${crypto.randomUUID()}.${extension}`
-  const { error } = await supabase.storage.from(ATTACHMENTS_BUCKET).upload(path, blob, {
-    contentType: blob.type || (attachment.type === "video" ? "video/mp4" : "image/jpeg"),
-    upsert: false,
-  })
-  if (error) throw new Error(`No se pudo subir ${attachment.name}: ${error.message}`)
-  return { name: attachment.name, type: attachment.type, storage_path: path }
-}
-
 async function uploadInlineImages(content: string, folder: string) {
   if (!content.includes("<img")) return content
   const documentParser = new DOMParser()
@@ -2633,7 +2620,6 @@ function NewThreadView({
       description: "Explica la norma, el contexto y cualquier detalle que deba conocer la comunidad.",
     },
   }
-  const [attachments, setAttachments] = useState<Attachment[]>([])
   const [error, setError] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [mentionQuery, setMentionQuery] = useState("")
@@ -2651,31 +2637,11 @@ function NewThreadView({
     )
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files || [])
-    files.forEach((file) => {
-      const type = file.type.startsWith("video/") ? "video" : "image"
-      const reader = new FileReader()
-      reader.onload = (ev) => {
-        setAttachments((prev) => [
-          ...prev,
-          { name: file.name, type, dataUrl: ev.target?.result as string },
-        ])
-      }
-      reader.readAsDataURL(file)
-    })
-    e.target.value = ""
-  }
-
-  function removeAttachment(idx: number) {
-    setAttachments((prev) => prev.filter((_, i) => i !== idx))
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (isSubmitting) return
     if (title.trim().length < 5) { setError("El título debe tener al menos 5 caracteres."); return }
-    if (contentText.trim().length < 20 && attachments.length === 0) { setError("Añade una descripción o adjunta al menos un archivo."); return }
+    if (contentText.trim().length < 20) { setError("Añade una descripción de al menos 20 caracteres."); return }
     if (category === "reportes" && mentionedUserIds.length === 0) {
       setError("Debes mencionar al menos a un usuario para crear este reporte.")
       return
@@ -2699,7 +2665,6 @@ function NewThreadView({
       status: "abierto",
       createdAt: new Date().toISOString(),
       replies: [],
-      attachments,
       subforum: category === "facciones" ? "no_oficial" : undefined,
     }
     setIsSubmitting(true)
@@ -2784,6 +2749,9 @@ function NewThreadView({
               reader.readAsDataURL(file)
             }} />
           </div>
+          <div style={{ marginTop: 7, color: "var(--text-dim)", fontSize: 11 }}>
+            Las imágenes se insertan dentro del texto. Para vídeos, comparte un enlace de YouTube o Imgur.
+          </div>
         </div>
 
         {category === "reportes" && (
@@ -2833,66 +2801,6 @@ function NewThreadView({
             </div>
           </div>
         )}
-
-        {/* Attachments */}
-        <div style={{ marginBottom: 28 }}>
-          <label style={labelStyle}>Archivos adjuntos</label>
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 10,
-              border: "1px dashed var(--border)",
-              borderRadius: 6,
-              padding: "18px 20px",
-              cursor: "pointer",
-              color: "var(--text-dim)",
-              fontSize: 13,
-              background: "var(--surface2)",
-              transition: "border-color 0.15s, color 0.15s",
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--border3)"; e.currentTarget.style.color = "var(--text-muted)" }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border2)"; e.currentTarget.style.color = "var(--text-dim)" }}
-          >
-            <span style={{ fontSize: 22 }}>📎</span>
-            <span>Haz clic para adjuntar imágenes o videos — múltiples archivos permitidos</span>
-            <input
-              type="file"
-              accept="image/*,video/*"
-              multiple
-              onChange={handleFileChange}
-              style={{ display: "none" }}
-            />
-          </label>
-
-          {attachments.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
-              {attachments.map((att, idx) => (
-                <div
-                  key={idx}
-                  style={{ position: "relative", borderRadius: 4, overflow: "hidden", border: "1px solid var(--border)", background: "var(--bg)" }}
-                >
-                  {att.type === "image" ? (
-                    <img src={att.dataUrl} alt={att.name} style={{ display: "block", width: 90, height: 70, objectFit: "cover" }} />
-                  ) : (
-                    <div style={{ width: 110, height: 70, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4 }}>
-                      <span style={{ fontSize: 22 }}>🎬</span>
-                      <span style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", padding: "0 4px" }}>{att.name}</span>
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => removeAttachment(idx)}
-                    style={{ position: "absolute", top: 3, right: 3, background: "#c0392b", border: "none", borderRadius: "50%", width: 18, height: 18, cursor: "pointer", color: "#fff", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center" }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
 
         <div style={{ display: "flex", gap: 10 }}>
           <button type="submit" disabled={isSubmitting} style={{ ...primaryBtn, opacity: isSubmitting ? 0.65 : 1, cursor: isSubmitting ? "wait" : "pointer" }}>
@@ -2947,7 +2855,6 @@ function ThreadView({
 }) {
   const thread = threads.find((t) => t.id === threadId)
   const [replyContent, setReplyContent] = useState("")
-  const [attachments, setAttachments] = useState<Attachment[]>([])
   const [error, setError] = useState("")
   const [lightbox, setLightbox] = useState<Attachment | null>(null)
   const [mentionQuery, setMentionQuery] = useState("")
@@ -3039,26 +2946,6 @@ function ThreadView({
     }
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files || [])
-    files.forEach((file) => {
-      const type = file.type.startsWith("video/") ? "video" : "image"
-      const reader = new FileReader()
-      reader.onload = (ev) => {
-        setAttachments((prev) => [
-          ...prev,
-          { name: file.name, type, dataUrl: ev.target?.result as string },
-        ])
-      }
-      reader.readAsDataURL(file)
-    })
-    e.target.value = ""
-  }
-
-  function removeAttachment(idx: number) {
-    setAttachments((prev) => prev.filter((_, i) => i !== idx))
-  }
-
   function toggleMention(userId: string) {
     setMentionedUserIds((prev) =>
       prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
@@ -3076,8 +2963,8 @@ function ThreadView({
       setError("Este subforo es de solo lectura. Para publicar una facción usa el subforo NO OFICIAL.")
       return
     }
-    if (replyContent.trim().length < 5 && attachments.length === 0) {
-      setError("Escribe al menos un mensaje o adjunta un archivo.")
+    if (replyContent.trim().length < 5) {
+      setError("Escribe al menos un mensaje.")
       return
     }
     if (thread.category === "reportes" && mentionedUserIds.length === 0) {
@@ -3096,9 +2983,8 @@ function ThreadView({
     const finalContent = [replyContent.trim(), mentionText].filter(Boolean).join("\n\n")
     setIsSubmitting(true)
     try {
-      await onReply(thread!.id, finalContent, attachments, mentionedUserIds)
+      await onReply(thread!.id, finalContent, [], mentionedUserIds)
       setReplyContent("")
-      setAttachments([])
       setMentionedUserIds([])
       setMentionQuery("")
       setError("")
@@ -3505,34 +3391,6 @@ function ThreadView({
               placeholder="Escribe tu respuesta..."
             />
 
-            {/* Attachment previews */}
-            {attachments.length > 0 && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
-                {attachments.map((att, idx) => (
-                  <div
-                    key={idx}
-                    style={{ position: "relative", borderRadius: 4, overflow: "hidden", border: "1px solid var(--border)", background: "var(--bg)" }}
-                  >
-                    {att.type === "image" ? (
-                      <img src={att.dataUrl} alt={att.name} style={{ display: "block", width: 80, height: 60, objectFit: "cover" }} />
-                    ) : (
-                      <div style={{ width: 100, height: 60, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4 }}>
-                        <span style={{ fontSize: 20 }}>🎬</span>
-                        <span style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", padding: "0 4px" }}>{att.name}</span>
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => removeAttachment(idx)}
-                      style={{ position: "absolute", top: 2, right: 2, background: "#c0392b", border: "none", borderRadius: "50%", width: 16, height: 16, cursor: "pointer", color: "#fff", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
             {thread.category === "reportes" && (
               <div style={{ marginTop: 12, padding: "14px 14px 12px", background: "rgba(15,23,42,0.48)", border: "1px solid rgba(56,189,248,0.25)", borderRadius: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
@@ -3585,40 +3443,7 @@ function ThreadView({
               <button type="submit" disabled={isSubmitting} style={{ ...primaryBtn, width: "auto", display: "inline-block", opacity: isSubmitting ? 0.65 : 1, cursor: isSubmitting ? "wait" : "pointer" }}>
                 {isSubmitting ? "PUBLICANDO..." : "RESPONDER"}
               </button>
-              <label
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  background: "var(--surface2)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 4,
-                  color: "var(--text-muted)",
-                  cursor: "pointer",
-                  padding: "8px 14px",
-                  fontSize: 11,
-                  fontFamily: "JetBrains Mono, monospace",
-                  letterSpacing: "0.05em",
-                  transition: "border-color 0.15s",
-                  userSelect: "none",
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--border3)")}
-                onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border2)")}
-              >
-                <span style={{ fontSize: 14 }}>📎</span> ADJUNTAR
-                <input
-                  type="file"
-                  accept="image/*,video/*"
-                  multiple
-                  onChange={handleFileChange}
-                  style={{ display: "none" }}
-                />
-              </label>
-              {attachments.length > 0 && (
-                <span style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace" }}>
-                  {attachments.length} archivo{attachments.length !== 1 ? "s" : ""}
-                </span>
-              )}
+              <span style={{ fontSize: 11, color: "var(--text-dim)" }}>Para vídeos, comparte un enlace de YouTube o Imgur.</span>
             </div>
           </form>
         </div>
@@ -4361,20 +4186,6 @@ export default function App() {
       console.error("Could not create thread", error)
       throw new Error(error?.message || "No se pudo crear el hilo.")
     }
-    if (thread.attachments && thread.attachments.length > 0) {
-      const uploadedAttachments = await Promise.all(
-        thread.attachments.map((attachment) => uploadAttachment(attachment, `threads/${createdThread.id}`))
-      )
-      const { error: attachmentsError } = await supabase.from("thread_attachments").insert(
-        uploadedAttachments.map((attachment) => ({
-          thread_id: createdThread.id,
-          name: attachment.name,
-          type: attachment.type,
-          storage_path: attachment.storage_path,
-        }))
-      )
-      if (attachmentsError) throw new Error(attachmentsError.message)
-    }
     await refreshForumState()
     if (thread.category === "reportes") {
       setSelectedThread(createdThread.id)
@@ -4417,20 +4228,6 @@ export default function App() {
     if (error || !createdReply) {
       console.error("Could not create reply", error)
       return
-    }
-    if (_attachments.length > 0) {
-      const uploadedAttachments = await Promise.all(
-        _attachments.map((attachment) => uploadAttachment(attachment, `replies/${createdReply.id}`))
-      )
-      const { error: attachmentsError } = await supabase.from("reply_attachments").insert(
-        uploadedAttachments.map((attachment) => ({
-          reply_id: createdReply.id,
-          name: attachment.name,
-          type: attachment.type,
-          storage_path: attachment.storage_path,
-        }))
-      )
-      if (attachmentsError) console.error("Could not save reply attachments", attachmentsError)
     }
     await refreshForumState()
   }

@@ -224,6 +224,62 @@ select:hover,
   background: rgba(56, 189, 248, 0.12);
   color: var(--text);
 }
+.markdown-toolbar-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--border2);
+}
+.markdown-toolbar select,
+.markdown-color-picker summary {
+  height: 26px;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.78);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: 11px;
+}
+.markdown-toolbar select { max-width: 112px; padding: 2px 5px; }
+.markdown-toolbar select:hover,
+.markdown-color-picker summary:hover { border-color: var(--border3); color: var(--text); }
+.markdown-color-picker { position: relative; }
+.markdown-color-picker summary { display: grid; width: 28px; place-items: center; list-style: none; font-family: 'Georgia', serif; font-weight: 700; }
+.markdown-color-picker summary::-webkit-details-marker { display: none; }
+.markdown-color-palette {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(5, 20px);
+  gap: 3px;
+  padding: 7px;
+  border: 1px solid var(--border3);
+  border-radius: 4px;
+  background: #111923;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+.markdown-color-palette button { min-width: 20px; width: 20px; height: 20px; padding: 3px; }
+.markdown-toolbar-colors {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 2px;
+}
+.markdown-toolbar-colors button {
+  min-width: 24px;
+  padding: 2px 4px;
+}
+.markdown-color-swatch {
+  display: block;
+  width: 13px;
+  height: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(2, 6, 23, 0.6);
+}
 .markdown-align-icon {
   display: inline-flex;
   width: 16px;

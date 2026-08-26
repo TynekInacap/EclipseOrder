@@ -112,7 +112,24 @@ function AlignmentIcon({ mode }: { mode: "left" | "center" | "right" }) {
 }
 
 function MarkdownToolbar({ editorRef }: { editorRef: React.RefObject<HTMLDivElement | null> }) {
+  const savedSelectionRef = useRef<Range | null>(null)
+
+  function saveSelection() {
+    const selection = window.getSelection()
+    if (selection?.rangeCount && editorRef.current?.contains(selection.anchorNode)) {
+      savedSelectionRef.current = selection.getRangeAt(0).cloneRange()
+    }
+  }
+
+  function restoreSelection() {
+    const selection = window.getSelection()
+    if (!selection || !savedSelectionRef.current) return
+    selection.removeAllRanges()
+    selection.addRange(savedSelectionRef.current)
+  }
+
   function applyFormat(command: string, value?: string) {
+    restoreSelection()
     editorRef.current?.focus()
     if (command === "createLink") {
       const url = window.prompt("URL del enlace", "https://")
@@ -138,8 +155,24 @@ function MarkdownToolbar({ editorRef }: { editorRef: React.RefObject<HTMLDivElem
     { label: <AlignmentIcon mode="right" />, title: "Alinear a la derecha", command: "justifyRight" },
   ]
 
+  const colors = ["#000000", "#ffffff", "#ef4444", "#f97316", "#fbbf24", "#22c55e", "#14b8a6", "#38bdf8", "#3b82f6", "#8b5cf6", "#ec4899", "#94a3b8", "#475569", "#7f1d1d", "#854d0e"]
+  const fonts = ["Arial", "Arial Black", "Comic Sans MS", "Courier New", "Georgia", "Impact", "Sans-serif", "Serif", "Times New Roman", "Trebuchet MS", "Verdana"]
+
   return <div className="markdown-toolbar" role="toolbar" aria-label="Formato visual">
-    {tools.map((tool) => <button key={tool.title} type="button" title={tool.title} aria-label={tool.title} data-tooltip={tool.title} onMouseDown={(event) => event.preventDefault()} onClick={() => applyFormat(tool.command, tool.value)}>{tool.label}</button>)}
+    {tools.map((tool) => <button key={tool.title} type="button" title={tool.title} aria-label={tool.title} data-tooltip={tool.title} onMouseDown={(event) => { event.preventDefault(); saveSelection() }} onClick={() => applyFormat(tool.command, tool.value)}>{tool.label}</button>)}
+    <span className="markdown-toolbar-divider" aria-hidden="true" />
+    <select title="Fuente" aria-label="Fuente" onMouseDown={saveSelection} onChange={(event) => applyFormat("fontName", event.target.value)} defaultValue="Arial">
+      {fonts.map((font) => <option key={font} value={font}>{font}</option>)}
+    </select>
+    <select title="Tamaño de fuente" aria-label="Tamaño de fuente" onMouseDown={saveSelection} onChange={(event) => applyFormat("fontSize", event.target.value)} defaultValue="3">
+      {[1, 2, 3, 4, 5, 6, 7].map((size) => <option key={size} value={size}>{size}</option>)}
+    </select>
+    <details className="markdown-color-picker">
+      <summary title="Color del texto" aria-label="Color del texto">A</summary>
+      <div className="markdown-color-palette">
+        {colors.map((color) => <button key={color} type="button" title={`Color ${color}`} aria-label={`Color ${color}`} onMouseDown={(event) => { event.preventDefault(); saveSelection() }} onClick={() => applyFormat("foreColor", color)}><span className="markdown-color-swatch" style={{ background: color }} /></button>)}
+      </div>
+    </details>
     <span>Formato visual</span>
   </div>
 }
@@ -181,6 +214,9 @@ function routeFromLocation(): RouteState {
 
   if (segments[0] === "perfil" && segments[1]) return { view: "profile", profileId: segments[1] }
   if (segments[0] === "hilo" && segments[1]) return { view: "thread", threadId: segments[1] }
+  if (segments[0] === "foro" && segments[2] === "nuevo" && segments[1]) {
+    return { view: "new_thread", category: segments[1] as Category }
+  }
   if (segments[0] === "foro" && segments[1] === "reportes" && segments[2]) {
     return { view: "report_status", category: "reportes", reportStatus: segments[2] as ThreadStatus }
   }
@@ -197,6 +233,7 @@ function routeFromLocation(): RouteState {
 function pathFromState(view: View, profileId: string, threadId: string, category: Category, reportStatus: ThreadStatus, factionSubforum: ThreadSubforum) {
   if (view === "profile" && profileId) return `/perfil/${encodeURIComponent(profileId)}`
   if (view === "thread" && threadId) return `/hilo/${encodeURIComponent(threadId)}`
+  if (view === "new_thread") return `/foro/${category}/nuevo`
   if (view === "category") return `/foro/${category}`
   if (view === "report_status") return `/foro/reportes/${reportStatus}`
   if (view === "faction_subforum") return `/foro/facciones/${factionSubforum}`
@@ -2653,7 +2690,7 @@ function NewThreadView({
   return (
     <>
     {isSubmitting && <PostingOverlay />}
-    <div style={{ maxWidth: isReportMode ? 1050 : 720, margin: "0 auto", padding: "32px 20px" }}>
+    <div style={{ maxWidth: 1050, margin: "0 auto", padding: "32px 20px" }}>
       <button onClick={goBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 24, display: "flex", alignItems: "center", gap: 6 }}>
         ← Volver al foro
       </button>
@@ -2668,7 +2705,7 @@ function NewThreadView({
         </div>
       )}
 
-      <form className={isReportMode ? "report-compose-form" : undefined} onSubmit={handleSubmit} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "28px 28px" }}>
+      <form onSubmit={handleSubmit} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "28px 28px" }}>
         {!initialCategory && !isReportMode && (
           <div style={{ marginBottom: 18 }}>
             <label style={labelStyle}>Categoría</label>

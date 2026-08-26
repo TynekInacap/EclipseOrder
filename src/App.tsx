@@ -45,6 +45,17 @@ interface StoreProduct {
   description: string
   imageUrl?: string
   createdAt: string
+  kind?: "personal" | "faccion"
+}
+
+interface StoreRedemption {
+  id: string
+  userId: string
+  username: string
+  productId: string
+  productTitle: string
+  price: number
+  createdAt: string
 }
 
 interface Attachment {
@@ -75,6 +86,9 @@ interface Thread {
   attachments?: Attachment[]
   adminOnly?: boolean
   subforum?: ThreadSubforum
+  factionRolePoints?: number
+  factionRolePointsClaimed?: boolean
+  visitorCount?: number
 }
 
 function renderFormattedText(content: string) {
@@ -89,6 +103,8 @@ type View =
   | "register"
   | "forum"
   | "category"
+  | "report_status"
+  | "faction_subforum"
   | "thread"
   | "new_thread"
   | "profile"
@@ -120,6 +136,8 @@ type ThreadRow = {
   admin_only: boolean
   created_at: string
   subforum?: ThreadSubforum
+  faction_role_points?: number
+  faction_role_points_claimed?: boolean
 }
 
 type ReplyRow = {
@@ -175,12 +193,14 @@ async function loadSupabaseForum() {
     { data: replyRows, error: repliesError },
     { data: threadAttachmentRows, error: threadAttachmentsError },
     { data: replyAttachmentRows, error: replyAttachmentsError },
+    { data: threadViewRows, error: threadViewsError },
   ] = await Promise.all([
     supabase.from("profiles").select("*").order("joined_at", { ascending: true }),
     supabase.from("threads").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("replies").select("*").order("created_at", { ascending: true }),
     supabase.from("thread_attachments").select("*"),
     supabase.from("reply_attachments").select("*"),
+    supabase.from("thread_views").select("thread_id, user_id"),
   ])
 
   if (profilesError) throw profilesError
@@ -188,6 +208,7 @@ async function loadSupabaseForum() {
   if (repliesError) throw repliesError
   if (threadAttachmentsError) throw threadAttachmentsError
   if (replyAttachmentsError) throw replyAttachmentsError
+  const threadViews = threadViewsError ? [] : (threadViewRows || []) as { thread_id: string; user_id: string }[]
 
   const users = (profileRows || []).map((row) => mapProfile(row as ProfileRow))
   const threadAttachments = (threadAttachmentRows || []) as AttachmentRow[]
@@ -204,6 +225,9 @@ async function loadSupabaseForum() {
       pinned: thread.pinned,
       adminOnly: thread.admin_only,
       subforum: thread.subforum || (thread.category === "facciones" ? "no_oficial" : undefined),
+      factionRolePoints: thread.faction_role_points || 0,
+      factionRolePointsClaimed: thread.faction_role_points_claimed || false,
+      visitorCount: threadViews.filter((view) => view.thread_id === thread.id).length,
       createdAt: thread.created_at,
       attachments: threadAttachments
         .filter((attachment) => attachment.thread_id === thread.id)
@@ -250,7 +274,7 @@ async function loadSupabaseForum() {
     title: "Formato para presentar una facción",
     category: "facciones",
     authorId: "u0",
-    content: "**FORMATO PARA PRESENTAR UNA FACCIÓN**\n\n> **Nombre de la facción:**\n> **Tipo:** (oficial o no oficial)\n> **Líder o responsables:**\n> **Objetivo principal:**\n> **Historia y contexto:**\n> **Zona de operaciones:**\n> **Miembros actuales:**\n> **Reglas internas:**\n> **Método de ingreso:**\n\nPresenta la facción usando este formato en un hilo dentro de NO OFICIAL. El staff revisará la propuesta y, si corresponde, moverá el hilo a OFICIAL.",
+    content: "**El titulo del hilo debe ser nombre de la facción**\n\n**Introducción y Lore**:\n\n**Ubicación**:\n\n**Miembros**:\n\n**Screenshots (Si requiere)**:",
     status: "abierto",
     createdAt: "2026-08-03T09:00:00Z",
     pinned: true,
@@ -451,6 +475,7 @@ const ROLE_REDEEM_COST = 100
 const SESSION_STORAGE_KEY = "eclipse-order-session"
 const LOCAL_USERS_STORAGE_KEY = "eclipse-order-local-users"
 const STORE_PRODUCTS_STORAGE_KEY = "eclipse-order-store-products"
+const STORE_REDEMPTIONS_STORAGE_KEY = "eclipse-order-store-redemptions"
 
 const STATUS_LABELS: Record<ThreadStatus, string> = {
   abierto: "Abierto",
@@ -487,6 +512,19 @@ function roleLabel(role: Role) {
   return role === "user" ? "USUARIO" : role.toUpperCase()
 }
 
+function RoleMark({ role }: { role: Role }) {
+  if (role === "user") return null
+  const isAdmin = role === "admin"
+  return (
+    <span
+      title={isAdmin ? "Administrador del foro" : "Moderador del foro"}
+      style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 6, padding: "2px 6px", border: `1px solid ${isAdmin ? "rgba(255,107,95,0.55)" : "rgba(77,216,223,0.5)"}`, borderRadius: 999, background: isAdmin ? "rgba(255,107,95,0.14)" : "rgba(77,216,223,0.12)", color: isAdmin ? "#ff9b91" : "#8cecf0", fontFamily: "JetBrains Mono, monospace", fontSize: 8, letterSpacing: "0.08em", lineHeight: 1.2, verticalAlign: "middle", boxShadow: `0 0 12px ${isAdmin ? "rgba(255,107,95,0.2)" : "rgba(77,216,223,0.18)"}` }}
+    >
+      {isAdmin ? "★ ADMIN" : "◆ MOD"}
+    </span>
+  )
+}
+
 function readLocalUsers(): User[] {
   try {
     const storedUsers = JSON.parse(localStorage.getItem(LOCAL_USERS_STORAGE_KEY) || "[]")
@@ -500,6 +538,15 @@ function readStoreProducts(): StoreProduct[] {
   try {
     const storedProducts = JSON.parse(localStorage.getItem(STORE_PRODUCTS_STORAGE_KEY) || "[]")
     return Array.isArray(storedProducts) ? storedProducts : []
+  } catch {
+    return []
+  }
+}
+
+function readStoreRedemptions(): StoreRedemption[] {
+  try {
+    const storedRedemptions = JSON.parse(localStorage.getItem(STORE_REDEMPTIONS_STORAGE_KEY) || "[]")
+    return Array.isArray(storedRedemptions) ? storedRedemptions : []
   } catch {
     return []
   }
@@ -1001,12 +1048,14 @@ function LogoutModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel:
 
 function StoreView({
   currentUser,
+  threads,
   products,
   onCreateProduct,
   onRedeemProduct,
   onBack,
 }: {
   currentUser: User
+  threads: Thread[]
   products: StoreProduct[]
   onCreateProduct: (product: StoreProduct) => void
   onRedeemProduct: (product: StoreProduct) => void
@@ -1016,9 +1065,13 @@ function StoreView({
   const [price, setPrice] = useState("")
   const [description, setDescription] = useState("")
   const [imageUrl, setImageUrl] = useState("")
+  const [productKind, setProductKind] = useState<"personal" | "faccion">("personal")
   const [error, setError] = useState("")
   const ownedProductIds = currentUser.ownedProductIds || []
   const balance = Math.max(0, (currentUser.rolePoints || 0) - (currentUser.redeemedRolePoints || 0))
+  const factionBalance = threads
+    .filter((thread) => thread.category === "facciones" && thread.authorId === currentUser.id && !thread.factionRolePointsClaimed)
+    .reduce((total, thread) => total + (thread.factionRolePoints || 0), 0)
 
   function handleImageChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -1036,11 +1089,12 @@ function StoreView({
       setError("Completa título, descripción y un precio entero mayor a 0.")
       return
     }
-    onCreateProduct({ id: uid(), title: title.trim(), price: numericPrice, description: description.trim(), imageUrl, createdAt: new Date().toISOString() })
+    onCreateProduct({ id: uid(), title: title.trim(), price: numericPrice, description: description.trim(), imageUrl, kind: productKind, createdAt: new Date().toISOString() })
     setTitle("")
     setPrice("")
     setDescription("")
     setImageUrl("")
+    setProductKind("personal")
     setError("")
   }
 
@@ -1051,17 +1105,21 @@ function StoreView({
         <span className="store-kicker">ECLIPSE ORDER // RECOMPENSAS</span>
         <h1>Tienda</h1>
         <p>Canjea tus puntos de rol por recompensas de la comunidad.</p>
-        <div className="store-balance"><span>●</span> SALDO DISPONIBLE <strong>{balance} PDR</strong></div>
+        <div className="store-balances">
+          <div className={`store-balance ${balance === 0 ? "store-balance-empty" : ""}`}><span>●</span> SALDO PERSONAL <strong>{balance} PDR</strong></div>
+          <div className={`store-balance store-balance-faction ${factionBalance === 0 ? "store-balance-empty" : ""}`}><span>◆</span> SALDO FACCIONARIO <strong>{factionBalance} PDR</strong></div>
+        </div>
       </div>
 
       <div className="store-layout">
-        <section className="store-catalog">
-          <div className="store-section-title"><span className="store-catalog-title">Catálogo</span><small>{products.length} PRODUCTOS</small></div>
-          {products.length === 0 ? (
-            <div className="store-empty">Todavía no hay productos disponibles.</div>
+        <div className="store-catalog-departments">
+        <section className="store-catalog store-department store-user-department">
+          <div className="store-section-title"><span className="store-catalog-title">Recompensas personales</span><small>{products.filter((product) => (product.kind || "personal") === "personal").length} PRODUCTOS</small></div>
+          {products.filter((product) => (product.kind || "personal") === "personal").length === 0 ? (
+            <div className="store-empty">Todavía no hay productos personales disponibles.</div>
           ) : (
             <div className="store-products">
-              {products.map((product) => {
+              {products.filter((product) => (product.kind || "personal") === "personal").map((product) => {
                 const owned = ownedProductIds.includes(product.id)
                 const canAfford = balance >= product.price
                 return (
@@ -1084,6 +1142,28 @@ function StoreView({
           )}
         </section>
 
+        <section className="store-catalog store-department faction-store-department">
+          <div className="store-section-title faction-store-section-title"><span>Recompensas para facciones</span><small>{products.filter((product) => product.kind === "faccion").length} PRODUCTOS</small></div>
+          {products.filter((product) => product.kind === "faccion").length === 0 ? (
+            <div className="store-empty faction-store-empty">Todavía no hay productos faccionario disponibles.</div>
+          ) : (
+            <div className="store-products">
+              {products.filter((product) => product.kind === "faccion").map((product) => (
+                <article className="store-product faction-store-product" key={product.id}>
+                  <div className="store-product-image">{product.imageUrl ? <img src={product.imageUrl} alt="" /> : <span>✦</span>}</div>
+                  <div className="store-product-body">
+                    <div className="store-product-price">{product.price} PDR FACCIONARIO</div>
+                    <h2>{product.title}</h2>
+                    <p>{product.description}</p>
+                    <button disabled className="store-redeem">CANJE DESDE EL HILO</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+        </div>
+
         {currentUser.role === "admin" && (
           <section className="store-admin-panel">
             <div className="store-section-title"><span>Nuevo producto</span><small>SOLO ADMIN</small></div>
@@ -1092,6 +1172,7 @@ function StoreView({
               <label style={labelStyle}>Título<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Nombre de la recompensa" style={inputStyle} /></label>
               <label style={labelStyle}>Precio en puntos de rol<input type="number" min="1" step="1" value={price} onChange={(event) => setPrice(event.target.value)} placeholder="100" style={inputStyle} /></label>
               <label style={labelStyle}>Descripción<textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Describe qué recibe el superviviente..." style={{ ...inputStyle, minHeight: 100, resize: "vertical" }} /></label>
+              <label style={labelStyle}>Tipo de recompensa<select value={productKind} onChange={(event) => setProductKind(event.target.value as "personal" | "faccion")} style={inputStyle}><option value="personal">PDR personal</option><option value="faccion">PDR faccionario</option></select></label>
               <label className="store-upload">{imageUrl ? <img src={imageUrl} alt="Vista previa" /> : <span>＋ Añadir imagen</span>}<input type="file" accept="image/*" onChange={handleImageChange} /></label>
               <button type="submit" className="store-create">PUBLICAR EN TIENDA</button>
             </form>
@@ -1150,32 +1231,24 @@ function Header({
           <Logo size="sm" />
         </button>
 
-        <nav style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <button
-            onClick={() => setView("forum")}
-            style={{
-              ...navBtn,
-              color: view === "forum" ? "#f8fafc" : "var(--text-dim)",
-              borderBottom: view === "forum" ? "2px solid #fb923c" : "2px solid transparent",
-              background: view === "forum" ? "rgba(251, 146, 60, 0.08)" : "transparent",
-              padding: "9px 12px",
-            }}
-          >
-            FORO
-          </button>
+        <nav className="header-nav" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div className="header-primary-links">
+            <button
+              className={`header-primary-link ${view === "forum" ? "is-active" : ""}`}
+              onClick={() => setView("forum")}
+              style={{ ...navBtn, color: view === "forum" ? "#f8fafc" : "var(--text-dim)", background: view === "forum" ? "rgba(230, 162, 60, 0.16)" : "transparent", padding: "10px 22px" }}
+            >
+              FORO
+            </button>
 
-          <button
-            onClick={() => setView("store")}
-            style={{
-              ...navBtn,
-              color: view === "store" ? "#f8fafc" : "var(--text-dim)",
-              borderBottom: view === "store" ? "2px solid #f59e0b" : "2px solid transparent",
-              background: view === "store" ? "rgba(245, 158, 11, 0.08)" : "transparent",
-              padding: "9px 12px",
-            }}
-          >
-            TIENDA
-          </button>
+            <button
+              className={`header-primary-link ${view === "store" ? "is-active" : ""}`}
+              onClick={() => setView("store")}
+              style={{ ...navBtn, color: view === "store" ? "#f8fafc" : "var(--text-dim)", background: view === "store" ? "rgba(114, 200, 191, 0.14)" : "transparent", padding: "10px 22px" }}
+            >
+              TIENDA
+            </button>
+          </div>
 
           {isStaff && (
             <button onClick={onOpenAdmin} style={{ ...navBtn, color: view === "admin" ? "#f8fafc" : "var(--text-dim)", borderBottom: view === "admin" ? "2px solid #ef4444" : "2px solid transparent", background: view === "admin" ? "rgba(239, 68, 68, 0.08)" : "transparent", padding: "9px 12px" }}>
@@ -1248,9 +1321,11 @@ function Header({
 
           <button
             onClick={() => setShowLogoutModal(true)}
-            style={{ background: "linear-gradient(135deg, rgba(15,23,42,0.8), rgba(31,41,55,0.8))", border: "1px solid var(--border2)", borderRadius: 12, color: "var(--text-muted)", cursor: "pointer", padding: "8px 12px", fontSize: 10, fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}
+            aria-label="Cerrar sesión"
+            title="Cerrar sesión"
+            style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.34)", borderRadius: 10, color: "#f87171", cursor: "pointer", width: 38, height: 38, padding: 0, fontSize: 22, lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", fontFamily: "sans-serif", boxShadow: "0 0 14px rgba(239,68,68,0.08)" }}
           >
-            SALIR
+            ↪
           </button>
         </nav>
       </header>
@@ -1311,7 +1386,7 @@ function ThreadRow({
             {thread.title}
           </div>
           <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-            <span style={{ color: "var(--text-muted)" }}>{author?.username}</span> · {formatDate(thread.createdAt)}
+            <span style={{ color: "var(--text-muted)" }}>{author?.username}{author && <RoleMark role={author.role} />}</span> · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes
           </div>
         </div>
       </div>
@@ -1452,6 +1527,8 @@ function CategoryView({
   setSelectedThread,
   onSound,
   onSelectCategory,
+  onOpenReportStatus,
+  onOpenFactionSubforum,
 }: {
   category: Category
   threads: Thread[]
@@ -1461,6 +1538,8 @@ function CategoryView({
   setSelectedThread: (id: string) => void
   onSound: (type: "click" | "select" | "success" | "notification") => void
   onSelectCategory: (category: Category) => void
+  onOpenReportStatus: (status: ThreadStatus) => void
+  onOpenFactionSubforum: (subforum: ThreadSubforum) => void
 }) {
   const color = CATEGORY_COLORS[category]
 
@@ -1476,13 +1555,14 @@ function CategoryView({
     })
 
   const tabThreads = sortThreads(threads.filter((t) => t.category === category), category)
-  const factionSubforums: ThreadSubforum[] = ["formato", "no_oficial", "oficial"]
+  const factionSubforums: ThreadSubforum[] = ["no_oficial", "oficial"]
   const factionThreads = tabThreads.filter((t) => t.category === "facciones")
+  const factionFormatThread = factionThreads.find((thread) => thread.id === "t-rules-facciones-formato")
   const visibleThreads = tabThreads
   const reportSections = [
+    { status: "abierto" as ThreadStatus, label: "Activos", description: "Reportes abiertos pendientes de una resolución.", color: "#f59e0b" },
     { status: "cerrado" as ThreadStatus, label: "Aceptados", description: "Todos los reportes aceptados y resueltos.", color: "#60a5fa" },
     { status: "en_revision" as ThreadStatus, label: "Rechazados", description: "Reportes revisados que no requieren más acciones.", color: "#ef4444" },
-    { status: "abierto" as ThreadStatus, label: "Activos", description: "Reportes abiertos pendientes de una resolución.", color: "#f59e0b" },
   ]
   const reportThreads = tabThreads.filter((thread) => thread.id !== "t-rules-reportes")
   const reportRulesThread = tabThreads.find((thread) => thread.id === "t-rules-reportes")
@@ -1545,94 +1625,49 @@ function CategoryView({
       </div>
 
       {category === "facciones" && (
-        <div style={{ display: "grid", gap: 18, marginBottom: 20 }}>
+        <div style={{ display: "grid", gap: 10, marginBottom: 20 }}>
+          {factionFormatThread && (
+            <button
+              onClick={() => {
+                setSelectedThread(factionFormatThread.id)
+                setView("thread")
+                onSound("select")
+              }}
+              style={{ display: "grid", gridTemplateColumns: "30px minmax(0, 1fr) 120px", alignItems: "center", gap: 14, width: "100%", padding: "16px 18px", background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 14, color: "var(--text)", cursor: "pointer", textAlign: "left" }}
+            >
+              <span style={{ color: "#fbbf24", fontSize: 16 }}>📌</span>
+              <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                <strong style={{ fontFamily: "Oswald, sans-serif", fontSize: 18, letterSpacing: "0.06em" }}>{factionFormatThread.title}</strong>
+                <small style={{ color: "var(--text-dim)", fontSize: 12 }}>Formato fijo para presentar una facción. Solo lectura.</small>
+              </span>
+              <span style={{ color: "#fbbf24", fontFamily: "JetBrains Mono, monospace", fontSize: 10, textAlign: "right" }}>FIJADO</span>
+            </button>
+          )}
           {factionSubforums.map((subforum) => {
             const threadsForSubforum = factionThreads.filter((thread) => (thread.subforum || "no_oficial") === subforum)
-            const isReadOnly = subforum === "formato" || subforum === "oficial"
-            const canCreate = subforum === "no_oficial"
-            const canReply = subforum !== "formato" && subforum !== "oficial"
             const pinnedThread = threadsForSubforum.find((thread) => thread.pinned)
 
             return (
-              <div key={subforum} style={{ background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "14px 18px", borderBottom: "1px solid var(--border)", background: "linear-gradient(90deg, rgba(34, 197, 94, 0.12), rgba(15,23,42,0.7))" }}>
-                  <div>
-                    <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 19, letterSpacing: "0.08em", color: "var(--text)" }}>
-                      {FACTION_SUBFORUM_LABELS[subforum]}
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                      {subforum === "formato" && "Formato fijo para presentar la facción. Solo lectura."}
-                      {subforum === "no_oficial" && "Facciones sin aprobación oficial. Los usuarios pueden iniciar hilos aquí."}
-                      {subforum === "oficial" && "Banco de facciones aprobadas. Solo el staff puede mover un hilo desde NO OFICIAL."}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      if (subforum !== "no_oficial") return
-                      onSelectCategory(category)
-                      setView("new_thread")
-                      onSound("success")
-                    }}
-                    disabled={!canCreate}
-                    style={{
-                      background: subforum === "no_oficial" ? "linear-gradient(135deg, rgba(34,197,94,0.2), rgba(20,83,45,0.2))" : "rgba(15,23,42,0.25)",
-                      border: `1px solid ${subforum === "no_oficial" ? "rgba(34,197,94,0.5)" : "var(--border)"}`,
-                      borderRadius: 10,
-                      color: subforum === "no_oficial" ? "#86efac" : "var(--text-dim)",
-                      cursor: subforum === "no_oficial" ? "pointer" : "not-allowed",
-                      padding: "8px 12px",
-                      fontSize: 11,
-                      fontFamily: "Oswald, sans-serif",
-                      letterSpacing: "0.08em",
-                      opacity: canCreate ? 1 : 0.7,
-                    }}
-                  >
-                    {canCreate ? "NUEVO HILO" : "SOLO LECTURA"}
-                  </button>
-                </div>
-
-                <div style={{ padding: 0 }}>
-                  {pinnedThread || (subforum === "formato" && threadsForSubforum.length === 0) ? (
-                    <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", background: "rgba(15,23,42,0.38)" }}>
-                      {pinnedThread ? (
-                        <div onClick={() => { setSelectedThread(pinnedThread.id); setView("thread") }} style={{ cursor: "pointer" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                            <span style={{ color: "#fbbf24", fontSize: 11 }}>📌</span>
-                            <span style={{ fontSize: 12, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em", textTransform: "uppercase" }}>Fijo</span>
-                          </div>
-                          <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 18, color: "var(--text)" }}>{pinnedThread.title}</div>
-                        </div>
-                      ) : (
-                        <div style={{ color: "var(--text-dim)", fontSize: 14 }}>No hay contenido publicado en este subforo todavía.</div>
-                      )}
-                    </div>
-                  ) : null}
-
-                  {threadsForSubforum.length === 0 ? (
-                    <div style={{ padding: "18px", color: "var(--text-dim)", fontSize: 14 }}>
-                      {subforum === "oficial" ? "Todavía no hay facciones oficiales aprobadas." : "No hay hilos en este subforo."}
-                    </div>
-                  ) : (
-                    <div>
-                      {threadsForSubforum.map((thread) => (
-                        <div key={thread.id} onClick={() => { setSelectedThread(thread.id); setView("thread") }} style={{ borderBottom: "1px solid var(--border)", padding: "14px 18px", cursor: "pointer", background: thread.pinned ? "rgba(245,158,11,0.04)" : "transparent" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 18, color: "var(--text)" }}>{thread.title}</div>
-                              <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 5 }}>
-                                por <span style={{ color: "var(--text-muted)" }}>{users.find((u) => u.id === thread.authorId)?.username || "Usuario"}</span> · {formatDate(thread.createdAt)}
-                              </div>
-                            </div>
-                            <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>
-                              {thread.replies.length} RESP.
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
+              <button
+                key={subforum}
+                onClick={() => {
+                  onOpenFactionSubforum(subforum)
+                  onSound("select")
+                }}
+                style={{ display: "grid", gridTemplateColumns: "30px minmax(0, 1fr) 86px 120px", alignItems: "center", gap: 14, width: "100%", padding: "16px 18px", background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", borderRadius: 14, color: "var(--text)", cursor: "pointer", textAlign: "left" }}
+              >
+                <span style={{ color: subforum === "oficial" ? "#60a5fa" : subforum === "no_oficial" ? "#22c55e" : "#fbbf24", fontSize: 18 }}>●</span>
+                <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  <strong style={{ fontFamily: "Oswald, sans-serif", fontSize: 19, letterSpacing: "0.08em" }}>{FACTION_SUBFORUM_LABELS[subforum]}</strong>
+                  <small style={{ color: "var(--text-dim)", fontSize: 12 }}>
+                    {subforum === "formato" && "Formato fijo para presentar la facción. Solo lectura."}
+                    {subforum === "no_oficial" && "Facciones sin aprobación oficial. Los usuarios pueden iniciar hilos aquí."}
+                    {subforum === "oficial" && "Facciones aprobadas. Solo el staff puede mover hilos desde NO OFICIAL."}
+                  </small>
+                </span>
+                <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, textAlign: "center" }}>{threadsForSubforum.length} HILOS</span>
+                <span style={{ color: subforum === "no_oficial" ? "#86efac" : "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", fontSize: 10, textAlign: "right" }}>{subforum === "no_oficial" ? "PUBLICAR" : pinnedThread ? "FIJO" : "SOLO LECTURA"}</span>
+              </button>
             )
           })}
         </div>
@@ -1654,6 +1689,7 @@ function CategoryView({
               <span>Foro</span>
               <span>Temas</span>
               <span>Mensajes</span>
+              <span>Visitas</span>
               <span>Último mensaje</span>
             </div>
             {reportRulesThread && (
@@ -1673,6 +1709,7 @@ function CategoryView({
                 </span>
                 <span>FIJO</span>
                 <span>{reportRulesThread.replies.length}</span>
+                <span>{reportRulesThread.visitorCount || 0}</span>
                 <span className="report-directory-last">
                   <strong>Administración</strong>
                   <small>{formatDate(reportRulesThread.createdAt)}</small>
@@ -1681,56 +1718,47 @@ function CategoryView({
             )}
             {reportSections.map((section) => {
               const sectionThreads = reportThreads.filter((thread) => thread.status === section.status)
+              const latestThread = sectionThreads[0]
+              const latestAuthor = latestThread ? users.find((user) => user.id === latestThread.authorId) : undefined
+              const messageCount = sectionThreads.reduce((total, thread) => total + thread.replies.length, 0)
+              const visitorCount = sectionThreads.reduce((total, thread) => total + (thread.visitorCount || 0), 0)
               return (
-                <div
+                <button
                   key={section.status}
-                  style={{ borderBottom: "1px solid rgba(148, 163, 184, 0.12)" }}
+                  className="report-directory-row"
+                  onClick={() => {
+                    onOpenReportStatus(section.status)
+                    onSound("select")
+                  }}
+                  style={{ "--report-color": section.color } as React.CSSProperties}
                 >
-                  <div style={{ padding: "12px 20px 8px", background: `${section.color}12`, color: section.color, fontFamily: "Oswald, sans-serif", fontSize: 12, letterSpacing: "0.08em" }}>
-                    {section.label.toUpperCase()} <span style={{ color: "var(--text-dim)", fontFamily: "Source Sans 3, sans-serif", letterSpacing: 0 }}>· {section.description}</span>
-                  </div>
-                  {sectionThreads.length === 0 ? (
-                    <div style={{ padding: "16px 20px 18px", color: "var(--text-dim)", fontSize: 13 }}>
-                      No hay reportes en este estado.
-                    </div>
-                  ) : (
-                    sectionThreads.map((thread) => {
-                      const author = users.find((user) => user.id === thread.authorId)
-                      const lastReply = thread.replies[thread.replies.length - 1]
-                      const lastAuthor = lastReply ? users.find((user) => user.id === lastReply.authorId) : author
-                      return (
-                        <button
-                          key={thread.id}
-                          className="report-directory-row"
-                          onClick={() => {
-                            setSelectedThread(thread.id)
-                            setView("thread")
-                            onSound("select")
-                          }}
-                          style={{ "--report-color": section.color } as React.CSSProperties}
-                        >
-                          <span className="report-directory-icon">●</span>
-                          <span className="report-directory-copy">
-                            <strong>{thread.title}</strong>
-                            <small>por {author?.username || "Usuario"} · {formatDate(thread.createdAt)}</small>
-                          </span>
-                          <span>{thread.replies.length}</span>
-                          <span>{STATUS_LABELS[thread.status]}</span>
-                          <span className="report-directory-last">
-                            <strong>{lastAuthor?.username || "Usuario"}</strong>
-                            <small>{lastReply ? formatDate(lastReply.createdAt) : formatDate(thread.createdAt)}</small>
-                          </span>
-                        </button>
-                      )
-                    })
-                  )}
-                </div>
+                  <span className="report-directory-icon">●</span>
+                  <span className="report-directory-copy">
+                    <strong>{section.label}</strong>
+                    <small>{section.description}</small>
+                  </span>
+                  <span>{sectionThreads.length}</span>
+                  <span>{messageCount}</span>
+                  <span>{visitorCount}</span>
+                  <span className="report-directory-last">
+                    {latestThread ? <><strong>{latestAuthor?.username || "Usuario"}</strong><small>{formatDate(latestThread.createdAt)}</small></> : <small>Sin actividad</small>}
+                  </span>
+                </button>
               )
             })}
           </div>
         )}
 
         <div style={{ display: category === "reportes" ? "none" : "flex", flexDirection: "column" }}>
+          {visibleThreads.length > 0 && (
+            <div className="category-thread-head">
+              <span>Foro</span>
+              <span>Respuestas</span>
+              <span>Estado</span>
+              <span>Visitas</span>
+              <span>Último mensaje</span>
+            </div>
+          )}
           {visibleThreads.length === 0 ? (
             <div style={{ padding: "28px 20px", textAlign: "center", color: "var(--text-dim)" }}>
               {category === "reportes"
@@ -1749,7 +1777,7 @@ function CategoryView({
                   onClick={() => { setSelectedThread(thread.id); setView("thread") }}
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "minmax(0, 3.8fr) 0.6fr 0.7fr 1.1fr",
+                    gridTemplateColumns: "minmax(0, 3.5fr) 0.6fr 0.7fr 0.7fr 1.1fr",
                     gap: 16,
                     padding: "14px 18px",
                     borderBottom: "1px solid var(--border)",
@@ -1765,12 +1793,13 @@ function CategoryView({
                         <span style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", letterSpacing: "0.02em" }}>{thread.title}</span>
                       </div>
                       <div style={{ marginTop: 4, fontSize: 11, color: "var(--text-dim)" }}>
-                        por <span style={{ color: "var(--text-muted)" }}>{author?.username}</span> · {formatDate(thread.createdAt)}
+                        por <span style={{ color: "var(--text-muted)" }}>{author?.username}{author && <RoleMark role={author.role} />}</span> · {formatDate(thread.createdAt)}
                       </div>
                     </div>
                   </div>
                   <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", textAlign: "center" }}>{thread.replies.length}</div>
                   <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", textAlign: "center" }}>{category === "reportes" ? (thread.status === "cerrado" ? "0" : "1") : thread.status}</div>
+                  <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", textAlign: "center" }}>{thread.visitorCount || 0}</div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
                     <Avatar letter={lastAuthor?.avatar || author?.avatar || "?"} role={lastAuthor?.role || author?.role || "user"} size={24} imageUrl={lastAuthor?.avatarUrl || author?.avatarUrl} />
                     <div style={{ textAlign: "right", minWidth: 0 }}>
@@ -1784,6 +1813,192 @@ function CategoryView({
           )}
         </div>
       </main>}
+    </div>
+  )
+}
+
+function ReportStatusView({
+  status,
+  threads,
+  users,
+  setView,
+  setSelectedThread,
+  onSound,
+}: {
+  status: ThreadStatus
+  threads: Thread[]
+  users: User[]
+  setView: (view: View) => void
+  setSelectedThread: (id: string) => void
+  onSound: (type: "click" | "select" | "success" | "notification") => void
+}) {
+  const section = {
+    cerrado: { label: "Aceptados", description: "Reportes aceptados y resueltos.", color: "#60a5fa" },
+    en_revision: { label: "Rechazados", description: "Reportes revisados que no requieren más acciones.", color: "#ef4444" },
+    abierto: { label: "Activos", description: "Reportes abiertos pendientes de resolución.", color: "#f59e0b" },
+  }[status]
+  const statusThreads = threads
+    .filter((thread) => thread.category === "reportes" && thread.id !== "t-rules-reportes" && thread.status === status)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+  return (
+    <div style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
+      <button
+        onClick={() => {
+          setView("category")
+          onSound("click")
+        }}
+        style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}
+      >
+        ← Volver a reportes
+      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+        <div style={{ width: 5, height: 26, background: section.color, borderRadius: 999, boxShadow: `0 0 18px ${section.color}` }} />
+        <div>
+          <h2 style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, letterSpacing: "0.08em", color: "var(--text)", margin: 0 }}>{section.label.toUpperCase()}</h2>
+          <div style={{ color: "var(--text-dim)", fontSize: 13 }}>{section.description}</div>
+        </div>
+      </div>
+      <div className="report-directory" style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+        <div className="report-directory-head">
+          <span>Foro</span>
+          <span>Temas</span>
+          <span>Mensajes</span>
+          <span>Visitas</span>
+          <span>Último mensaje</span>
+        </div>
+        {statusThreads.length === 0 ? (
+          <div style={{ padding: "28px 20px", textAlign: "center", color: "var(--text-dim)" }}>No hay reportes en este estado.</div>
+        ) : (
+          statusThreads.map((thread) => {
+            const author = users.find((user) => user.id === thread.authorId)
+            const lastReply = thread.replies[thread.replies.length - 1]
+            const lastAuthor = lastReply ? users.find((user) => user.id === lastReply.authorId) : author
+            return (
+              <button
+                key={thread.id}
+                className="report-directory-row"
+                onClick={() => {
+                  setSelectedThread(thread.id)
+                  setView("thread")
+                  onSound("select")
+                }}
+                style={{ "--report-color": section.color } as React.CSSProperties}
+              >
+                <span className="report-directory-icon">●</span>
+                <span className="report-directory-copy">
+                  <strong>{thread.title}</strong>
+                  <small>por {author?.username || "Usuario"} · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes</small>
+                </span>
+                <span>{thread.replies.length}</span>
+                <span>{STATUS_LABELS[thread.status]}</span>
+                <span>{thread.visitorCount || 0}</span>
+                <span className="report-directory-last">
+                  <strong>{lastAuthor?.username || "Usuario"}</strong>
+                  <small>{lastReply ? formatDate(lastReply.createdAt) : formatDate(thread.createdAt)}</small>
+                </span>
+              </button>
+            )
+          })
+        )}
+      </div>
+    </div>
+  )
+}
+
+function FactionSubforumView({
+  subforum,
+  threads,
+  users,
+  setView,
+  setSelectedThread,
+  onSound,
+}: {
+  subforum: ThreadSubforum
+  threads: Thread[]
+  users: User[]
+  setView: (view: View) => void
+  setSelectedThread: (id: string) => void
+  onSound: (type: "click" | "select" | "success" | "notification") => void
+}) {
+  const descriptions: Record<ThreadSubforum, string> = {
+    formato: "Formato fijo para presentar la facción. Solo lectura.",
+    no_oficial: "Facciones sin aprobación oficial. Los usuarios pueden iniciar hilos aquí.",
+    oficial: "Facciones aprobadas por el staff. Solo lectura.",
+  }
+  const subforumThreads = threads
+    .filter((thread) => thread.category === "facciones" && (thread.subforum || "no_oficial") === subforum)
+    .sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1
+      if (!a.pinned && b.pinned) return 1
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    })
+  const isReadOnly = subforum !== "no_oficial"
+
+  return (
+    <div style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
+      <button
+        onClick={() => {
+          setView("category")
+          onSound("click")
+        }}
+        style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}
+      >
+        ← Volver a facciones
+      </button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 20, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 5, height: 26, background: "#22c55e", borderRadius: 999, boxShadow: "0 0 18px #22c55e" }} />
+          <div>
+            <h2 style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, letterSpacing: "0.08em", color: "var(--text)", margin: 0 }}>{FACTION_SUBFORUM_LABELS[subforum]}</h2>
+            <div style={{ color: "var(--text-dim)", fontSize: 13 }}>{descriptions[subforum]}</div>
+          </div>
+        </div>
+        <button
+          disabled={isReadOnly}
+          onClick={() => {
+            if (isReadOnly) return
+            setView("new_thread")
+            onSound("success")
+          }}
+          style={{ background: isReadOnly ? "rgba(15,23,42,0.25)" : "rgba(34,197,94,0.16)", border: `1px solid ${isReadOnly ? "var(--border)" : "rgba(34,197,94,0.5)"}`, borderRadius: 10, color: isReadOnly ? "var(--text-dim)" : "#86efac", cursor: isReadOnly ? "not-allowed" : "pointer", padding: "9px 13px", fontSize: 11, fontFamily: "Oswald, sans-serif", letterSpacing: "0.08em" }}
+        >
+          {isReadOnly ? "SOLO LECTURA" : "NUEVO HILO"}
+        </button>
+      </div>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+        {subforumThreads.length === 0 ? (
+          <div style={{ padding: "28px 20px", textAlign: "center", color: "var(--text-dim)" }}>
+            {subforum === "oficial" ? "Todavía no hay facciones oficiales aprobadas." : "No hay hilos en este subforo todavía."}
+          </div>
+        ) : (
+          subforumThreads.map((thread) => {
+            const author = users.find((user) => user.id === thread.authorId)
+            const lastReply = thread.replies[thread.replies.length - 1]
+            const lastAuthor = lastReply ? users.find((user) => user.id === lastReply.authorId) : author
+            return (
+              <button
+                key={thread.id}
+                onClick={() => {
+                  setSelectedThread(thread.id)
+                  setView("thread")
+                  onSound("select")
+                }}
+                style={{ display: "grid", gridTemplateColumns: "30px minmax(0, 1fr) 90px 180px", alignItems: "center", gap: 14, width: "100%", padding: "15px 18px", background: thread.pinned ? "rgba(245,158,11,0.05)" : "transparent", border: 0, borderBottom: "1px solid var(--border)", color: "var(--text)", cursor: "pointer", textAlign: "left" }}
+              >
+                <span style={{ color: thread.pinned ? "#fbbf24" : "#22c55e", fontSize: 16 }}>{thread.pinned ? "📌" : "●"}</span>
+                <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+                  <strong style={{ fontFamily: "Oswald, sans-serif", fontSize: 16, letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{thread.title}</strong>
+                  <small style={{ color: "var(--text-dim)", fontSize: 12 }}>por {author?.username || "Usuario"} · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes</small>
+                </span>
+                <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, textAlign: "center" }}>{thread.replies.length} RESP.</span>
+                <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, textAlign: "center" }}>{thread.visitorCount || 0}</span>
+                <span style={{ color: "var(--text-dim)", fontSize: 11, textAlign: "right" }}>Último: {lastAuthor?.username || "Usuario"}</span>
+              </button>
+            )
+          })
+        )}
+      </div>
     </div>
   )
 }
@@ -1835,7 +2050,9 @@ function ForumView({
             {CATEGORIES_ORDER.map((cat) => {
               const isActive = cat === selectedCategory
               const c = CATEGORY_COLORS[cat]
-              const count = threads.filter((t) => t.category === cat).length
+              const categoryThreads = threads.filter((t) => t.category === cat)
+              const topicCount = categoryThreads.length
+              const messageCount = categoryThreads.reduce((total, thread) => total + thread.replies.length, 0)
 
               return (
                 <button
@@ -1867,20 +2084,10 @@ function ForumView({
                       </div>
                     </div>
                   </div>
-                  <span
-                    style={{
-                      minWidth: 26,
-                      padding: "4px 7px",
-                      borderRadius: 999,
-                      textAlign: "center",
-                      fontSize: 10,
-                      fontFamily: "JetBrains Mono, monospace",
-                      background: isActive ? c + "26" : "rgba(148,163,184,0.08)",
-                      color: c,
-                    }}
-                  >
-                    {count}
-                  </span>
+                  <div className="forum-category-stats">
+                    <span><strong>{topicCount}</strong> <small>temas</small></span>
+                    <span><strong>{messageCount}</strong> <small>mensajes</small></span>
+                  </div>
                 </button>
               )
             })}
@@ -2023,7 +2230,7 @@ function ProfileView({
                 >
                   <Avatar letter={user.avatar} role={user.role} size={28} imageUrl={user.avatarUrl} />
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{user.username}</div>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{user.username}<RoleMark role={user.role} /></div>
                     <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace" }}>{roleLabel(user.role)}</div>
                   </div>
                 </button>
@@ -2044,7 +2251,7 @@ function ProfileView({
             <div className="profile-identity" style={{ position: "absolute", left: 24, bottom: -28, display: "flex", alignItems: "center", gap: 16 }}>
               <Avatar letter={profileUser.avatar} role={profileUser.role} size={72} imageUrl={profileUser.avatarUrl} />
               <div>
-                <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 26, letterSpacing: "0.06em", color: "#fff" }}>{profileUser.username}</div>
+                <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 26, letterSpacing: "0.06em", color: "#fff" }}>{profileUser.username}<RoleMark role={profileUser.role} /></div>
                 <div style={{ fontSize: 11, color: "rgba(255,255,255,0.8)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>{roleLabel(profileUser.role)}</div>
               </div>
             </div>
@@ -2200,7 +2407,6 @@ function NewThreadView({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [mentionQuery, setMentionQuery] = useState("")
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([])
-  const [subforum, setSubforum] = useState<ThreadSubforum>("no_oficial")
 
   const mentionList = users.filter((user) =>
     user.id !== currentUser.id &&
@@ -2267,7 +2473,7 @@ function NewThreadView({
       createdAt: new Date().toISOString(),
       replies: [],
       attachments,
-      subforum: category === "facciones" ? subforum : undefined,
+      subforum: category === "facciones" ? "no_oficial" : undefined,
     }
     setIsSubmitting(true)
     setError("")
@@ -2285,40 +2491,6 @@ function NewThreadView({
       <button onClick={goBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 24, display: "flex", alignItems: "center", gap: 6 }}>
         ← Volver al foro
       </button>
-
-      {category === "facciones" && (
-        <div style={{ marginBottom: 18 }}>
-          <label style={labelStyle}>Subforo de facción</label>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {(["no_oficial", "formato", "oficial"] as ThreadSubforum[]).map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => {
-                  if (item === "no_oficial") setSubforum(item)
-                }}
-                disabled={item !== "no_oficial"}
-                style={{
-                  flex: 1,
-                  minWidth: 130,
-                  background: subforum === item ? "rgba(34,197,94,0.14)" : "transparent",
-                  border: `1px solid ${subforum === item ? "rgba(34,197,94,0.5)" : "var(--border2)"}`,
-                  borderRadius: 4,
-                  color: subforum === item ? "#86efac" : "var(--text-muted)",
-                  cursor: item === "no_oficial" ? "pointer" : "not-allowed",
-                  padding: "8px 10px",
-                  fontSize: 11,
-                  fontFamily: "JetBrains Mono, monospace",
-                  letterSpacing: "0.04em",
-                  opacity: item === "no_oficial" ? 1 : 0.55,
-                }}
-              >
-                {FACTION_SUBFORUM_LABELS[item]}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       <h2 style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, fontWeight: 700, letterSpacing: "0.08em", color: "var(--text)", marginBottom: 24 }}>
         {initialCategory ? CATEGORY_THREAD_ACTIONS[initialCategory] : "NUEVO REPORTE"}
@@ -2515,6 +2687,8 @@ function ThreadView({
   onDeleteThread,
   onDeleteReply,
   onMoveFactionThread,
+  onAddFactionRolePoints,
+  onClaimFactionRolePoints,
   goBack,
 }: {
   threadId: string
@@ -2529,6 +2703,8 @@ function ThreadView({
   onDeleteThread: (threadId: string) => void
   onDeleteReply: (threadId: string, replyId: string) => void
   onMoveFactionThread: (threadId: string, targetSubforum: ThreadSubforum) => void
+  onAddFactionRolePoints: (threadId: string, amount: number) => void
+  onClaimFactionRolePoints: (threadId: string) => void
   goBack: () => void
 }) {
   const thread = threads.find((t) => t.id === threadId)
@@ -2544,6 +2720,14 @@ function ThreadView({
   const [editError, setEditError] = useState("")
   const [pointsToAdd, setPointsToAdd] = useState("")
 
+  useEffect(() => {
+    if (!thread) return
+    void supabase.from("thread_views").upsert(
+      { thread_id: thread.id, user_id: currentUser.id },
+      { onConflict: "thread_id,user_id", ignoreDuplicates: true },
+    )
+  }, [currentUser.id, thread?.id])
+
   if (!thread) return null
 
   const author = users.find((u) => u.id === thread.authorId)
@@ -2554,6 +2738,9 @@ function ThreadView({
   const isFactionReadOnly = thread.category === "facciones" && (thread.subforum === "formato" || thread.subforum === "oficial")
   const canReply = !isFactionReadOnly && thread.category !== "normativa" && !thread.adminOnly && (thread.status === "abierto" || thread.status === "en_revision" || isStaff)
   const canMoveFactionThread = currentUser.role === "admin" && thread.category === "facciones" && thread.subforum !== "oficial"
+  const factionRolePoints = thread.factionRolePoints || 0
+  const canManageFactionPoints = currentUser.role === "admin" && thread.category === "facciones"
+  const canClaimFactionPoints = currentUser.id === thread.authorId && factionRolePoints > 0 && !thread.factionRolePointsClaimed
 
   function startEditing() {
     setEditTitle(thread.title)
@@ -2582,6 +2769,13 @@ function ThreadView({
     const amount = Number(pointsToAdd)
     if (!Number.isInteger(amount) || amount < 1 || !author) return
     onAddRolePoints(author.id, amount)
+    setPointsToAdd("")
+  }
+
+  function handleAddFactionRolePoints() {
+    const amount = Number(pointsToAdd)
+    if (!Number.isInteger(amount) || amount < 1) return
+    onAddFactionRolePoints(thread.id, amount)
     setPointsToAdd("")
   }
 
@@ -2716,7 +2910,7 @@ function ThreadView({
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <Avatar letter={author?.avatar || "?"} role={author?.role || "user"} size={28} imageUrl={author?.avatarUrl} />
               <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                <strong style={{ color: "var(--text)" }}>{author?.username}</strong> · {formatDate(thread.createdAt)}
+                <strong style={{ color: "var(--text)" }}>{author?.username}{author && <RoleMark role={author.role} />}</strong> · {formatDate(thread.createdAt)}
               </div>
             </div>
           </div>
@@ -2788,7 +2982,7 @@ function ThreadView({
           )}
         </div>
 
-        {(canEditThread || canAddThreadRolePoints || canDeleteThread) && (
+        {(canEditThread || canAddThreadRolePoints || canDeleteThread || canManageFactionPoints || canClaimFactionPoints) && (
           <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             {canMoveFactionThread && (
               <button
@@ -2828,6 +3022,18 @@ function ThreadView({
                 </button>
               </div>
             )}
+            {canManageFactionPoints && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 11, color: "#72c8bf", fontFamily: "JetBrains Mono, monospace" }}>PDR FACCIONARIO</span>
+                <input type="number" min="1" value={pointsToAdd} onChange={(e) => setPointsToAdd(e.target.value)} placeholder="Cantidad" style={{ ...inputStyle, width: 100, padding: "8px 9px", fontSize: 11 }} />
+                <button onClick={handleAddFactionRolePoints} disabled={!pointsToAdd} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11, background: "linear-gradient(135deg, #4dd8df, #147d8a)", opacity: pointsToAdd ? 1 : 0.5 }}>ASIGNAR AL HILO</button>
+              </div>
+            )}
+            {canClaimFactionPoints && (
+              <button onClick={() => onClaimFactionRolePoints(thread.id)} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11, background: "linear-gradient(135deg, #e6a23c, #a85d1a)" }}>
+                RECLAMAR {factionRolePoints} PDR FACCIONARIO
+              </button>
+            )}
             {canDeleteThread && currentUser.role !== "admin" && (
               <button onClick={() => onDeleteThread(thread.id)} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)", color: "#fca5a5", boxShadow: "none" }}>
                 ELIMINAR PUBLICACIÓN
@@ -2851,6 +3057,12 @@ function ThreadView({
         >
           {isEditing ? "Revisa el contenido en el formulario superior antes de guardar." : renderFormattedText(thread.content)}
         </div>
+        {thread.category === "facciones" && (
+          <div style={{ marginTop: 18, padding: "13px 15px", border: "1px solid rgba(77,216,223,0.3)", borderRadius: 10, background: "linear-gradient(135deg, rgba(77,216,223,0.1), rgba(10,22,35,0.7))", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "0.08em" }}>PUNTOS DE ROL FACCIONARIO · SOLO EN ESTE HILO</span>
+            <strong style={{ color: "#8cecf0", fontFamily: "Oswald, sans-serif", fontSize: 18 }}>{factionRolePoints} PDR {thread.factionRolePointsClaimed ? "· RECLAMADOS" : ""}</strong>
+          </div>
+        )}
 
         {thread.attachments && thread.attachments.length > 0 && (
           <div style={{ marginTop: 18, display: "grid", gap: 12 }}>
@@ -2928,7 +3140,7 @@ function ThreadView({
                     <Avatar letter={replyAuthor?.avatar || "?"} role={replyAuthor?.role || "user"} size={26} imageUrl={replyAuthor?.avatarUrl} />
                     <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
                       <strong style={{ color: reply.isStaff ? "#3498db" : "var(--text)" }}>
-                        {replyAuthor?.username}
+                        {replyAuthor?.username}<RoleMark role={replyAuthor?.role || "user"} />
                       </strong>
                       {reply.isStaff && (
                         <span style={{ marginLeft: 6, fontSize: 10, color: "#3498db", fontFamily: "JetBrains Mono, monospace" }}>
@@ -3137,6 +3349,7 @@ function ThreadView({
 function AdminView({
   threads,
   users,
+  redemptions,
   currentUser,
   onStatusChange,
   onPinToggle,
@@ -3151,6 +3364,7 @@ function AdminView({
 }: {
   threads: Thread[]
   users: User[]
+  redemptions: StoreRedemption[]
   currentUser: User
   onStatusChange: (threadId: string, status: ThreadStatus) => void
   onPinToggle: (threadId: string) => void
@@ -3163,9 +3377,11 @@ function AdminView({
   setView: (v: View) => void
   setSelectedThread: (id: string) => void
 }) {
-  const [tab, setTab] = useState<"threads" | "users">("threads")
+  const [tab, setTab] = useState<"threads" | "users" | "redemptions">("threads")
   const [pointsToAdd, setPointsToAdd] = useState<Record<string, string>>({})
   const [contactMessages, setContactMessages] = useState<Record<string, string>>({})
+  const [userSearch, setUserSearch] = useState("")
+  const filteredUsers = users.filter((user) => user.username.toLowerCase().includes(userSearch.trim().toLowerCase()))
 
   return (
     <div style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
@@ -3184,10 +3400,10 @@ function AdminView({
       </div>
 
       <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: "1px solid #1e2330", paddingBottom: 0 }}>
-        {[{ id: "threads", label: "Gestión de Hilos" }, { id: "users", label: "Gestión de Usuarios" }].map((t) => (
+        {[{ id: "threads", label: "Gestión de Hilos" }, { id: "users", label: "Gestión de Usuarios" }, { id: "redemptions", label: "Canjes" }].map((t) => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id as "threads" | "users")}
+            onClick={() => setTab(t.id as "threads" | "users" | "redemptions")}
             style={{
               background: "none",
               border: "none",
@@ -3283,9 +3499,26 @@ function AdminView({
 
       {tab === "users" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {users.map((user) => (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+            <input
+              value={userSearch}
+              onChange={(event) => setUserSearch(event.target.value)}
+              placeholder="Buscar usuario por nombre..."
+              aria-label="Buscar usuario por nombre"
+              style={{ ...inputStyle, flex: 1, padding: "10px 13px", fontSize: 12 }}
+            />
+            <span style={{ color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", fontSize: 10, whiteSpace: "nowrap" }}>
+              {filteredUsers.length}/{users.length}
+            </span>
+          </div>
+          {filteredUsers.length === 0 ? (
+            <div style={{ padding: "28px 18px", textAlign: "center", color: "var(--text-dim)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+              No se encontraron usuarios con ese nombre.
+            </div>
+          ) : filteredUsers.map((user) => (
             <div
               key={user.id}
+              className="admin-user-row"
               style={{
                 background: "var(--surface)",
                 border: "1px solid #1e2330",
@@ -3308,7 +3541,7 @@ function AdminView({
                   </div>
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div className="admin-user-actions" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", minWidth: 0 }}>
                 <Badge
                   label={roleLabel(user.role)}
                   color={user.role === "admin" ? "#e74c3c" : user.role === "moderator" ? "#3498db" : "var(--text-muted)"}
@@ -3379,13 +3612,33 @@ function AdminView({
                     </button>
                     <button
                       onClick={() => onDeleteUser(user.id)}
-                      style={{ ...primaryBtn, width: "auto", padding: "6px 9px", fontSize: 10, boxShadow: "none", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)", color: "#fca5a5" }}
+                      className="admin-delete-user"
+                      style={{ ...primaryBtn, width: "auto", maxWidth: "100%", padding: "6px 9px", fontSize: 10, boxShadow: "none", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)", color: "#fca5a5", whiteSpace: "normal" }}
                     >
                       ELIMINAR CUENTA
                     </button>
                   </>
                 )}
               </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "redemptions" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {redemptions.length === 0 ? (
+            <div style={{ padding: "30px 18px", textAlign: "center", color: "var(--text-dim)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+              Todavía no hay productos canjeados.
+            </div>
+          ) : [...redemptions].reverse().map((redemption) => (
+            <div key={redemption.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto", alignItems: "center", gap: 18, padding: "15px 18px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: "var(--text)", fontFamily: "Oswald, sans-serif", fontSize: 16, letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{redemption.productTitle}</div>
+                <div style={{ color: "var(--text-dim)", fontSize: 12, marginTop: 3 }}>Canjeado por <strong style={{ color: "var(--highlight)" }}>{redemption.username}</strong></div>
+              </div>
+              <div style={{ color: "#ffe7a3", fontFamily: "JetBrains Mono, monospace", fontSize: 12, whiteSpace: "nowrap" }}>{redemption.price} PDR</div>
+              <div style={{ color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", fontSize: 10, textAlign: "right", whiteSpace: "nowrap" }}>{formatDate(redemption.createdAt)}</div>
             </div>
           ))}
         </div>
@@ -3459,11 +3712,14 @@ export default function App() {
   const [users, setUsers] = useState<User[]>([])
   const [threads, setThreads] = useState<Thread[]>([])
   const [storeProducts, setStoreProducts] = useState<StoreProduct[]>([])
+  const [redemptions, setRedemptions] = useState<StoreRedemption[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [view, setView] = useState<View>("login")
   const [selectedThread, setSelectedThread] = useState<string>("")
   const [selectedProfileId, setSelectedProfileId] = useState<string>("")
   const [selectedCategory, setSelectedCategory] = useState<Category>("reportes")
+  const [selectedReportStatus, setSelectedReportStatus] = useState<ThreadStatus>("abierto")
+  const [selectedFactionSubforum, setSelectedFactionSubforum] = useState<ThreadSubforum>("no_oficial")
   const [authReady, setAuthReady] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const currentUserRef = useRef<User | null>(null)
@@ -3562,6 +3818,7 @@ export default function App() {
 
   useEffect(() => {
     setStoreProducts(readStoreProducts())
+    setRedemptions(readStoreRedemptions())
     let mounted = true
     const restoreSession = async () => {
       try {
@@ -3668,10 +3925,23 @@ export default function App() {
       redeemedRolePoints: (currentUser.redeemedRolePoints || 0) + product.price,
       ownedProductIds: [...(currentUser.ownedProductIds || []), product.id],
     }
-    const nextUsers = readLocalUsers().map((user) => user.id === updatedUser.id ? updatedUser : user)
+    const nextUsers = users.map((user) => user.id === updatedUser.id ? updatedUser : user)
     localStorage.setItem(LOCAL_USERS_STORAGE_KEY, JSON.stringify(nextUsers))
     setUsers(nextUsers)
     setCurrentUser(updatedUser)
+
+    const redemption: StoreRedemption = {
+      id: uid(),
+      userId: updatedUser.id,
+      username: updatedUser.username,
+      productId: product.id,
+      productTitle: product.title,
+      price: product.price,
+      createdAt: new Date().toISOString(),
+    }
+    const nextRedemptions = [...redemptions, redemption]
+    localStorage.setItem(STORE_REDEMPTIONS_STORAGE_KEY, JSON.stringify(nextRedemptions))
+    setRedemptions(nextRedemptions)
   }
 
   function handleToggleSuspend(userId: string) {
@@ -3810,6 +4080,24 @@ export default function App() {
     else await refreshForumState()
   }
 
+  async function handleAddFactionRolePoints(threadId: string, amount: number) {
+    if (currentUser?.role !== "admin" || amount < 1) return
+    const thread = threads.find((item) => item.id === threadId)
+    if (!thread || thread.category !== "facciones") return
+    const { error } = await supabase.from("threads").update({ faction_role_points: (thread.factionRolePoints || 0) + amount }).eq("id", threadId)
+    if (error) console.error("Could not add faction role points", error)
+    else await refreshForumState()
+  }
+
+  async function handleClaimFactionRolePoints(threadId: string) {
+    if (!currentUser) return
+    const thread = threads.find((item) => item.id === threadId)
+    if (!thread || thread.category !== "facciones" || thread.authorId !== currentUser.id || thread.factionRolePointsClaimed || !thread.factionRolePoints) return
+    const { error } = await supabase.from("threads").update({ faction_role_points_claimed: true }).eq("id", threadId).eq("author_id", currentUser.id)
+    if (error) console.error("Could not claim faction role points", error)
+    else await refreshForumState()
+  }
+
   async function handlePinToggle(threadId: string) {
     const thread = threads.find((item) => item.id === threadId)
     if (!thread) return
@@ -3874,6 +4162,17 @@ export default function App() {
     setView("category")
   }
 
+  function handleOpenReportStatus(status: ThreadStatus) {
+    setSelectedReportStatus(status)
+    setView("report_status")
+  }
+
+  function handleOpenFactionSubforum(subforum: ThreadSubforum) {
+    setSelectedFactionSubforum(subforum)
+    setSelectedCategory("facciones")
+    setView("faction_subforum")
+  }
+
   async function handleSaveProfile(userId: string, updates: Partial<User>) {
     const { error } = await supabase.from("profiles").update({
       avatar_url: updates.avatarUrl,
@@ -3919,6 +4218,7 @@ export default function App() {
       {view === "store" && (
         <StoreView
           currentUser={currentUser}
+          threads={threads}
           products={storeProducts}
           onCreateProduct={handleCreateProduct}
           onRedeemProduct={handleRedeemProduct}
@@ -3948,6 +4248,28 @@ export default function App() {
           setSelectedThread={setSelectedThread}
           onSound={playInteractionSound}
           onSelectCategory={handleOpenCategory}
+          onOpenReportStatus={handleOpenReportStatus}
+          onOpenFactionSubforum={handleOpenFactionSubforum}
+        />
+      )}
+      {view === "report_status" && (
+        <ReportStatusView
+          status={selectedReportStatus}
+          threads={threads}
+          users={users}
+          setView={setView}
+          setSelectedThread={setSelectedThread}
+          onSound={playInteractionSound}
+        />
+      )}
+      {view === "faction_subforum" && (
+        <FactionSubforumView
+          subforum={selectedFactionSubforum}
+          threads={threads}
+          users={users}
+          setView={setView}
+          setSelectedThread={setSelectedThread}
+          onSound={playInteractionSound}
         />
       )}
       {view === "thread" && (
@@ -3964,6 +4286,8 @@ export default function App() {
           onDeleteThread={handleDeleteThread}
           onDeleteReply={handleDeleteReply}
           onMoveFactionThread={handleMoveFactionThread}
+          onAddFactionRolePoints={handleAddFactionRolePoints}
+          onClaimFactionRolePoints={handleClaimFactionRolePoints}
           goBack={() => setView("forum")}
         />
       )}
@@ -3990,6 +4314,7 @@ export default function App() {
         <AdminView
           threads={threads}
           users={users}
+          redemptions={redemptions}
           currentUser={currentUser}
           onStatusChange={handleStatusChange}
           onPinToggle={handlePinToggle}

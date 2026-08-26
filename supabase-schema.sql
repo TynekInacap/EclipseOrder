@@ -67,6 +67,10 @@ $$;
 alter table public.threads
   add column if not exists subforum public.thread_subforum;
 
+alter table public.threads
+  add column if not exists faction_role_points integer not null default 0 check (faction_role_points >= 0),
+  add column if not exists faction_role_points_claimed boolean not null default false;
+
 update public.threads
 set subforum = 'no_oficial'
 where category = 'facciones' and subforum is null;
@@ -110,12 +114,20 @@ create table public.notifications (
   created_at timestamptz not null default timezone('utc', now())
 );
 
+create table public.thread_views (
+  thread_id uuid not null references public.threads(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default timezone('utc', now()),
+  primary key (thread_id, user_id)
+);
+
 create index threads_category_created_idx on public.threads(category, created_at desc);
 create index threads_author_idx on public.threads(author_id);
 create index replies_thread_created_idx on public.replies(thread_id, created_at);
 create index notifications_user_created_idx on public.notifications(user_id, created_at desc);
 create index thread_attachments_thread_idx on public.thread_attachments(thread_id);
 create index reply_attachments_reply_idx on public.reply_attachments(reply_id);
+create index thread_views_thread_idx on public.thread_views(thread_id);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -161,6 +173,7 @@ alter table public.thread_attachments enable row level security;
 alter table public.replies enable row level security;
 alter table public.reply_attachments enable row level security;
 alter table public.notifications enable row level security;
+alter table public.thread_views enable row level security;
 
 create policy "Profiles are publicly readable"
 on public.profiles for select
@@ -231,3 +244,11 @@ with check (auth.uid() = user_id);
 create policy "Staff can create notifications"
 on public.notifications for insert
 with check (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'moderator')));
+
+create policy "Authenticated users can read thread views"
+on public.thread_views for select
+using (auth.role() = 'authenticated');
+
+create policy "Users can register their own thread views"
+on public.thread_views for insert
+with check (auth.uid() = user_id);

@@ -1451,6 +1451,7 @@ function Header({
     let mounted = true
 
     async function loadServerStatus() {
+      await supabase.functions.invoke("server-status", { body: {} })
       const { data } = await supabase.from("server_status").select("online, player_count, checked_at").eq("id", "main").maybeSingle()
       if (mounted) setServerStatus((data as ServerStatus | null) || null)
     }

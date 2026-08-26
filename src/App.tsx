@@ -1681,33 +1681,50 @@ function CategoryView({
             )}
             {reportSections.map((section) => {
               const sectionThreads = reportThreads.filter((thread) => thread.status === section.status)
-              const latestThread = sectionThreads[0]
-              const latestAuthor = latestThread ? users.find((user) => user.id === latestThread.authorId) : undefined
-              const messageCount = sectionThreads.reduce((total, thread) => total + thread.replies.length, 0)
               return (
-                <button
+                <div
                   key={section.status}
-                  className="report-directory-row"
-                  onClick={() => {
-                    if (latestThread) {
-                      setSelectedThread(latestThread.id)
-                      setView("thread")
-                    }
-                    onSound("select")
-                  }}
-                  style={{ "--report-color": section.color } as React.CSSProperties}
+                  style={{ borderBottom: "1px solid rgba(148, 163, 184, 0.12)" }}
                 >
-                  <span className="report-directory-icon">●</span>
-                  <span className="report-directory-copy">
-                    <strong>{section.label}</strong>
-                    <small>{section.description}</small>
-                  </span>
-                  <span>{sectionThreads.length}</span>
-                  <span>{messageCount}</span>
-                  <span className="report-directory-last">
-                    {latestThread ? <><strong>{latestAuthor?.username || "Usuario"}</strong><small>{formatDate(latestThread.createdAt)}</small></> : <small>Sin actividad</small>}
-                  </span>
-                </button>
+                  <div style={{ padding: "12px 20px 8px", background: `${section.color}12`, color: section.color, fontFamily: "Oswald, sans-serif", fontSize: 12, letterSpacing: "0.08em" }}>
+                    {section.label.toUpperCase()} <span style={{ color: "var(--text-dim)", fontFamily: "Source Sans 3, sans-serif", letterSpacing: 0 }}>· {section.description}</span>
+                  </div>
+                  {sectionThreads.length === 0 ? (
+                    <div style={{ padding: "16px 20px 18px", color: "var(--text-dim)", fontSize: 13 }}>
+                      No hay reportes en este estado.
+                    </div>
+                  ) : (
+                    sectionThreads.map((thread) => {
+                      const author = users.find((user) => user.id === thread.authorId)
+                      const lastReply = thread.replies[thread.replies.length - 1]
+                      const lastAuthor = lastReply ? users.find((user) => user.id === lastReply.authorId) : author
+                      return (
+                        <button
+                          key={thread.id}
+                          className="report-directory-row"
+                          onClick={() => {
+                            setSelectedThread(thread.id)
+                            setView("thread")
+                            onSound("select")
+                          }}
+                          style={{ "--report-color": section.color } as React.CSSProperties}
+                        >
+                          <span className="report-directory-icon">●</span>
+                          <span className="report-directory-copy">
+                            <strong>{thread.title}</strong>
+                            <small>por {author?.username || "Usuario"} · {formatDate(thread.createdAt)}</small>
+                          </span>
+                          <span>{thread.replies.length}</span>
+                          <span>{STATUS_LABELS[thread.status]}</span>
+                          <span className="report-directory-last">
+                            <strong>{lastAuthor?.username || "Usuario"}</strong>
+                            <small>{lastReply ? formatDate(lastReply.createdAt) : formatDate(thread.createdAt)}</small>
+                          </span>
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
               )
             })}
           </div>

@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react"
+import DOMPurify from "dompurify"
+import { marked } from "marked"
 import { supabase } from "@/lib/supabase"
 import logoImg from "@/imports/bg,f8f8f8-flat,750x,075,f-pad,750x1000,f8f8f8.jpg"
 import siteLogoImg from "@/imports/final123.png"
@@ -69,6 +71,7 @@ interface Reply {
   authorId: string
   content: string
   createdAt: string
+  editedAt?: string
   isStaff?: boolean
   attachments?: Attachment[]
 }
@@ -81,6 +84,7 @@ interface Thread {
   content: string
   status: ThreadStatus
   createdAt: string
+  editedAt?: string
   replies: Reply[]
   pinned?: boolean
   attachments?: Attachment[]
@@ -91,11 +95,15 @@ interface Thread {
   visitorCount?: number
 }
 
-function renderFormattedText(content: string) {
-  return content.split(/(\*\*[^*\n]+?\*\*)/g).map((part, index) => {
-    const isBold = part.startsWith("**") && part.endsWith("**")
-    return isBold ? <strong key={index}>{part.slice(2, -2)}</strong> : part
-  })
+function MarkdownText({ content, inline = false }: { content: string; inline?: boolean }) {
+  const html = DOMPurify.sanitize(marked.parse(content, { async: false, breaks: true, gfm: true }) as string)
+
+  if (inline) {
+    const inlineHtml = DOMPurify.sanitize(marked.parseInline(content, { async: false, breaks: true, gfm: true }) as string)
+    return <span dangerouslySetInnerHTML={{ __html: inlineHtml }} />
+  }
+
+  return <div className="markdown-content" dangerouslySetInnerHTML={{ __html: html }} />
 }
 
 type View =
@@ -110,6 +118,33 @@ type View =
   | "profile"
   | "store"
   | "admin"
+
+type RouteState = {
+  view: View
+  profileId?: string
+  threadId?: string
+}
+
+type NavigationSnapshot = RouteState & {
+  category: Category
+  reportStatus: ThreadStatus
+  factionSubforum: ThreadSubforum
+}
+
+function routeFromLocation(): RouteState {
+  const segments = window.location.pathname.split("/").filter(Boolean).map((segment) => decodeURIComponent(segment))
+
+  if (segments[0] === "perfil" && segments[1]) return { view: "profile", profileId: segments[1] }
+  if (segments[0] === "hilo" && segments[1]) return { view: "thread", threadId: segments[1] }
+
+  return { view: "forum" }
+}
+
+function pathFromState(view: View, profileId: string, threadId: string) {
+  if (view === "profile" && profileId) return `/perfil/${encodeURIComponent(profileId)}`
+  if (view === "thread" && threadId) return `/hilo/${encodeURIComponent(threadId)}`
+  return "/"
+}
 
 type ProfileRow = {
   id: string
@@ -135,6 +170,7 @@ type ThreadRow = {
   pinned: boolean
   admin_only: boolean
   created_at: string
+  edited_at?: string | null
   subforum?: ThreadSubforum
   faction_role_points?: number
   faction_role_points_claimed?: boolean
@@ -147,6 +183,7 @@ type ReplyRow = {
   content: string
   is_staff: boolean
   created_at: string
+  edited_at?: string | null
 }
 
 type AttachmentRow = {
@@ -157,6 +194,28 @@ type AttachmentRow = {
   type: "image" | "video"
   data_url?: string | null
   storage_path?: string | null
+}
+
+const ATTACHMENTS_BUCKET = "forum-attachments"
+
+function attachmentUrl(row: AttachmentRow) {
+  if (row.storage_path) {
+    return supabase.storage.from(ATTACHMENTS_BUCKET).getPublicUrl(row.storage_path).data.publicUrl
+  }
+  return row.data_url || ""
+}
+
+async function uploadAttachment(attachment: Attachment, folder: string) {
+  const response = await fetch(attachment.dataUrl)
+  const blob = await response.blob()
+  const extension = attachment.name.split(".").pop()?.toLowerCase() || (attachment.type === "video" ? "mp4" : "jpg")
+  const path = `${folder}/${crypto.randomUUID()}.${extension}`
+  const { error } = await supabase.storage.from(ATTACHMENTS_BUCKET).upload(path, blob, {
+    contentType: blob.type || (attachment.type === "video" ? "video/mp4" : "image/jpeg"),
+    upsert: false,
+  })
+  if (error) throw new Error(`No se pudo subir ${attachment.name}: ${error.message}`)
+  return { name: attachment.name, type: attachment.type, storage_path: path }
 }
 
 function mapProfile(row: ProfileRow): User {
@@ -182,6 +241,7 @@ function mapReply(row: ReplyRow): Reply {
     authorId: row.author_id,
     content: row.content,
     createdAt: row.created_at,
+    editedAt: row.edited_at || undefined,
     isStaff: row.is_staff,
   }
 }
@@ -229,14 +289,15 @@ async function loadSupabaseForum() {
       factionRolePointsClaimed: thread.faction_role_points_claimed || false,
       visitorCount: threadViews.filter((view) => view.thread_id === thread.id).length,
       createdAt: thread.created_at,
+      editedAt: thread.edited_at || undefined,
       attachments: threadAttachments
         .filter((attachment) => attachment.thread_id === thread.id)
-        .map((attachment) => ({ name: attachment.name, type: attachment.type, dataUrl: attachment.data_url || "" })),
+        .map((attachment) => ({ name: attachment.name, type: attachment.type, dataUrl: attachmentUrl(attachment) })),
       replies: (replyRows || []).filter((reply) => (reply as ReplyRow).thread_id === thread.id).map((reply) => {
         const mappedReply = mapReply(reply as ReplyRow)
         mappedReply.attachments = replyAttachments
           .filter((attachment) => attachment.reply_id === mappedReply.id)
-          .map((attachment) => ({ name: attachment.name, type: attachment.type, dataUrl: attachment.data_url || "" }))
+          .map((attachment) => ({ name: attachment.name, type: attachment.type, dataUrl: attachmentUrl(attachment) }))
         return mappedReply
       }),
     }
@@ -600,6 +661,33 @@ function LoadingScreen() {
           50% { opacity: 1; }
         }
       `}</style>
+    </div>
+  )
+}
+
+function PostingOverlay() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1000,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexDirection: "column",
+        gap: 14,
+        background: "rgba(4, 9, 15, 0.82)",
+        backdropFilter: "blur(5px)",
+      }}
+    >
+      <div style={{ width: 42, height: 42, border: "3px solid rgba(148, 163, 184, 0.22)", borderTop: "3px solid #f97316", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+      <div style={{ color: "var(--text)", fontSize: 13, fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>
+        PUBLICANDO...
+      </div>
+      <div style={{ color: "var(--text-dim)", fontSize: 11 }}>Subiendo contenido y archivos</div>
     </div>
   )
 }
@@ -1383,7 +1471,7 @@ function ThreadRow({
             <Badge label={STATUS_LABELS[thread.status]} color={STATUS_COLORS[thread.status]} />
           </div>
           <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 500, fontSize: 15, color: "var(--text)", letterSpacing: "0.02em", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {thread.title}
+            <MarkdownText content={thread.title} inline />
           </div>
           <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
             <span style={{ color: "var(--text-muted)" }}>{author?.username}{author && <RoleMark role={author.role} />}</span> · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes
@@ -1790,7 +1878,7 @@ function CategoryView({
                     <div style={{ minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         {thread.pinned && <span style={{ color: "#fbbf24", fontSize: 10 }}>📌</span>}
-                        <span style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", letterSpacing: "0.02em" }}>{thread.title}</span>
+                        <span style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", letterSpacing: "0.02em" }}><MarkdownText content={thread.title} inline /></span>
                       </div>
                       <div style={{ marginTop: 4, fontSize: 11, color: "var(--text-dim)" }}>
                         por <span style={{ color: "var(--text-muted)" }}>{author?.username}{author && <RoleMark role={author.role} />}</span> · {formatDate(thread.createdAt)}
@@ -1887,7 +1975,7 @@ function ReportStatusView({
               >
                 <span className="report-directory-icon">●</span>
                 <span className="report-directory-copy">
-                  <strong>{thread.title}</strong>
+                  <strong><MarkdownText content={thread.title} inline /></strong>
                   <small>por {author?.username || "Usuario"} · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes</small>
                 </span>
                 <span>{thread.replies.length}</span>
@@ -1994,7 +2082,7 @@ function FactionSubforumView({
               >
                 <span style={{ color: thread.pinned ? "#fbbf24" : "#22c55e", fontSize: 16 }}>{thread.pinned ? "📌" : "●"}</span>
                 <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-                  <strong style={{ fontFamily: "Oswald, sans-serif", fontSize: 16, letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{thread.title}</strong>
+                  <strong style={{ fontFamily: "Oswald, sans-serif", fontSize: 16, letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><MarkdownText content={thread.title} inline /></strong>
                   <small style={{ color: "var(--text-dim)", fontSize: 12 }}>por {author?.username || "Usuario"} · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes</small>
                 </span>
                 <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, textAlign: "center" }}>{thread.replies.length} RESP.</span>
@@ -2130,6 +2218,7 @@ function ProfileView({
   const [avatarUrl, setAvatarUrl] = useState(selectedUser.avatarUrl || "")
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [profileSaveMessage, setProfileSaveMessage] = useState("")
+  const [copyMessage, setCopyMessage] = useState("")
 
   useEffect(() => {
     setBio(selectedUser.bio || "")
@@ -2156,6 +2245,16 @@ function ProfileView({
   const rolePoints = selectedUser.rolePoints || 0
   const redeemedRolePoints = selectedUser.redeemedRolePoints || 0
   const canSeeRolePointDetails = isOwnProfile || currentUser.role === "admin"
+
+  async function handleCopyProfileLink() {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      setCopyMessage("Enlace copiado")
+    } catch {
+      setCopyMessage("Copia la URL del navegador")
+    }
+    window.setTimeout(() => setCopyMessage(""), 2200)
+  }
 
   function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -2197,7 +2296,13 @@ function ProfileView({
           <h1>Perfil</h1>
           <p>Configura la identidad con la que te reconocerá la comunidad.</p>
         </div>
-        <div className="profile-page-mark">EO / {roleLabel(selectedUser.role)}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button onClick={handleCopyProfileLink} style={{ ...primaryBtn, width: "auto", padding: "9px 13px", fontSize: 11 }}>
+            Copiar enlace
+          </button>
+          {copyMessage && <span style={{ color: "var(--accent)", fontSize: 11 }}>{copyMessage}</span>}
+          <div className="profile-page-mark">EO / {roleLabel(selectedUser.role)}</div>
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "300px minmax(0, 1fr)", gap: 18 }}>
@@ -2487,6 +2592,8 @@ function NewThreadView({
   }
 
   return (
+    <>
+    {isSubmitting && <PostingOverlay />}
     <div style={{ maxWidth: 720, margin: "0 auto", padding: "32px 20px" }}>
       <button onClick={goBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 24, display: "flex", alignItems: "center", gap: 6 }}>
         ← Volver al foro
@@ -2669,6 +2776,7 @@ function NewThreadView({
         </div>
       </form>
     </div>
+    </>
   )
 }
 
@@ -2681,6 +2789,7 @@ function ThreadView({
   currentUser,
   onReply,
   onEditThread,
+  onEditReply,
   onAddRolePoints,
   onStatusChange,
   onPinToggle,
@@ -2695,8 +2804,9 @@ function ThreadView({
   threads: Thread[]
   users: User[]
   currentUser: User
-  onReply: (threadId: string, content: string, attachments: Attachment[], mentionedUserIds?: string[]) => void
+  onReply: (threadId: string, content: string, attachments: Attachment[], mentionedUserIds?: string[]) => Promise<void> | void
   onEditThread: (threadId: string, title: string, content: string) => void
+  onEditReply: (threadId: string, replyId: string, content: string) => Promise<void> | void
   onAddRolePoints: (userId: string, amount: number) => void
   onStatusChange: (threadId: string, status: ThreadStatus) => void
   onPinToggle: (threadId: string) => void
@@ -2719,6 +2829,10 @@ function ThreadView({
   const [editContent, setEditContent] = useState("")
   const [editError, setEditError] = useState("")
   const [pointsToAdd, setPointsToAdd] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [editingReplyId, setEditingReplyId] = useState<string | null>(null)
+  const [editReplyContent, setEditReplyContent] = useState("")
+  const [isSavingReply, setIsSavingReply] = useState(false)
 
   useEffect(() => {
     if (!thread) return
@@ -2779,6 +2893,24 @@ function ThreadView({
     setPointsToAdd("")
   }
 
+  function startEditingReply(reply: Reply) {
+    setEditingReplyId(reply.id)
+    setEditReplyContent(reply.content)
+  }
+
+  async function handleEditReplySubmit(e: React.FormEvent, replyId: string) {
+    e.preventDefault()
+    if (isSavingReply || editReplyContent.trim().length < 5) return
+    setIsSavingReply(true)
+    try {
+      await onEditReply(thread.id, replyId, editReplyContent.trim())
+      setEditingReplyId(null)
+      setEditReplyContent("")
+    } finally {
+      setIsSavingReply(false)
+    }
+  }
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || [])
     files.forEach((file) => {
@@ -2805,8 +2937,9 @@ function ThreadView({
     )
   }
 
-  function handleReply(e: React.FormEvent) {
+  async function handleReply(e: React.FormEvent) {
     e.preventDefault()
+    if (isSubmitting) return
     if (thread.category === "normativa") {
       setError("No se pueden añadir respuestas en la sección de Normativa.")
       return
@@ -2833,12 +2966,19 @@ function ThreadView({
       .join(" ")
 
     const finalContent = [replyContent.trim(), mentionText].filter(Boolean).join("\n\n")
-    onReply(thread!.id, finalContent, attachments, mentionedUserIds)
-    setReplyContent("")
-    setAttachments([])
-    setMentionedUserIds([])
-    setMentionQuery("")
-    setError("")
+    setIsSubmitting(true)
+    try {
+      await onReply(thread!.id, finalContent, attachments, mentionedUserIds)
+      setReplyContent("")
+      setAttachments([])
+      setMentionedUserIds([])
+      setMentionQuery("")
+      setError("")
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "No se pudo publicar la respuesta.")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const statuses: ThreadStatus[] = ["abierto", "en_revision", "cerrado"]
@@ -2849,6 +2989,7 @@ function ThreadView({
 
   return (
     <>
+    {isSubmitting && <PostingOverlay />}
     {lightbox && (
       <div
         onClick={() => setLightbox(null)}
@@ -2864,8 +3005,8 @@ function ThreadView({
       </div>
     )}
     <div style={{ maxWidth: 820, margin: "0 auto", padding: "32px 20px" }}>
-      <button onClick={goBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
-        ← Volver al foro
+      <button onClick={goBack} className="store-back">
+        ← VOLVER
       </button>
 
       {/* Thread header */}
@@ -2904,13 +3045,14 @@ function ThreadView({
               </form>
             ) : (
               <h1 style={{ fontFamily: "Oswald, sans-serif", fontSize: 22, fontWeight: 600, letterSpacing: "0.04em", color: "var(--text)", margin: "0 0 12px" }}>
-                {thread.title}
+                <MarkdownText content={thread.title} inline />
               </h1>
             )}
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <Avatar letter={author?.avatar || "?"} role={author?.role || "user"} size={28} imageUrl={author?.avatarUrl} />
               <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
                 <strong style={{ color: "var(--text)" }}>{author?.username}{author && <RoleMark role={author.role} />}</strong> · {formatDate(thread.createdAt)}
+                {thread.editedAt && <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}> · EDITADO</span>}
               </div>
             </div>
           </div>
@@ -3055,7 +3197,7 @@ function ThreadView({
             wordBreak: "break-word",
           }}
         >
-          {isEditing ? "Revisa el contenido en el formulario superior antes de guardar." : renderFormattedText(thread.content)}
+          {isEditing ? "Revisa el contenido en el formulario superior antes de guardar." : <MarkdownText content={thread.content} />}
         </div>
         {thread.category === "facciones" && (
           <div style={{ marginTop: 18, padding: "13px 15px", border: "1px solid rgba(77,216,223,0.3)", borderRadius: 10, background: "linear-gradient(135deg, rgba(77,216,223,0.1), rgba(10,22,35,0.7))", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
@@ -3148,17 +3290,35 @@ function ThreadView({
                         </span>
                       )}
                       {" "}· {formatDate(reply.createdAt)}
+                      {reply.editedAt && <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}> · EDITADO</span>}
                     </div>
                     </div>
                     {reply.authorId === currentUser.id && (
-                      <button onClick={() => onDeleteReply(thread.id, reply.id)} style={{ background: "transparent", border: "1px solid rgba(239,68,68,0.32)", borderRadius: 6, color: "#fca5a5", cursor: "pointer", padding: "5px 8px", fontSize: 9, fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.06em", flexShrink: 0 }}>
-                        ELIMINAR
-                      </button>
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                        <button onClick={() => startEditingReply(reply)} style={{ ...primaryBtn, width: "auto", background: "transparent", border: "1px solid var(--border2)", color: "var(--text-muted)", boxShadow: "none", padding: "5px 8px", fontSize: 9 }}>
+                          EDITAR
+                        </button>
+                        <button onClick={() => onDeleteReply(thread.id, reply.id)} style={{ background: "transparent", border: "1px solid rgba(239,68,68,0.32)", borderRadius: 6, color: "#fca5a5", cursor: "pointer", padding: "5px 8px", fontSize: 9, fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.06em" }}>
+                          ELIMINAR
+                        </button>
+                      </div>
                     )}
                   </div>
-                  {reply.content && (
+                  {editingReplyId === reply.id ? (
+                    <form onSubmit={(event) => void handleEditReplySubmit(event, reply.id)} style={{ display: "grid", gap: 8 }}>
+                      <textarea value={editReplyContent} onChange={(event) => setEditReplyContent(event.target.value)} style={{ ...inputStyle, minHeight: 100, resize: "vertical" } as React.CSSProperties} />
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button type="submit" disabled={isSavingReply || editReplyContent.trim().length < 5} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 10, opacity: isSavingReply ? 0.65 : 1 }}>
+                          {isSavingReply ? "GUARDANDO..." : "GUARDAR"}
+                        </button>
+                        <button type="button" onClick={() => setEditingReplyId(null)} disabled={isSavingReply} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 10, background: "transparent", border: "1px solid var(--border2)", color: "var(--text-muted)", boxShadow: "none" }}>
+                          CANCELAR
+                        </button>
+                      </div>
+                    </form>
+                  ) : reply.content && (
                     <div style={{ color: "var(--text-muted)", lineHeight: 1.7, fontSize: 14, whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
-                      {renderFormattedText(reply.content)}
+                      <MarkdownText content={reply.content} />
                     </div>
                   )}
                   {reply.attachments && reply.attachments.length > 0 && (
@@ -3294,8 +3454,8 @@ function ThreadView({
             )}
 
             <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <button type="submit" style={{ ...primaryBtn, width: "auto", display: "inline-block" }}>
-                RESPONDER
+              <button type="submit" disabled={isSubmitting} style={{ ...primaryBtn, width: "auto", display: "inline-block", opacity: isSubmitting ? 0.65 : 1, cursor: isSubmitting ? "wait" : "pointer" }}>
+                {isSubmitting ? "PUBLICANDO..." : "RESPONDER"}
               </button>
               <label
                 style={{
@@ -3451,7 +3611,7 @@ function AdminView({
                     onClick={() => { setSelectedThread(thread.id); setView("thread") }}
                     style={{ fontFamily: "Oswald, sans-serif", fontWeight: 500, fontSize: 15, color: "var(--text)", cursor: "pointer", marginBottom: 4 }}
                   >
-                    {thread.title}
+                    <MarkdownText content={thread.title} inline />
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
                     {author?.username} · {formatDate(thread.createdAt)} · {thread.replies.length} respuestas
@@ -3709,14 +3869,15 @@ const navBtn: React.CSSProperties = {
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  const initialRouteRef = useRef<RouteState>(routeFromLocation())
   const [users, setUsers] = useState<User[]>([])
   const [threads, setThreads] = useState<Thread[]>([])
   const [storeProducts, setStoreProducts] = useState<StoreProduct[]>([])
   const [redemptions, setRedemptions] = useState<StoreRedemption[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
-  const [view, setView] = useState<View>("login")
-  const [selectedThread, setSelectedThread] = useState<string>("")
-  const [selectedProfileId, setSelectedProfileId] = useState<string>("")
+  const [view, setView] = useState<View>(initialRouteRef.current.view === "forum" ? "login" : initialRouteRef.current.view)
+  const [selectedThread, setSelectedThread] = useState<string>(initialRouteRef.current.threadId || "")
+  const [selectedProfileId, setSelectedProfileId] = useState<string>(initialRouteRef.current.profileId || "")
   const [selectedCategory, setSelectedCategory] = useState<Category>("reportes")
   const [selectedReportStatus, setSelectedReportStatus] = useState<ThreadStatus>("abierto")
   const [selectedFactionSubforum, setSelectedFactionSubforum] = useState<ThreadSubforum>("no_oficial")
@@ -3724,6 +3885,48 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false)
   const currentUserRef = useRef<User | null>(null)
   const notificationCountRef = useRef<{ userId: string; count: number } | null>(null)
+  const navigationHistoryRef = useRef<NavigationSnapshot[]>([])
+  const lastNavigationRef = useRef<NavigationSnapshot | null>(null)
+  const restoringNavigationRef = useRef(false)
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const route = routeFromLocation()
+      setView(route.view)
+      setSelectedThread(route.threadId || "")
+      setSelectedProfileId(route.profileId || "")
+    }
+
+    window.addEventListener("popstate", handlePopState)
+    return () => window.removeEventListener("popstate", handlePopState)
+  }, [])
+
+  useEffect(() => {
+    const nextPath = pathFromState(view, selectedProfileId, selectedThread)
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, "", nextPath)
+    }
+  }, [view, selectedProfileId, selectedThread])
+
+  useEffect(() => {
+    if (!authReady) return
+
+    const currentNavigation: NavigationSnapshot = {
+      view,
+      profileId: selectedProfileId || undefined,
+      threadId: selectedThread || undefined,
+      category: selectedCategory,
+      reportStatus: selectedReportStatus,
+      factionSubforum: selectedFactionSubforum,
+    }
+    const previousNavigation = lastNavigationRef.current
+    if (restoringNavigationRef.current) {
+      restoringNavigationRef.current = false
+    } else if (previousNavigation && previousNavigation.view !== currentNavigation.view) {
+      navigationHistoryRef.current.push(previousNavigation)
+    }
+    lastNavigationRef.current = currentNavigation
+  }, [authReady, view, selectedProfileId, selectedThread, selectedCategory, selectedReportStatus, selectedFactionSubforum])
 
   const playInteractionSound = useCallback((type: "click" | "select" | "success" | "notification") => {
     const AudioCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
@@ -3803,8 +4006,17 @@ export default function App() {
       setUsers(forum.users)
       setThreads(forum.threads)
       setCurrentUser(profile)
-      setSelectedProfileId(profile.id)
-      setView("forum")
+      const initialRoute = initialRouteRef.current
+      if (!currentUserRef.current && initialRoute.view === "profile" && initialRoute.profileId) {
+        setSelectedProfileId(initialRoute.profileId)
+        setView("profile")
+      } else if (!currentUserRef.current && initialRoute.view === "thread" && initialRoute.threadId) {
+        setSelectedThread(initialRoute.threadId)
+        setView("thread")
+      } else if (!currentUserRef.current) {
+        setSelectedProfileId(profile.id)
+        setView("forum")
+      }
     } finally {
       setIsLoading(false)
     }
@@ -4016,12 +4228,15 @@ export default function App() {
       throw new Error(error?.message || "No se pudo crear el hilo.")
     }
     if (thread.attachments && thread.attachments.length > 0) {
+      const uploadedAttachments = await Promise.all(
+        thread.attachments.map((attachment) => uploadAttachment(attachment, `threads/${createdThread.id}`))
+      )
       const { error: attachmentsError } = await supabase.from("thread_attachments").insert(
-        thread.attachments.map((attachment) => ({
+        uploadedAttachments.map((attachment) => ({
           thread_id: createdThread.id,
           name: attachment.name,
           type: attachment.type,
-          data_url: attachment.dataUrl,
+          storage_path: attachment.storage_path,
         }))
       )
       if (attachmentsError) throw new Error(attachmentsError.message)
@@ -4032,9 +4247,21 @@ export default function App() {
 
   async function handleEditThread(threadId: string, title: string, content: string) {
     if (!currentUser) return
-    const { error } = await supabase.from("threads").update({ title, content }).eq("id", threadId).eq("author_id", currentUser.id)
+    const { error } = await supabase.from("threads").update({ title, content, edited_at: new Date().toISOString() }).eq("id", threadId).eq("author_id", currentUser.id)
     if (error) console.error("Could not edit thread", error)
     else await refreshForumState()
+  }
+
+  async function handleEditReply(threadId: string, replyId: string, content: string) {
+    if (!currentUser || content.trim().length < 5) return
+    const { error } = await supabase
+      .from("replies")
+      .update({ content: content.trim(), edited_at: new Date().toISOString() })
+      .eq("id", replyId)
+      .eq("thread_id", threadId)
+      .eq("author_id", currentUser.id)
+    if (error) throw new Error(error.message)
+    await refreshForumState()
   }
 
   async function handleReply(threadId: string, content: string, _attachments: Attachment[], _mentionedUserIds: string[] = []) {
@@ -4053,12 +4280,15 @@ export default function App() {
       return
     }
     if (_attachments.length > 0) {
+      const uploadedAttachments = await Promise.all(
+        _attachments.map((attachment) => uploadAttachment(attachment, `replies/${createdReply.id}`))
+      )
       const { error: attachmentsError } = await supabase.from("reply_attachments").insert(
-        _attachments.map((attachment) => ({
+        uploadedAttachments.map((attachment) => ({
           reply_id: createdReply.id,
           name: attachment.name,
           type: attachment.type,
-          data_url: attachment.dataUrl,
+          storage_path: attachment.storage_path,
         }))
       )
       if (attachmentsError) console.error("Could not save reply attachments", attachmentsError)
@@ -4196,6 +4426,22 @@ export default function App() {
     else await hydrateSession(currentUser.id)
   }
 
+  function handleGoBack() {
+    const previousNavigation = navigationHistoryRef.current.pop()
+    if (!previousNavigation) {
+      setView("forum")
+      return
+    }
+
+    restoringNavigationRef.current = true
+    setSelectedProfileId(previousNavigation.profileId || "")
+    setSelectedThread(previousNavigation.threadId || "")
+    setSelectedCategory(previousNavigation.category)
+    setSelectedReportStatus(previousNavigation.reportStatus)
+    setSelectedFactionSubforum(previousNavigation.factionSubforum)
+    setView(previousNavigation.view)
+  }
+
   if (isLoading) {
     return <LoadingScreen />
   }
@@ -4228,7 +4474,7 @@ export default function App() {
           products={storeProducts}
           onCreateProduct={handleCreateProduct}
           onRedeemProduct={handleRedeemProduct}
-          onBack={() => setView("forum")}
+          onBack={handleGoBack}
         />
       )}
       {view === "forum" && (
@@ -4286,6 +4532,7 @@ export default function App() {
           currentUser={currentUser}
           onReply={handleReply}
           onEditThread={handleEditThread}
+          onEditReply={handleEditReply}
           onAddRolePoints={handleAddRolePoints}
           onStatusChange={handleStatusChange}
           onPinToggle={handlePinToggle}
@@ -4294,7 +4541,7 @@ export default function App() {
           onMoveFactionThread={handleMoveFactionThread}
           onAddFactionRolePoints={handleAddFactionRolePoints}
           onClaimFactionRolePoints={handleClaimFactionRolePoints}
-          goBack={() => setView("forum")}
+          goBack={handleGoBack}
         />
       )}
       {view === "new_thread" && (
@@ -4302,7 +4549,7 @@ export default function App() {
           currentUser={currentUser}
           users={users}
           onSubmit={handleNewThread}
-          goBack={() => setView("forum")}
+          goBack={handleGoBack}
           initialCategory={selectedCategory}
         />
       )}
@@ -4312,7 +4559,7 @@ export default function App() {
           users={users}
           selectedUserId={selectedProfileId || currentUser.id}
           onSaveProfile={handleSaveProfile}
-          onBack={() => setView("forum")}
+          onBack={handleGoBack}
           onSelectUser={(userId) => setSelectedProfileId(userId)}
         />
       )}

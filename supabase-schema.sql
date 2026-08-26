@@ -8,6 +8,10 @@ create type public.thread_status as enum ('abierto', 'cerrado', 'en_revision');
 create type public.thread_subforum as enum ('formato', 'no_oficial', 'oficial');
 create type public.attachment_type as enum ('image', 'video');
 
+insert into storage.buckets (id, name, public)
+values ('forum-attachments', 'forum-attachments', true)
+on conflict (id) do update set public = true;
+
 create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   username text not null unique check (char_length(trim(username)) >= 3),
@@ -49,8 +53,12 @@ create table public.threads (
   pinned boolean not null default false,
   admin_only boolean not null default false,
   created_at timestamptz not null default timezone('utc', now()),
+  edited_at timestamptz,
   updated_at timestamptz not null default timezone('utc', now())
 );
+
+alter table public.threads
+  add column if not exists edited_at timestamptz;
 
 -- Migration for existing installations: add faction subforums after the base table exists.
 do $$
@@ -92,8 +100,12 @@ create table public.replies (
   author_id uuid not null references public.profiles(id) on delete cascade,
   content text not null default '',
   is_staff boolean not null default false,
-  created_at timestamptz not null default timezone('utc', now())
+  created_at timestamptz not null default timezone('utc', now()),
+  edited_at timestamptz
 );
+
+alter table public.replies
+  add column if not exists edited_at timestamptz;
 
 create table public.reply_attachments (
   id uuid primary key default gen_random_uuid(),
@@ -174,6 +186,15 @@ alter table public.replies enable row level security;
 alter table public.reply_attachments enable row level security;
 alter table public.notifications enable row level security;
 alter table public.thread_views enable row level security;
+
+create policy "Forum attachments are publicly readable"
+on storage.objects for select
+using (bucket_id = 'forum-attachments');
+
+create policy "Authenticated users can upload forum attachments"
+on storage.objects for insert
+to authenticated
+with check (bucket_id = 'forum-attachments');
 
 create policy "Profiles are publicly readable"
 on public.profiles for select

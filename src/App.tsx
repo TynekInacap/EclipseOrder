@@ -375,8 +375,8 @@ async function loadSupabaseForum() {
     supabase.from("notifications").select("id, user_id, text, read, created_at").order("created_at", { ascending: false }),
     supabase.from("threads").select("id, title, category, author_id, content, status, pinned, admin_only, created_at, edited_at, subforum, faction_role_points, faction_role_points_claimed").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("replies").select("id, thread_id, author_id, content, is_staff, created_at, edited_at").order("created_at", { ascending: true }),
-    supabase.from("thread_attachments").select("id, thread_id, name, type, data_url, storage_path"),
-    supabase.from("reply_attachments").select("id, reply_id, name, type, data_url, storage_path"),
+    supabase.from("thread_attachments").select("id, thread_id, name, type, storage_path"),
+    supabase.from("reply_attachments").select("id, reply_id, name, type, storage_path"),
     supabase.from("thread_views").select("thread_id"),
   ])
 

@@ -131,6 +131,14 @@ function MarkdownToolbar({
     })
   }
 
+  function AlignmentIcon({ mode }: { mode: "left" | "center" | "right" }) {
+    return (
+      <span className={`markdown-align-icon markdown-align-icon-${mode}`} aria-hidden="true">
+        <i /><i /><i /><i />
+      </span>
+    )
+  }
+
   const tools = [
     { label: "H1", title: "Encabezado", action: () => insertMarkdown("# ", "", "Título") },
     { label: "B", title: "Negrita", action: () => insertMarkdown("**", "**") },
@@ -141,9 +149,9 @@ function MarkdownToolbar({
     { label: "•", title: "Lista", action: () => insertMarkdown("- ", "", "Elemento") },
     { label: "1.", title: "Lista numerada", action: () => insertMarkdown("1. ", "", "Elemento") },
     { label: "🔗", title: "Enlace", action: () => insertMarkdown("[", "](https://)", "texto del enlace") },
-    { label: "L", title: "Alinear a la izquierda", action: () => insertMarkdown("::: left\n", "\n:::", "Texto alineado a la izquierda") },
-    { label: "C", title: "Centrar", action: () => insertMarkdown("::: center\n", "\n:::", "Texto centrado") },
-    { label: "R", title: "Alinear a la derecha", action: () => insertMarkdown("::: right\n", "\n:::", "Texto alineado a la derecha") },
+    { label: <AlignmentIcon mode="left" />, title: "Alinear a la izquierda", action: () => insertMarkdown("::: left\n", "\n:::", "Texto alineado a la izquierda") },
+    { label: <AlignmentIcon mode="center" />, title: "Centrar", action: () => insertMarkdown("::: center\n", "\n:::", "Texto centrado") },
+    { label: <AlignmentIcon mode="right" />, title: "Alinear a la derecha", action: () => insertMarkdown("::: right\n", "\n:::", "Texto alineado a la derecha") },
   ]
 
   return (

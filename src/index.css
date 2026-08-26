@@ -197,6 +197,26 @@ select:hover,
   background: rgba(56, 189, 248, 0.12);
   color: var(--text);
 }
+.markdown-align-icon {
+  display: inline-flex;
+  width: 16px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  vertical-align: middle;
+}
+.markdown-align-icon i {
+  display: block;
+  width: 16px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+}
+.markdown-align-icon i:nth-child(2) { width: 11px; }
+.markdown-align-icon i:nth-child(3) { width: 14px; }
+.markdown-align-icon i:nth-child(4) { width: 9px; }
+.markdown-align-icon-center { align-items: center; }
+.markdown-align-icon-right { align-items: flex-end; }
 .markdown-toolbar span {
   margin-left: auto;
   color: var(--text-dimmer);

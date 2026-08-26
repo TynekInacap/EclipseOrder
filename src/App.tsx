@@ -2448,11 +2448,6 @@ function NewThreadView({
       setError("Debes mencionar al menos a un usuario para crear este reporte.")
       return
     }
-    if (category === "facciones" && subforum !== "no_oficial") {
-      setError("En facciones solo puedes abrir hilos en NO OFICIAL. FORMATO y OFICIAL son de solo lectura.")
-      return
-    }
-
     const mentionText = mentionedUserIds
       .map((id) => {
         const user = users.find((u) => u.id === id)

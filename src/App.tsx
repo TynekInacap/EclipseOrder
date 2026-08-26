@@ -190,8 +190,8 @@ function MarkdownToolbar({ editorRef, onInsertImage }: { editorRef: React.RefObj
   </div>
 }
 
-function VisualEditor({ editorRef, onChange }: { editorRef: React.RefObject<HTMLDivElement | null>; onChange: (html: string, text: string) => void }) {
-  return <div ref={editorRef} contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" onInput={(event) => { const element = event.currentTarget; onChange(element.innerHTML, element.textContent || "") }} className="visual-editor" data-placeholder="Escribe el contenido del hilo..." />
+function VisualEditor({ editorRef, onChange, placeholder = "Escribe el contenido del hilo..." }: { editorRef: React.RefObject<HTMLDivElement | null>; onChange: (html: string, text: string) => void; placeholder?: string }) {
+  return <div ref={editorRef} contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" onInput={(event) => { const element = event.currentTarget; onChange(element.innerHTML, element.textContent || "") }} className="visual-editor" data-placeholder={placeholder} />
 }
 
 type View =
@@ -3017,6 +3017,7 @@ function ThreadView({
 }) {
   const thread = threads.find((t) => t.id === threadId)
   const [replyContent, setReplyContent] = useState("")
+  const replyContentRef = useRef<HTMLDivElement>(null)
   const [error, setError] = useState("")
   const [lightbox, setLightbox] = useState<Attachment | null>(null)
   const [mentionQuery, setMentionQuery] = useState("")
@@ -3144,6 +3145,7 @@ function ThreadView({
     try {
       await onReply(thread!.id, finalContent, [], mentionedUserIds)
       setReplyContent("")
+      if (replyContentRef.current) replyContentRef.current.innerHTML = ""
       setMentionedUserIds([])
       setMentionQuery("")
       setError("")
@@ -3543,12 +3545,25 @@ function ThreadView({
             </div>
           )}
           <form onSubmit={handleReply}>
-            <textarea
-              style={{ ...inputStyle, height: 100, resize: "vertical" } as React.CSSProperties}
-              value={replyContent}
-              onChange={(e) => setReplyContent(e.target.value)}
-              placeholder="Escribe tu respuesta..."
-            />
+            <div className="visual-editor-shell">
+              <VisualEditor
+                editorRef={replyContentRef}
+                placeholder="Escribe tu respuesta..."
+                onChange={(html) => setReplyContent(html)}
+              />
+              <MarkdownToolbar
+                editorRef={replyContentRef}
+                onInsertImage={(file) => {
+                  const reader = new FileReader()
+                  reader.onload = () => {
+                    replyContentRef.current?.focus()
+                    document.execCommand("insertImage", false, String(reader.result))
+                    setReplyContent(replyContentRef.current?.innerHTML || "")
+                  }
+                  reader.readAsDataURL(file)
+                }}
+              />
+            </div>
 
             {thread.category === "reportes" && (
               <div style={{ marginTop: 12, padding: "14px 14px 12px", background: "rgba(15,23,42,0.48)", border: "1px solid rgba(56,189,248,0.25)", borderRadius: 12 }}>

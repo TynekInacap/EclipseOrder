@@ -1273,7 +1273,7 @@ function ThreadRow({
       }}
     >
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-        <Avatar letter={author?.avatar || "?"} role={author?.role || "user"} size={30} />
+        <Avatar letter={author?.avatar || "?"} role={author?.role || "user"} size={30} imageUrl={author?.avatarUrl} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
             {thread.pinned && (
@@ -1635,7 +1635,7 @@ function CategoryView({
                   <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", textAlign: "center" }}>{thread.replies.length}</div>
                   <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", textAlign: "center" }}>{category === "reportes" ? (thread.status === "cerrado" ? "0" : "1") : thread.status}</div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
-                    <Avatar letter={lastAuthor?.avatar || author?.avatar || "?"} role={lastAuthor?.role || author?.role || "user"} size={24} />
+                    <Avatar letter={lastAuthor?.avatar || author?.avatar || "?"} role={lastAuthor?.role || author?.role || "user"} size={24} imageUrl={lastAuthor?.avatarUrl || author?.avatarUrl} />
                     <div style={{ textAlign: "right", minWidth: 0 }}>
                       <div style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lastAuthor?.username || author?.username || "Usuario"}</div>
                       <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace" }}>{lastReply ? formatDate(lastReply.createdAt) : formatDate(thread.createdAt)}</div>
@@ -2529,7 +2529,7 @@ function ThreadView({
               </h1>
             )}
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <Avatar letter={author?.avatar || "?"} role={author?.role || "user"} size={28} />
+              <Avatar letter={author?.avatar || "?"} role={author?.role || "user"} size={28} imageUrl={author?.avatarUrl} />
               <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
                 <strong style={{ color: "var(--text)" }}>{author?.username}</strong> · {formatDate(thread.createdAt)}
               </div>
@@ -2723,7 +2723,7 @@ function ThreadView({
                 >
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                    <Avatar letter={replyAuthor?.avatar || "?"} role={replyAuthor?.role || "user"} size={26} />
+                    <Avatar letter={replyAuthor?.avatar || "?"} role={replyAuthor?.role || "user"} size={26} imageUrl={replyAuthor?.avatarUrl} />
                     <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
                       <strong style={{ color: reply.isStaff ? "#3498db" : "var(--text)" }}>
                         {replyAuthor?.username}
@@ -3096,7 +3096,7 @@ function AdminView({
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <Avatar letter={user.avatar} role={user.role} size={36} />
+                <Avatar letter={user.avatar} role={user.role} size={36} imageUrl={user.avatarUrl} />
                 <div>
                   <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 500, fontSize: 15, color: "var(--text)" }}>
                     {user.username}

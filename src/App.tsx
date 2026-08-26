@@ -106,6 +106,54 @@ function MarkdownText({ content, inline = false }: { content: string; inline?: b
   return <div className="markdown-content" dangerouslySetInnerHTML={{ __html: html }} />
 }
 
+function MarkdownToolbar({
+  textareaRef,
+  value,
+  onChange,
+}: {
+  textareaRef: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>
+  value: string
+  onChange: (value: string) => void
+}) {
+  function insertMarkdown(prefix: string, suffix = "", fallback = "texto") {
+    const field = textareaRef.current
+    if (!field) return
+    const start = field.selectionStart || 0
+    const end = field.selectionEnd || 0
+    const selectedText = value.slice(start, end) || fallback
+    const nextValue = `${value.slice(0, start)}${prefix}${selectedText}${suffix}${value.slice(end)}`
+    onChange(nextValue)
+    requestAnimationFrame(() => {
+      field.focus()
+      const selectionStart = start + prefix.length
+      field.setSelectionRange(selectionStart, selectionStart + selectedText.length)
+    })
+  }
+
+  const tools = [
+    { label: "H1", title: "Encabezado", action: () => insertMarkdown("# ", "", "Título") },
+    { label: "B", title: "Negrita", action: () => insertMarkdown("**", "**") },
+    { label: "I", title: "Cursiva", action: () => insertMarkdown("*", "*") },
+    { label: "S", title: "Tachado", action: () => insertMarkdown("~~", "~~") },
+    { label: ">", title: "Cita", action: () => insertMarkdown("> ", "", "Cita") },
+    { label: "</>", title: "Código", action: () => insertMarkdown("`", "`") },
+    { label: "•", title: "Lista", action: () => insertMarkdown("- ", "", "Elemento") },
+    { label: "1.", title: "Lista numerada", action: () => insertMarkdown("1. ", "", "Elemento") },
+    { label: "🔗", title: "Enlace", action: () => insertMarkdown("[", "](https://)", "texto del enlace") },
+  ]
+
+  return (
+    <div className="markdown-toolbar" role="toolbar" aria-label="Formato Markdown">
+      {tools.map((tool) => (
+        <button key={tool.title} type="button" title={tool.title} aria-label={tool.title} onClick={tool.action}>
+          {tool.label}
+        </button>
+      ))}
+      <span>Markdown compatible</span>
+    </div>
+  )
+}
+
 type View =
   | "login"
   | "register"
@@ -2532,6 +2580,8 @@ function NewThreadView({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [mentionQuery, setMentionQuery] = useState("")
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([])
+  const titleRef = useRef<HTMLInputElement>(null)
+  const contentRef = useRef<HTMLTextAreaElement>(null)
 
   const mentionList = users.filter((user) =>
     user.id !== currentUser.id &&
@@ -2657,20 +2707,26 @@ function NewThreadView({
         <div style={{ marginBottom: 18 }}>
           <label style={labelStyle}>Título</label>
           <input
+            ref={titleRef}
             style={inputStyle}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder={formCopy[category].title}
           />
+          <div className="markdown-toolbar-wrap">
+            <MarkdownToolbar textareaRef={titleRef} value={title} onChange={setTitle} />
+          </div>
         </div>
         <div style={{ marginBottom: 18 }}>
           <label style={labelStyle}>Descripción</label>
           <textarea
+            ref={contentRef}
             style={{ ...inputStyle, height: 160, resize: "vertical" } as React.CSSProperties}
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder={formCopy[category].description}
           />
+          <MarkdownToolbar textareaRef={contentRef} value={content} onChange={setContent} />
         </div>
 
         {category === "reportes" && (

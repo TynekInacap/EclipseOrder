@@ -168,7 +168,7 @@ function MarkdownToolbar({ editorRef }: { editorRef: React.RefObject<HTMLDivElem
       {[1, 2, 3, 4, 5, 6, 7].map((size) => <option key={size} value={size}>{size}</option>)}
     </select>
     <details className="markdown-color-picker">
-      <summary title="Color del texto" aria-label="Color del texto">A</summary>
+      <summary title="Color del texto" aria-label="Color del texto"><span className="markdown-color-current" /></summary>
       <div className="markdown-color-palette">
         {colors.map((color) => <button key={color} type="button" title={`Color ${color}`} aria-label={`Color ${color}`} onMouseDown={(event) => { event.preventDefault(); saveSelection() }} onClick={() => applyFormat("foreColor", color)}><span className="markdown-color-swatch" style={{ background: color }} /></button>)}
       </div>

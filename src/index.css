@@ -169,7 +169,15 @@ select:hover,
 .visual-editor pre { margin: 8px 0; padding: 8px 10px; border-radius: 5px; background: rgba(2, 6, 23, 0.72); }
 .visual-editor a { color: var(--highlight); }
 .markdown-toolbar {
+  margin-left: auto;
   display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 6px;
+  border: 1px solid var(--border2);
+  border-radius: 8px 8px 0 0;
+  background: rgba(2, 6, 23, 0.58);
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
@@ -247,6 +255,14 @@ select:hover,
 .markdown-color-picker { position: relative; }
 .markdown-color-picker summary { display: grid; width: 28px; place-items: center; list-style: none; font-family: 'Georgia', serif; font-weight: 700; }
 .markdown-color-picker summary::-webkit-details-marker { display: none; }
+.markdown-color-current {
+  display: block !important;
+  width: 16px;
+  height: 4px;
+  margin: 11px auto 0 !important;
+  border-radius: 2px;
+  background: var(--text);
+}
 .markdown-color-palette {
   position: absolute;
   z-index: 30;
@@ -300,7 +316,7 @@ select:hover,
 .markdown-align-icon i:nth-child(4) { width: 9px; }
 .markdown-align-icon-center { align-items: center; }
 .markdown-align-icon-right { align-items: flex-end; }
-.markdown-toolbar span {
+.markdown-toolbar > span:not(.markdown-toolbar-divider):not(.markdown-toolbar-colors) {
   margin-left: auto;
   color: var(--text-dimmer);
   font-family: 'JetBrains Mono', monospace;

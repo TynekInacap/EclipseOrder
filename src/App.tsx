@@ -362,12 +362,12 @@ async function loadSupabaseForum() {
     { data: replyAttachmentRows, error: replyAttachmentsError },
     { data: threadViewRows, error: threadViewsError },
   ] = await Promise.all([
-    supabase.from("profiles").select("*").order("joined_at", { ascending: true }),
-    supabase.from("threads").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
-    supabase.from("replies").select("*").order("created_at", { ascending: true }),
-    supabase.from("thread_attachments").select("*"),
-    supabase.from("reply_attachments").select("*"),
-    supabase.from("thread_views").select("thread_id, user_id"),
+    supabase.from("profiles").select("id, username, role, avatar, avatar_url, bio, banner_url, notifications, role_points, redeemed_role_points, joined_at").order("joined_at", { ascending: true }),
+    supabase.from("threads").select("id, title, category, author_id, content, status, pinned, admin_only, created_at, edited_at, subforum, faction_role_points, faction_role_points_claimed").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
+    supabase.from("replies").select("id, thread_id, author_id, content, is_staff, created_at, edited_at").order("created_at", { ascending: true }),
+    supabase.from("thread_attachments").select("id, thread_id, name, type, data_url, storage_path"),
+    supabase.from("reply_attachments").select("id, reply_id, name, type, data_url, storage_path"),
+    supabase.from("thread_views").select("thread_id"),
   ])
 
   if (profilesError) throw profilesError
@@ -375,7 +375,7 @@ async function loadSupabaseForum() {
   if (repliesError) throw repliesError
   if (threadAttachmentsError) throw threadAttachmentsError
   if (replyAttachmentsError) throw replyAttachmentsError
-  const threadViews = threadViewsError ? [] : (threadViewRows || []) as { thread_id: string; user_id: string }[]
+  const threadViews = threadViewsError ? [] : (threadViewRows || []) as { thread_id: string }[]
 
   const users = (profileRows || []).map((row) => mapProfile(row as ProfileRow))
   const threadAttachments = (threadAttachmentRows || []) as AttachmentRow[]
@@ -2844,7 +2844,7 @@ function ThreadView({
   onReply: (threadId: string, content: string, attachments: Attachment[], mentionedUserIds?: string[]) => Promise<void> | void
   onEditThread: (threadId: string, title: string, content: string) => void
   onEditReply: (threadId: string, replyId: string, content: string) => Promise<void> | void
-  onRegisterView: (threadId: string, userId: string) => Promise<void>
+  onRegisterView: (threadId: string, userId: string) => Promise<boolean>
   onAddRolePoints: (userId: string, amount: number) => void
   onStatusChange: (threadId: string, status: ThreadStatus) => void
   onPinToggle: (threadId: string) => void
@@ -3986,15 +3986,18 @@ export default function App() {
   }
 
   const handleRegisterView = useCallback(async (threadId: string, userId: string) => {
-    const { error } = await supabase.from("thread_views").upsert(
+    const { data, error } = await supabase.from("thread_views").upsert(
       { thread_id: threadId, user_id: userId },
       { onConflict: "thread_id,user_id", ignoreDuplicates: true },
-    )
+    ).select("thread_id").maybeSingle()
     if (error) {
       console.error("Could not register thread view", error)
-      return
+      return false
     }
-    await refreshForumState()
+    if (data) {
+      setThreads((previousThreads) => previousThreads.map((thread) => thread.id === threadId ? { ...thread, visitorCount: (thread.visitorCount || 0) + 1 } : thread))
+    }
+    return Boolean(data)
   }, [])
 
   useEffect(() => {

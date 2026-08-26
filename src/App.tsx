@@ -257,6 +257,14 @@ type ProfileRow = {
   joined_at: string
 }
 
+type NotificationRow = {
+  id: string
+  user_id: string
+  text: string
+  read: boolean
+  created_at: string
+}
+
 type ThreadRow = {
   id: string
   title: string
@@ -356,13 +364,15 @@ function mapReply(row: ReplyRow): Reply {
 async function loadSupabaseForum() {
   const [
     { data: profileRows, error: profilesError },
+    { data: notificationRows, error: notificationsError },
     { data: threadRows, error: threadsError },
     { data: replyRows, error: repliesError },
     { data: threadAttachmentRows, error: threadAttachmentsError },
     { data: replyAttachmentRows, error: replyAttachmentsError },
     { data: threadViewRows, error: threadViewsError },
   ] = await Promise.all([
-    supabase.from("profiles").select("id, username, role, avatar, avatar_url, bio, banner_url, notifications, role_points, redeemed_role_points, joined_at").order("joined_at", { ascending: true }),
+    supabase.from("profiles").select("id, username, role, avatar, avatar_url, bio, banner_url, role_points, redeemed_role_points, joined_at").order("joined_at", { ascending: true }),
+    supabase.from("notifications").select("id, user_id, text, read, created_at").order("created_at", { ascending: false }),
     supabase.from("threads").select("id, title, category, author_id, content, status, pinned, admin_only, created_at, edited_at, subforum, faction_role_points, faction_role_points_claimed").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("replies").select("id, thread_id, author_id, content, is_staff, created_at, edited_at").order("created_at", { ascending: true }),
     supabase.from("thread_attachments").select("id, thread_id, name, type, data_url, storage_path"),
@@ -371,13 +381,23 @@ async function loadSupabaseForum() {
   ])
 
   if (profilesError) throw profilesError
+  if (notificationsError) throw notificationsError
   if (threadsError) throw threadsError
   if (repliesError) throw repliesError
   if (threadAttachmentsError) throw threadAttachmentsError
   if (replyAttachmentsError) throw replyAttachmentsError
   const threadViews = threadViewsError ? [] : (threadViewRows || []) as { thread_id: string }[]
 
-  const users = (profileRows || []).map((row) => mapProfile(row as ProfileRow))
+  const notificationsByUser = new Map<string, NotificationItem[]>()
+  for (const row of (notificationRows || []) as NotificationRow[]) {
+    const userNotifications = notificationsByUser.get(row.user_id) || []
+    userNotifications.push({ id: row.id, text: row.text, read: row.read, createdAt: row.created_at })
+    notificationsByUser.set(row.user_id, userNotifications)
+  }
+  const users = (profileRows || []).map((row) => {
+    const profile = mapProfile(row as ProfileRow)
+    return { ...profile, notifications: notificationsByUser.get(profile.id) || [] }
+  })
   const threadAttachments = (threadAttachmentRows || []) as AttachmentRow[]
   const replyAttachments = (replyAttachmentRows || []) as AttachmentRow[]
   const threads = (threadRows || []).map((row) => {

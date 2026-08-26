@@ -4,6 +4,7 @@ build/
 .cache/
 .env*
 !.env.example
+migrate-attachments.mjs
 .vite/
 vite.config.*.timestamp-*
 *.tsbuildinfo

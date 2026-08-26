@@ -2826,6 +2826,7 @@ function ThreadView({
   onReply,
   onEditThread,
   onEditReply,
+  onRegisterView,
   onAddRolePoints,
   onStatusChange,
   onPinToggle,
@@ -2843,6 +2844,7 @@ function ThreadView({
   onReply: (threadId: string, content: string, attachments: Attachment[], mentionedUserIds?: string[]) => Promise<void> | void
   onEditThread: (threadId: string, title: string, content: string) => void
   onEditReply: (threadId: string, replyId: string, content: string) => Promise<void> | void
+  onRegisterView: (threadId: string, userId: string) => Promise<void>
   onAddRolePoints: (userId: string, amount: number) => void
   onStatusChange: (threadId: string, status: ThreadStatus) => void
   onPinToggle: (threadId: string) => void
@@ -2871,11 +2873,8 @@ function ThreadView({
 
   useEffect(() => {
     if (!thread) return
-    void supabase.from("thread_views").upsert(
-      { thread_id: thread.id, user_id: currentUser.id },
-      { onConflict: "thread_id,user_id", ignoreDuplicates: true },
-    )
-  }, [currentUser.id, thread?.id])
+    void onRegisterView(thread.id, currentUser.id)
+  }, [currentUser.id, onRegisterView, thread?.id])
 
   if (!thread) return null
 
@@ -3986,6 +3985,18 @@ export default function App() {
     setThreads(forum.threads)
   }
 
+  const handleRegisterView = useCallback(async (threadId: string, userId: string) => {
+    const { error } = await supabase.from("thread_views").upsert(
+      { thread_id: threadId, user_id: userId },
+      { onConflict: "thread_id,user_id", ignoreDuplicates: true },
+    )
+    if (error) {
+      console.error("Could not register thread view", error)
+      return
+    }
+    await refreshForumState()
+  }, [])
+
   useEffect(() => {
     setStoreProducts(readStoreProducts())
     setRedemptions(readStoreRedemptions())
@@ -4469,6 +4480,7 @@ export default function App() {
           onReply={handleReply}
           onEditThread={handleEditThread}
           onEditReply={handleEditReply}
+          onRegisterView={handleRegisterView}
           onAddRolePoints={handleAddRolePoints}
           onStatusChange={handleStatusChange}
           onPinToggle={handlePinToggle}

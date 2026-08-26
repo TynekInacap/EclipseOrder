@@ -96,7 +96,8 @@ interface Thread {
 }
 
 function MarkdownText({ content, inline = false }: { content: string; inline?: boolean }) {
-  const html = DOMPurify.sanitize(marked.parse(content, { async: false, breaks: true, gfm: true }) as string)
+  const normalizedContent = content.replace(/:::\s*(left|center|right)\s*\n([\s\S]*?)\n:::/g, '<div class="markdown-align-$1">\n$2\n</div>')
+  const html = DOMPurify.sanitize(marked.parse(normalizedContent, { async: false, breaks: true, gfm: true }) as string)
 
   if (inline) {
     const inlineHtml = DOMPurify.sanitize(marked.parseInline(content, { async: false, breaks: true, gfm: true }) as string)
@@ -140,12 +141,15 @@ function MarkdownToolbar({
     { label: "•", title: "Lista", action: () => insertMarkdown("- ", "", "Elemento") },
     { label: "1.", title: "Lista numerada", action: () => insertMarkdown("1. ", "", "Elemento") },
     { label: "🔗", title: "Enlace", action: () => insertMarkdown("[", "](https://)", "texto del enlace") },
+    { label: "L", title: "Alinear a la izquierda", action: () => insertMarkdown("::: left\n", "\n:::", "Texto alineado a la izquierda") },
+    { label: "C", title: "Centrar", action: () => insertMarkdown("::: center\n", "\n:::", "Texto centrado") },
+    { label: "R", title: "Alinear a la derecha", action: () => insertMarkdown("::: right\n", "\n:::", "Texto alineado a la derecha") },
   ]
 
   return (
     <div className="markdown-toolbar" role="toolbar" aria-label="Formato Markdown">
       {tools.map((tool) => (
-        <button key={tool.title} type="button" title={tool.title} aria-label={tool.title} onClick={tool.action}>
+        <button key={tool.title} type="button" title={tool.title} aria-label={tool.title} data-tooltip={tool.title} onClick={tool.action}>
           {tool.label}
         </button>
       ))}
@@ -1721,7 +1725,7 @@ function CategoryView({
   return (
     <div style={{ maxWidth: 1360, margin: "0 auto", padding: "18px 14px 40px" }}>
       {category === "reportes" && (
-        <div style={{ background: "rgba(15,23,42,0.7)", border: "1px solid rgba(230,126,34,0.35)", borderRadius: 16, padding: "14px 16px", marginBottom: 16, color: "var(--text-muted)", lineHeight: 1.7 }}>
+        <div className="report-guidance" style={{ background: "rgba(15,23,42,0.7)", border: "1px solid rgba(230,126,34,0.35)", borderRadius: 16, padding: "14px 16px", marginBottom: 16, color: "var(--text-muted)", lineHeight: 1.7 }}>
           <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6, color: "#f59e0b" }}>
             Guía del staff
           </div>
@@ -2580,7 +2584,6 @@ function NewThreadView({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [mentionQuery, setMentionQuery] = useState("")
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([])
-  const titleRef = useRef<HTMLInputElement>(null)
   const contentRef = useRef<HTMLTextAreaElement>(null)
 
   const mentionList = users.filter((user) =>
@@ -2707,15 +2710,11 @@ function NewThreadView({
         <div style={{ marginBottom: 18 }}>
           <label style={labelStyle}>Título</label>
           <input
-            ref={titleRef}
             style={inputStyle}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder={formCopy[category].title}
           />
-          <div className="markdown-toolbar-wrap">
-            <MarkdownToolbar textareaRef={titleRef} value={title} onChange={setTitle} />
-          </div>
         </div>
         <div style={{ marginBottom: 18 }}>
           <label style={labelStyle}>Descripción</label>

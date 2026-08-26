@@ -136,6 +136,9 @@ select:hover,
 .markdown-content pre code { padding: 0; background: none; color: var(--text-muted); }
 .markdown-content a { color: var(--highlight); }
 .markdown-content img { max-width: 100%; height: auto; border-radius: 6px; }
+.markdown-align-left { text-align: left; }
+.markdown-align-center { text-align: center; }
+.markdown-align-right { text-align: right; }
 
 .markdown-toolbar-wrap { margin-top: 6px; }
 .markdown-toolbar {
@@ -149,6 +152,7 @@ select:hover,
   background: rgba(2, 6, 23, 0.58);
 }
 .markdown-toolbar button {
+  position: relative;
   min-width: 28px;
   height: 26px;
   padding: 2px 6px;
@@ -161,6 +165,33 @@ select:hover,
   font-size: 11px;
   font-weight: 700;
 }
+.markdown-toolbar button::after {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 7px);
+  left: 50%;
+  padding: 5px 8px;
+  border: 1px solid var(--border3);
+  border-radius: 4px;
+  background: #111923;
+  color: var(--text);
+  content: attr(data-tooltip);
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.2;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -3px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  white-space: nowrap;
+}
+.markdown-toolbar button:hover::after,
+.markdown-toolbar button:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
 .markdown-toolbar button:hover {
   border-color: var(--border3);
   background: rgba(56, 189, 248, 0.12);
@@ -172,6 +203,12 @@ select:hover,
   font-family: 'JetBrains Mono', monospace;
   font-size: 9px;
   letter-spacing: 0.04em;
+}
+
+.report-guidance {
+  width: calc(100% + 28px);
+  margin-left: -14px;
+  box-sizing: border-box;
 }
 
 @keyframes floatIn {

@@ -1967,6 +1967,13 @@ function FactionSubforumView({
         </button>
       </div>
       <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+        {subforumThreads.length > 0 && (
+          <div className="faction-thread-head">
+            <span>Hilo</span>
+            <span>Respuestas</span>
+            <span>Visitas</span>
+          </div>
+        )}
         {subforumThreads.length === 0 ? (
           <div style={{ padding: "28px 20px", textAlign: "center", color: "var(--text-dim)" }}>
             {subforum === "oficial" ? "Todavía no hay facciones oficiales aprobadas." : "No hay hilos en este subforo todavía."}
@@ -1974,8 +1981,6 @@ function FactionSubforumView({
         ) : (
           subforumThreads.map((thread) => {
             const author = users.find((user) => user.id === thread.authorId)
-            const lastReply = thread.replies[thread.replies.length - 1]
-            const lastAuthor = lastReply ? users.find((user) => user.id === lastReply.authorId) : author
             return (
               <button
                 key={thread.id}
@@ -1984,7 +1989,7 @@ function FactionSubforumView({
                   setView("thread")
                   onSound("select")
                 }}
-                style={{ display: "grid", gridTemplateColumns: "30px minmax(0, 1fr) 90px 180px", alignItems: "center", gap: 14, width: "100%", padding: "15px 18px", background: thread.pinned ? "rgba(245,158,11,0.05)" : "transparent", border: 0, borderBottom: "1px solid var(--border)", color: "var(--text)", cursor: "pointer", textAlign: "left" }}
+                style={{ display: "grid", gridTemplateColumns: "30px minmax(0, 1fr) 110px 110px", alignItems: "center", gap: 14, width: "100%", padding: "15px 18px", background: thread.pinned ? "rgba(245,158,11,0.05)" : "transparent", border: 0, borderBottom: "1px solid var(--border)", color: "var(--text)", cursor: "pointer", textAlign: "left" }}
               >
                 <span style={{ color: thread.pinned ? "#fbbf24" : "#22c55e", fontSize: 16 }}>{thread.pinned ? "📌" : "●"}</span>
                 <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
@@ -1993,7 +1998,7 @@ function FactionSubforumView({
                 </span>
                 <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, textAlign: "center" }}>{thread.replies.length} RESP.</span>
                 <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, textAlign: "center" }}>{thread.visitorCount || 0}</span>
-                <span style={{ color: "var(--text-dim)", fontSize: 11, textAlign: "right" }}>Último: {lastAuthor?.username || "Usuario"}</span>
+                <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, textAlign: "center" }}>{thread.visitorCount || 0}</span>
               </button>
             )
           })

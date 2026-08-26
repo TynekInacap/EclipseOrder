@@ -1395,6 +1395,24 @@ body {
   border-color: rgba(77, 216, 223, 0.2);
 }
 
+.faction-thread-head {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 110px 110px;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 18px;
+  background: rgba(77, 216, 223, 0.1);
+  color: var(--highlight);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.faction-thread-head span:nth-child(n + 2) {
+  text-align: center;
+}
+
 .faction-store-empty {
   color: var(--text-dim);
   text-align: center;
@@ -1947,6 +1965,13 @@ body {
   width: 57px;
   min-width: 57px;
   min-height: 34px;
+
+  .faction-thread-head {
+    grid-template-columns: 24px minmax(0, 1fr) 76px 76px;
+    gap: 8px;
+    padding: 9px 12px;
+    font-size: 8px;
+  }
 }
 
 @media (max-width: 820px) {

@@ -2653,7 +2653,7 @@ function NewThreadView({
   return (
     <>
     {isSubmitting && <PostingOverlay />}
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: "32px 20px" }}>
+    <div style={{ maxWidth: isReportMode ? 1050 : 720, margin: "0 auto", padding: "32px 20px" }}>
       <button onClick={goBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 24, display: "flex", alignItems: "center", gap: 6 }}>
         ← Volver al foro
       </button>
@@ -2668,7 +2668,7 @@ function NewThreadView({
         </div>
       )}
 
-      <form onSubmit={handleSubmit} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "28px 28px" }}>
+      <form className={isReportMode ? "report-compose-form" : undefined} onSubmit={handleSubmit} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "28px 28px" }}>
         {!initialCategory && !isReportMode && (
           <div style={{ marginBottom: 18 }}>
             <label style={labelStyle}>Categoría</label>

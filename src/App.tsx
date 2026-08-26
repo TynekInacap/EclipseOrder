@@ -188,6 +188,8 @@ type View =
   | "login"
   | "register"
   | "forum"
+  | "members"
+  | "control"
   | "category"
   | "report_status"
   | "faction_subforum"
@@ -819,6 +821,16 @@ function PostingOverlay() {
   )
 }
 
+function OperationOverlay({ message }: { message: string }) {
+  return (
+    <div className="operation-overlay" role="status" aria-live="polite" aria-busy="true">
+      <div className="operation-loader" aria-hidden="true"><span /><span /><span /></div>
+      <div className="operation-message">{message}</div>
+      <div className="operation-detail">Espera un momento...</div>
+    </div>
+  )
+}
+
 function Logo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
   const imgSize = size === "lg" ? 80 : size === "sm" ? 32 : 44
   const titleSize = size === "lg" ? 28 : size === "sm" ? 15 : 20
@@ -1408,6 +1420,7 @@ function Header({
   onOpenProfile,
   onClearNotifications,
   onOpenAdmin,
+  onOpenControl,
 }: {
   currentUser: User
   onLogout: () => void
@@ -1416,11 +1429,12 @@ function Header({
   onOpenProfile: (user: User) => void
   onClearNotifications: () => void
   onOpenAdmin: () => void
+  onOpenControl: () => void
 }) {
   const [showLogoutModal, setShowLogoutModal] = useState(false)
-  const [showNotifications, setShowNotifications] = useState(false)
   const isStaff = currentUser.role !== "user"
   const notifications = currentUser.notifications || []
+  const unreadNotifications = notifications.filter((notification) => !notification.read)
 
   return (
     <>
@@ -1463,6 +1477,13 @@ function Header({
             >
               TIENDA
             </button>
+            <button
+              className={`header-primary-link ${view === "members" ? "is-active" : ""}`}
+              onClick={() => setView("members")}
+              style={{ ...navBtn, color: view === "members" ? "#f8fafc" : "var(--text-dim)", background: view === "members" ? "rgba(45, 212, 191, 0.14)" : "transparent", padding: "10px 22px" }}
+            >
+              MIEMBROS
+            </button>
           </div>
 
           {isStaff && (
@@ -1471,77 +1492,28 @@ function Header({
             </button>
           )}
 
-          <div style={{ position: "relative" }}>
-            <button
-              onClick={() => setShowNotifications((v) => !v)}
-              style={{
-                background: "linear-gradient(135deg, rgba(15,23,42,0.8), rgba(17,24,39,0.7))",
-                border: "1px solid var(--border)",
-                borderRadius: 12,
-                color: "var(--text)",
-                cursor: "pointer",
-                padding: "8px 12px",
-                fontSize: 12,
-                fontFamily: "JetBrains Mono, monospace",
-                position: "relative",
-              }}
-            >
-              🔔
-              {notifications.length > 0 && (
-                <span style={{ position: "absolute", top: -6, right: -6, minWidth: 18, height: 18, borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>
-                  {notifications.length}
-                </span>
-              )}
+          <div className="header-account-menu">
+            <button className="header-account-trigger" onClick={() => onOpenProfile(currentUser)} aria-haspopup="true">
+              <Avatar letter={currentUser.avatar} role={currentUser.role} size={30} imageUrl={currentUser.avatarUrl} />
+              <span className="header-account-copy">
+                <strong>{currentUser.username}</strong>
+                <small>{roleLabel(currentUser.role)}</small>
+              </span>
+              {unreadNotifications.length > 0 && <span className="header-account-count">{unreadNotifications.length}</span>}
             </button>
 
-            {showNotifications && (
-              <div style={{ position: "absolute", right: 0, top: "calc(100% + 10px)", width: 300, background: "rgba(12,17,24,0.98)", border: "1px solid var(--border)", borderRadius: 12, padding: 10, boxShadow: "0 18px 42px rgba(2,6,23,0.22)", zIndex: 200 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                  <span style={{ fontSize: 10, fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.1em", color: "var(--text-dim)", textTransform: "uppercase" }}>
-                    Notificaciones
-                  </span>
-                  {notifications.length > 0 && (
-                    <button onClick={onClearNotifications} style={{ background: "none", border: "none", color: "#fca5a5", cursor: "pointer", fontSize: 10, fontFamily: "JetBrains Mono, monospace" }}>
-                      Limpiar
-                    </button>
-                  )}
-                </div>
-
-                {notifications.length === 0 ? (
-                  <div style={{ padding: "14px 10px", borderRadius: 8, background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", color: "var(--text-dim)", fontSize: 12 }}>
-                    No tienes notificaciones.
-                  </div>
-                ) : (
-                  notifications.map((item) => (
-                    <div key={item.id} style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", marginBottom: 6, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
-                      {item.text}
-                    </div>
-                  ))
-                )}
+            <div className="header-account-dropdown">
+              <div className="header-account-heading">CENTRO DE CUENTA</div>
+              {unreadNotifications.length > 0 && <div className="header-account-alert">Tienes {unreadNotifications.length} {unreadNotifications.length === 1 ? "notificación sin leer" : "notificaciones sin leer"}</div>}
+              <button className="header-account-item" onClick={() => onOpenProfile(currentUser)}><span>◉</span> Mi perfil</button>
+              <button className="header-account-item" onClick={onOpenControl}><span>▦</span> Panel de control</button>
+              <div className="header-account-notifications">
+                <div className="header-account-section-title"><span>Notificaciones</span>{notifications.length > 0 && <button onClick={onClearNotifications}>Limpiar</button>}</div>
+                {notifications.length === 0 ? <div className="header-account-empty">No tienes notificaciones.</div> : notifications.slice(0, 4).map((item) => <div key={item.id} className="header-account-notification">{item.text}</div>)}
               </div>
-            )}
-          </div>
-
-          <button onClick={() => onOpenProfile(currentUser)} style={{ display: "flex", alignItems: "center", gap: 10, background: "linear-gradient(135deg, rgba(15,23,42,0.8), rgba(17,24,39,0.7))", border: "1px solid var(--border)", borderRadius: 18, padding: "6px 12px 6px 8px", cursor: "pointer", color: "var(--text)" }}>
-            <Avatar letter={currentUser.avatar} role={currentUser.role} size={30} imageUrl={currentUser.avatarUrl} />
-            <div style={{ textAlign: "left" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", lineHeight: 1.2 }}>
-                {currentUser.username}
-              </div>
-              <div style={{ fontSize: 9, color: currentUser.role === "admin" ? "#f87171" : currentUser.role === "moderator" ? "#60a5fa" : "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>
-                {roleLabel(currentUser.role)}
-              </div>
+              <button className="header-account-logout" onClick={() => setShowLogoutModal(true)}><span>↪</span> Cerrar sesión</button>
             </div>
-          </button>
-
-          <button
-            onClick={() => setShowLogoutModal(true)}
-            aria-label="Cerrar sesión"
-            title="Cerrar sesión"
-            style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.34)", borderRadius: 10, color: "#f87171", cursor: "pointer", width: 38, height: 38, padding: 0, fontSize: 22, lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", fontFamily: "sans-serif", boxShadow: "0 0 14px rgba(239,68,68,0.08)" }}
-          >
-            ↪
-          </button>
+          </div>
         </nav>
       </header>
     </>
@@ -2327,18 +2299,15 @@ function ProfileView({
   selectedUserId,
   onSaveProfile,
   onBack,
-  onSelectUser,
 }: {
   currentUser: User
   users: User[]
   selectedUserId: string
   onSaveProfile: (userId: string, updates: Partial<User>) => Promise<void>
   onBack: () => void
-  onSelectUser: (userId: string) => void
 }) {
   const selectedUser = users.find((u) => u.id === selectedUserId) || currentUser
   const isOwnProfile = currentUser.id === selectedUser.id
-  const [search, setSearch] = useState("")
   const [bio, setBio] = useState(selectedUser.bio || "")
   const [bannerUrl, setBannerUrl] = useState(selectedUser.bannerUrl || DEFAULT_BANNER_URL)
   const [pendingBannerUrl, setPendingBannerUrl] = useState<string>("")
@@ -2354,10 +2323,6 @@ function ProfileView({
     setAvatarUrl(selectedUser.avatarUrl || "")
     setProfileSaveMessage("")
   }, [selectedUserId, selectedUser.bio, selectedUser.bannerUrl, selectedUser.avatarUrl])
-
-  const filteredUsers = users.filter((user) =>
-    user.username.toLowerCase().includes(search.toLowerCase())
-  )
 
   const bannerBackground = bannerUrl && bannerUrl !== DEFAULT_BANNER_URL
     ? `url(${bannerUrl}) center/cover no-repeat`
@@ -2432,50 +2397,7 @@ function ProfileView({
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "300px minmax(0, 1fr)", gap: 18 }}>
-        <aside className="profile-directory" style={{ background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden" }}>
-          <div className="profile-directory-heading" style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.12em", textTransform: "uppercase" }}>
-            <span>Directorio</span>
-            <small>{users.length} PERFILES</small>
-          </div>
-          <div style={{ padding: 12 }}>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar usuario..."
-              style={{ ...inputStyle, borderRadius: 10, marginBottom: 10 }}
-            />
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {filteredUsers.map((user) => (
-                <button
-                  key={user.id}
-                  onClick={() => {
-                    onSelectUser(user.id)
-                  }}
-                  style={{
-                    background: selectedUser.id === user.id ? "rgba(239,68,68,0.08)" : "rgba(15,23,42,0.35)",
-                    border: `1px solid ${selectedUser.id === user.id ? "#ef4444" : "var(--border)"}`,
-                    borderRadius: 12,
-                    padding: "10px 12px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    cursor: "pointer",
-                    color: "var(--text)",
-                    textAlign: "left",
-                  }}
-                >
-                  <Avatar letter={user.avatar} role={user.role} size={28} imageUrl={user.avatarUrl} />
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{user.username}<RoleMark role={user.role} /></div>
-                    <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace" }}>{roleLabel(user.role)}</div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </aside>
-
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 18 }}>
         <section className="profile-main" style={{ background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden" }}>
           <div
             style={{
@@ -2595,6 +2517,150 @@ function ProfileView({
         </section>
       </div>
     </div>
+  )
+}
+
+function MembersView({ users, onOpenProfile, onBack }: {
+  users: User[]
+  onOpenProfile: (user: User) => void
+  onBack: () => void
+}) {
+  const [search, setSearch] = useState("")
+  const filteredUsers = users.filter((user) => user.username.toLowerCase().includes(search.toLowerCase()))
+
+  return (
+    <main className="members-view" style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 20px 50px" }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
+        ← Volver al foro
+      </button>
+      <div className="profile-page-heading">
+        <div>
+          <span>COMUNIDAD ECLIPSE ORDER</span>
+          <h1>Miembros</h1>
+          <p>Conoce a los supervivientes que forman parte de la comunidad.</p>
+        </div>
+        <div className="profile-page-mark">{users.length} PERFILES</div>
+      </div>
+      <div className="members-toolbar">
+        <span className="members-toolbar-label">DIRECTORIO DE MIEMBROS</span>
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar usuario..." style={{ ...inputStyle, maxWidth: 280 }} />
+      </div>
+      <div className="members-grid">
+        {filteredUsers.map((user) => (
+          <button key={user.id} className="member-card" onClick={() => onOpenProfile(user)}>
+            <Avatar letter={user.avatar} role={user.role} size={52} imageUrl={user.avatarUrl} />
+            <span className="member-card-copy">
+              <strong>{user.username}<RoleMark role={user.role} /></strong>
+              <small>{roleLabel(user.role)}</small>
+              <span>{user.bio || "Superviviente de Eclipse Order"}</span>
+            </span>
+            <span className="member-card-arrow">→</span>
+          </button>
+        ))}
+      </div>
+      {filteredUsers.length === 0 && <div className="members-empty">No se encontraron miembros.</div>}
+    </main>
+  )
+}
+
+function ControlPanelView({ currentUser, onSaveAccount, onBack }: {
+  currentUser: User
+  onSaveAccount: (updates: { firstName: string; lastName: string; password: string }) => Promise<void>
+  onBack: () => void
+}) {
+  const [firstName, setFirstName] = useState("")
+  const [lastName, setLastName] = useState("")
+  const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [message, setMessage] = useState("")
+  const [error, setError] = useState("")
+  const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    let mounted = true
+    void supabase.auth.getUser().then(({ data }) => {
+      if (!mounted) return
+      const savedFirstName = data.user?.user_metadata?.first_name || currentUser.username.split(" ")[0] || ""
+      const savedLastName = data.user?.user_metadata?.last_name || currentUser.username.split(" ").slice(1).join(" ") || ""
+      setFirstName(savedFirstName)
+      setLastName(savedLastName)
+    })
+    return () => { mounted = false }
+  }, [])
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    setMessage("")
+    setError("")
+    if (!firstName.trim() || !lastName.trim()) {
+      setError("Debes indicar tu nombre y apellido para continuar.")
+      return
+    }
+    if (password && password.length < 6) {
+      setError("La contraseña debe tener al menos 6 caracteres.")
+      return
+    }
+    if (password !== confirmPassword) {
+      setError("Las contraseñas no coinciden.")
+      return
+    }
+    setIsSaving(true)
+    try {
+      await onSaveAccount({ firstName: firstName.trim(), lastName: lastName.trim(), password })
+      setPassword("")
+      setConfirmPassword("")
+      setMessage("Cambios guardados correctamente.")
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "No se pudieron guardar los cambios.")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <main className="control-panel-view" style={{ maxWidth: 1120, margin: "0 auto", padding: "30px 20px 50px" }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
+        ← Volver al foro
+      </button>
+      <div className="profile-page-heading">
+        <div>
+          <span>CONFIGURACIÓN PERSONAL</span>
+          <h1>Panel de control</h1>
+          <p>Administra tus datos, seguridad y actividad dentro de la comunidad.</p>
+        </div>
+        <div className="profile-page-mark">CUENTA / {roleLabel(currentUser.role)}</div>
+      </div>
+      <div className="control-panel-layout">
+        <form className="control-panel-card" onSubmit={handleSubmit}>
+          <div className="profile-section-heading"><span>Datos personales</span><small>IDENTIDAD</small></div>
+          <div className="control-current-name"><span>Nombre actual</span><strong>{currentUser.username}</strong></div>
+          <div className="control-panel-form-grid">
+            <label style={labelStyle}>Nombre<input value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="Tu nombre" required style={inputStyle} /></label>
+            <label style={labelStyle}>Apellido<input value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Tu apellido" required style={inputStyle} /></label>
+          </div>
+          <div className="profile-section-heading control-panel-section-heading"><span>Seguridad</span><small>SUPABASE AUTH</small></div>
+          <label style={labelStyle}>Nueva contraseña<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Dejar vacío para mantenerla" style={inputStyle} /></label>
+          <label style={labelStyle}>Repetir contraseña<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repite la nueva contraseña" style={inputStyle} /></label>
+          {error && <div className="profile-save-error">{error}</div>}
+          {message && <div className="profile-save-success">{message}</div>}
+          <button type="submit" disabled={isSaving} style={{ ...primaryBtn, width: "auto", alignSelf: "flex-start", opacity: isSaving ? 0.65 : 1, cursor: isSaving ? "wait" : "pointer" }}>
+            {isSaving ? "GUARDANDO..." : "GUARDAR CAMBIOS"}
+          </button>
+        </form>
+        <section className="control-panel-card">
+          <div className="profile-section-heading"><span>Historial de notificaciones</span><small>{currentUser.notifications?.length || 0} REGISTROS</small></div>
+          <div className="control-notification-history">
+            {(currentUser.notifications || []).map((notification) => (
+              <article key={notification.id} className={`control-notification-entry ${notification.read ? "" : "is-unread"}`}>
+                <div><strong>{notification.read ? "Leída" : "Sin leer"}</strong><time>{formatDate(notification.createdAt)}</time></div>
+                <p>{notification.text}</p>
+              </article>
+            ))}
+            {(!currentUser.notifications || currentUser.notifications.length === 0) && <div className="header-account-empty">Aún no tienes notificaciones.</div>}
+          </div>
+        </section>
+      </div>
+    </main>
   )
 }
 
@@ -3854,6 +3920,7 @@ export default function App() {
   const [selectedReportStatus, setSelectedReportStatus] = useState<ThreadStatus>(initialRouteRef.current.reportStatus || "abierto")
   const [selectedFactionSubforum, setSelectedFactionSubforum] = useState<ThreadSubforum>(initialRouteRef.current.factionSubforum || "no_oficial")
   const [authReady, setAuthReady] = useState(false)
+    const [operationMessage, setOperationMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const currentUserRef = useRef<User | null>(null)
   const notificationCountRef = useRef<{ userId: string; count: number } | null>(null)
@@ -4195,6 +4262,16 @@ export default function App() {
     )
   }
 
+  async function createNotification(userId: string, text: string) {
+    if (!currentUser || userId === currentUser.id) return
+    const { error } = await supabase.from("notifications").insert({ user_id: userId, text, read: false })
+    if (error) console.error("Could not create notification", error)
+  }
+
+  async function createNotifications(userIds: string[], text: string) {
+    await Promise.all([...new Set(userIds)].map((userId) => createNotification(userId, text)))
+  }
+
   async function handleNewThread(thread: Thread, _mentionedUserIds: string[] = []) {
     if (!currentUser) return
     if (thread.category === "normativa" && currentUser.role !== "admin") return
@@ -4219,6 +4296,12 @@ export default function App() {
     if (error || !createdThread) {
       console.error("Could not create thread", error)
       throw new Error(error?.message || "No se pudo crear el hilo.")
+    }
+    if (thread.category === "reportes") {
+      await createNotifications(
+        users.filter((user) => user.role !== "user").map((user) => user.id),
+        `${currentUser.username} ha enviado un nuevo reporte: ${thread.title}`,
+      )
     }
     await refreshForumState()
     if (thread.category === "reportes") {
@@ -4263,6 +4346,16 @@ export default function App() {
       console.error("Could not create reply", error)
       return
     }
+    const notificationRecipients = [targetThread.authorId]
+    if (targetThread.category === "reportes") {
+      notificationRecipients.push(...users.filter((user) => user.role !== "user").map((user) => user.id))
+    }
+    await createNotifications(
+      notificationRecipients,
+      targetThread.category === "reportes"
+        ? `${currentUser.username} ha respondido al reporte: ${targetThread.title}`
+        : `${currentUser.username} ha respondido a tu publicación: ${targetThread.title}`,
+    )
     await refreshForumState()
   }
 
@@ -4311,21 +4404,32 @@ export default function App() {
     if (!thread || (currentUser?.role !== "admin" && thread.authorId !== currentUser?.id)) return
     if (thread.id === "t-rules-historias" || thread.id === "t-rules-reportes" || thread.id === "t-rules-facciones-formato") return
     if (!window.confirm("¿Seguro que quieres eliminar este hilo? Esta acción no se puede deshacer.")) return
-    const { error } = await supabase.from("threads").delete().eq("id", threadId)
-    if (error) {
-      console.error("Could not delete thread", error)
-      return
+    setOperationMessage("ELIMINANDO PUBLICACIÓN...")
+    try {
+      const { error } = await supabase.from("threads").delete().eq("id", threadId)
+      if (error) {
+        console.error("Could not delete thread", error)
+        return
+      }
+      await refreshForumState()
+      setView("forum")
+    } finally {
+      setOperationMessage(null)
     }
-    await refreshForumState()
-    setView("forum")
   }
 
-  function handleDeleteReply(threadId: string, replyId: string) {
+  async function handleDeleteReply(threadId: string, replyId: string) {
     const thread = threads.find((item) => item.id === threadId)
     const reply = thread?.replies.find((item) => item.id === replyId)
     if (!thread || !reply || reply.authorId !== currentUser?.id) return
     if (!window.confirm("¿Seguro que quieres eliminar esta respuesta? Esta acción no se puede deshacer.")) return
-    setThreads((previousThreads) => previousThreads.map((item) => item.id === threadId ? { ...item, replies: item.replies.filter((entry) => entry.id !== replyId) } : item))
+    setOperationMessage("ELIMINANDO RESPUESTA...")
+    try {
+      setThreads((previousThreads) => previousThreads.map((item) => item.id === threadId ? { ...item, replies: item.replies.filter((entry) => entry.id !== replyId) } : item))
+      await new Promise((resolve) => window.setTimeout(resolve, 260))
+    } finally {
+      setOperationMessage(null)
+    }
   }
 
   async function handleRoleChange(userId: string, role: Role) {
@@ -4389,6 +4493,21 @@ export default function App() {
     await hydrateSession(userId)
   }
 
+  async function handleSaveAccount(updates: { firstName: string; lastName: string; password: string }) {
+    if (!currentUser) return
+    const fullName = `${updates.firstName.trim()} ${updates.lastName.trim()}`.trim()
+    if (fullName.length < 3) throw new Error("Debes indicar tu nombre y apellido.")
+    const authUpdates: { password?: string; data: { first_name: string; last_name: string } } = {
+      data: { first_name: updates.firstName, last_name: updates.lastName },
+    }
+    if (updates.password) authUpdates.password = updates.password
+    const { error: authError } = await supabase.auth.updateUser(authUpdates)
+    if (authError) throw new Error(authError.message)
+    const { error: profileError } = await supabase.from("profiles").update({ username: fullName }).eq("id", currentUser.id)
+    if (profileError) throw new Error(profileError.message)
+    await hydrateSession(currentUser.id)
+  }
+
   async function handleClearNotifications() {
     if (!currentUser) return
     const { error } = await supabase.from("notifications").delete().eq("user_id", currentUser.id)
@@ -4435,6 +4554,7 @@ export default function App() {
         onOpenProfile={handleOpenProfile}
         onClearNotifications={handleClearNotifications}
         onOpenAdmin={() => setView("admin")}
+        onOpenControl={() => setView("control")}
       />
 
       {view === "store" && (
@@ -4444,6 +4564,20 @@ export default function App() {
           products={storeProducts}
           onCreateProduct={handleCreateProduct}
           onRedeemProduct={handleRedeemProduct}
+          onBack={handleGoBack}
+        />
+      )}
+      {view === "members" && (
+        <MembersView
+          users={users}
+          onOpenProfile={handleOpenProfile}
+          onBack={handleGoBack}
+        />
+      )}
+      {view === "control" && (
+        <ControlPanelView
+          currentUser={currentUser}
+          onSaveAccount={handleSaveAccount}
           onBack={handleGoBack}
         />
       )}
@@ -4531,7 +4665,6 @@ export default function App() {
           selectedUserId={selectedProfileId || currentUser.id}
           onSaveProfile={handleSaveProfile}
           onBack={handleGoBack}
-          onSelectUser={(userId) => setSelectedProfileId(userId)}
         />
       )}
       {view === "admin" && currentUser.role !== "user" && (
@@ -4552,6 +4685,7 @@ export default function App() {
           setSelectedThread={setSelectedThread}
         />
       )}
+      {operationMessage && <OperationOverlay message={operationMessage} />}
     </div>
   )
 }

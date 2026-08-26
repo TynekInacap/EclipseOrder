@@ -265,6 +265,11 @@ on public.notifications for update
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 
+create policy "Authenticated users can create notifications"
+on public.notifications for insert
+to authenticated
+with check (auth.uid() is not null);
+
 create policy "Staff can create notifications"
 on public.notifications for insert
 with check (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'moderator')));

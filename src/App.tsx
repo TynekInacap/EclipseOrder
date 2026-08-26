@@ -123,6 +123,9 @@ type RouteState = {
   view: View
   profileId?: string
   threadId?: string
+  category?: Category
+  reportStatus?: ThreadStatus
+  factionSubforum?: ThreadSubforum
 }
 
 type NavigationSnapshot = RouteState & {
@@ -136,13 +139,25 @@ function routeFromLocation(): RouteState {
 
   if (segments[0] === "perfil" && segments[1]) return { view: "profile", profileId: segments[1] }
   if (segments[0] === "hilo" && segments[1]) return { view: "thread", threadId: segments[1] }
+  if (segments[0] === "foro" && segments[1] === "reportes" && segments[2]) {
+    return { view: "report_status", category: "reportes", reportStatus: segments[2] as ThreadStatus }
+  }
+  if (segments[0] === "foro" && segments[1] === "facciones" && segments[2]) {
+    return { view: "faction_subforum", category: "facciones", factionSubforum: segments[2] as ThreadSubforum }
+  }
+  if (segments[0] === "foro" && segments[1]) {
+    return { view: "category", category: segments[1] as Category }
+  }
 
   return { view: "forum" }
 }
 
-function pathFromState(view: View, profileId: string, threadId: string) {
+function pathFromState(view: View, profileId: string, threadId: string, category: Category, reportStatus: ThreadStatus, factionSubforum: ThreadSubforum) {
   if (view === "profile" && profileId) return `/perfil/${encodeURIComponent(profileId)}`
   if (view === "thread" && threadId) return `/hilo/${encodeURIComponent(threadId)}`
+  if (view === "category") return `/foro/${category}`
+  if (view === "report_status") return `/foro/reportes/${reportStatus}`
+  if (view === "faction_subforum") return `/foro/facciones/${factionSubforum}`
   return "/"
 }
 
@@ -3878,9 +3893,9 @@ export default function App() {
   const [view, setView] = useState<View>(initialRouteRef.current.view === "forum" ? "login" : initialRouteRef.current.view)
   const [selectedThread, setSelectedThread] = useState<string>(initialRouteRef.current.threadId || "")
   const [selectedProfileId, setSelectedProfileId] = useState<string>(initialRouteRef.current.profileId || "")
-  const [selectedCategory, setSelectedCategory] = useState<Category>("reportes")
-  const [selectedReportStatus, setSelectedReportStatus] = useState<ThreadStatus>("abierto")
-  const [selectedFactionSubforum, setSelectedFactionSubforum] = useState<ThreadSubforum>("no_oficial")
+  const [selectedCategory, setSelectedCategory] = useState<Category>(initialRouteRef.current.category || "reportes")
+  const [selectedReportStatus, setSelectedReportStatus] = useState<ThreadStatus>(initialRouteRef.current.reportStatus || "abierto")
+  const [selectedFactionSubforum, setSelectedFactionSubforum] = useState<ThreadSubforum>(initialRouteRef.current.factionSubforum || "no_oficial")
   const [authReady, setAuthReady] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const currentUserRef = useRef<User | null>(null)
@@ -3895,6 +3910,9 @@ export default function App() {
       setView(route.view)
       setSelectedThread(route.threadId || "")
       setSelectedProfileId(route.profileId || "")
+      if (route.category) setSelectedCategory(route.category)
+      if (route.reportStatus) setSelectedReportStatus(route.reportStatus)
+      if (route.factionSubforum) setSelectedFactionSubforum(route.factionSubforum)
     }
 
     window.addEventListener("popstate", handlePopState)
@@ -3902,11 +3920,11 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const nextPath = pathFromState(view, selectedProfileId, selectedThread)
+    const nextPath = pathFromState(view, selectedProfileId, selectedThread, selectedCategory, selectedReportStatus, selectedFactionSubforum)
     if (window.location.pathname !== nextPath) {
       window.history.pushState({}, "", nextPath)
     }
-  }, [view, selectedProfileId, selectedThread])
+  }, [view, selectedProfileId, selectedThread, selectedCategory, selectedReportStatus, selectedFactionSubforum])
 
   useEffect(() => {
     if (!authReady) return
@@ -4013,6 +4031,8 @@ export default function App() {
       } else if (!currentUserRef.current && initialRoute.view === "thread" && initialRoute.threadId) {
         setSelectedThread(initialRoute.threadId)
         setView("thread")
+      } else if (!currentUserRef.current && initialRoute.view !== "forum") {
+        setView(initialRoute.view)
       } else if (!currentUserRef.current) {
         setSelectedProfileId(profile.id)
         setView("forum")
@@ -4242,7 +4262,12 @@ export default function App() {
       if (attachmentsError) throw new Error(attachmentsError.message)
     }
     await refreshForumState()
-    setView("forum")
+    if (thread.category === "reportes") {
+      setSelectedThread(createdThread.id)
+      setView("thread")
+    } else {
+      setView("forum")
+    }
   }
 
   async function handleEditThread(threadId: string, title: string, content: string) {

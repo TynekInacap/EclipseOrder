@@ -1970,7 +1970,7 @@ function FactionSubforumView({
         {subforumThreads.length > 0 && (
           <div className="faction-thread-head">
             <span aria-hidden="true" />
-            <span>Hilo</span>
+            <span aria-hidden="true" />
             <span>Respuestas</span>
             <span>Visitas</span>
           </div>

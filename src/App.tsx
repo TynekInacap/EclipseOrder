@@ -12,6 +12,7 @@ const DEFAULT_BANNER_URL = defaultBannerImg
 type Role = "user" | "admin" | "moderator"
 type Category = "bugs" | "reportes" | "historias" | "facciones" | "normativa"
 type ThreadStatus = "abierto" | "cerrado" | "en_revision"
+type ThreadSubforum = "formato" | "no_oficial" | "oficial"
 
 interface NotificationItem {
   id: string
@@ -73,6 +74,7 @@ interface Thread {
   pinned?: boolean
   attachments?: Attachment[]
   adminOnly?: boolean
+  subforum?: ThreadSubforum
 }
 
 function renderFormattedText(content: string) {
@@ -117,6 +119,7 @@ type ThreadRow = {
   pinned: boolean
   admin_only: boolean
   created_at: string
+  subforum?: ThreadSubforum
 }
 
 type ReplyRow = {
@@ -200,6 +203,7 @@ async function loadSupabaseForum() {
       status: thread.status,
       pinned: thread.pinned,
       adminOnly: thread.admin_only,
+      subforum: thread.subforum || (thread.category === "facciones" ? "no_oficial" : undefined),
       createdAt: thread.created_at,
       attachments: threadAttachments
         .filter((attachment) => attachment.thread_id === thread.id)
@@ -421,6 +425,12 @@ const CATEGORY_THREAD_ACTIONS: Record<Category, string> = {
   historias: "COMPARTIR HISTORIA",
   facciones: "PROPONER FACCIÓN",
   normativa: "PROPONER NORMATIVA",
+}
+
+const FACTION_SUBFORUM_LABELS: Record<ThreadSubforum, string> = {
+  formato: "FORMATO",
+  no_oficial: "NO OFICIAL",
+  oficial: "OFICIAL",
 }
 
 const ROLE_REDEEM_COST = 100
@@ -1452,6 +1462,8 @@ function CategoryView({
     })
 
   const tabThreads = sortThreads(threads.filter((t) => t.category === category), category)
+  const factionSubforums: ThreadSubforum[] = ["formato", "no_oficial", "oficial"]
+  const factionThreads = tabThreads.filter((t) => t.category === "facciones")
   const visibleThreads = tabThreads
   const reportSections = [
     { status: "cerrado" as ThreadStatus, label: "Aceptados", description: "Todos los reportes aceptados y resueltos.", color: "#60a5fa" },
@@ -1493,7 +1505,7 @@ function CategoryView({
         >
           ← VOLVER
         </button>
-        {(category !== "normativa" || currentUser.role === "admin") && (
+        {(category !== "normativa" || currentUser.role === "admin") && category !== "facciones" && (
           <button
             className="forum-action forum-action-secondary"
             onClick={() => {
@@ -1517,6 +1529,100 @@ function CategoryView({
           </button>
         )}
       </div>
+
+      {category === "facciones" && (
+        <div style={{ display: "grid", gap: 18, marginBottom: 20 }}>
+          {factionSubforums.map((subforum) => {
+            const threadsForSubforum = factionThreads.filter((thread) => (thread.subforum || "no_oficial") === subforum)
+            const isReadOnly = subforum === "formato" || subforum === "oficial"
+            const canCreate = subforum === "no_oficial" && currentUser.role !== "user"
+            const canReply = subforum !== "formato" && subforum !== "oficial"
+            const pinnedThread = threadsForSubforum.find((thread) => thread.pinned)
+
+            return (
+              <div key={subforum} style={{ background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "14px 18px", borderBottom: "1px solid var(--border)", background: "linear-gradient(90deg, rgba(34, 197, 94, 0.12), rgba(15,23,42,0.7))" }}>
+                  <div>
+                    <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 19, letterSpacing: "0.08em", color: "var(--text)" }}>
+                      {FACTION_SUBFORUM_LABELS[subforum]}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                      {subforum === "formato" && "Formato fijo para presentar la facción. Solo lectura."}
+                      {subforum === "no_oficial" && "Facciones sin aprobación oficial. Los usuarios pueden iniciar hilos aquí."}
+                      {subforum === "oficial" && "Banco de facciones aprobadas. Solo el staff puede mover un hilo desde NO OFICIAL."}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (subforum !== "no_oficial") return
+                      onSelectCategory(category)
+                      setView("new_thread")
+                      onSound("success")
+                    }}
+                    disabled={subforum !== "no_oficial"}
+                    style={{
+                      background: subforum === "no_oficial" ? "linear-gradient(135deg, rgba(34,197,94,0.2), rgba(20,83,45,0.2))" : "rgba(15,23,42,0.25)",
+                      border: `1px solid ${subforum === "no_oficial" ? "rgba(34,197,94,0.5)" : "var(--border)"}`,
+                      borderRadius: 10,
+                      color: subforum === "no_oficial" ? "#86efac" : "var(--text-dim)",
+                      cursor: subforum === "no_oficial" ? "pointer" : "not-allowed",
+                      padding: "8px 12px",
+                      fontSize: 11,
+                      fontFamily: "Oswald, sans-serif",
+                      letterSpacing: "0.08em",
+                      opacity: subforum === "no_oficial" ? 1 : 0.7,
+                    }}
+                  >
+                    {subforum === "no_oficial" ? "NUEVO HILO" : "SOLO LECTURA"}
+                  </button>
+                </div>
+
+                <div style={{ padding: 0 }}>
+                  {pinnedThread || (subforum === "formato" && threadsForSubforum.length === 0) ? (
+                    <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", background: "rgba(15,23,42,0.38)" }}>
+                      {pinnedThread ? (
+                        <div onClick={() => { setSelectedThread(pinnedThread.id); setView("thread") }} style={{ cursor: "pointer" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                            <span style={{ color: "#fbbf24", fontSize: 11 }}>📌</span>
+                            <span style={{ fontSize: 12, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em", textTransform: "uppercase" }}>Fijo</span>
+                          </div>
+                          <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 18, color: "var(--text)" }}>{pinnedThread.title}</div>
+                        </div>
+                      ) : (
+                        <div style={{ color: "var(--text-dim)", fontSize: 14 }}>No hay contenido publicado en este subforo todavía.</div>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {threadsForSubforum.length === 0 ? (
+                    <div style={{ padding: "18px", color: "var(--text-dim)", fontSize: 14 }}>
+                      {subforum === "oficial" ? "Todavía no hay facciones oficiales aprobadas." : "No hay hilos en este subforo."}
+                    </div>
+                  ) : (
+                    <div>
+                      {threadsForSubforum.map((thread) => (
+                        <div key={thread.id} onClick={() => { setSelectedThread(thread.id); setView("thread") }} style={{ borderBottom: "1px solid var(--border)", padding: "14px 18px", cursor: "pointer", background: thread.pinned ? "rgba(245,158,11,0.04)" : "transparent" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 18, color: "var(--text)" }}>{thread.title}</div>
+                              <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 5 }}>
+                                por <span style={{ color: "var(--text-muted)" }}>{users.find((u) => u.id === thread.authorId)?.username || "Usuario"}</span> · {formatDate(thread.createdAt)}
+                              </div>
+                            </div>
+                            <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>
+                              {thread.replies.length} RESP.
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       <main style={{ width: "100%", background: "linear-gradient(180deg, rgba(13, 20, 30, 0.96), rgba(11, 17, 25, 0.9))", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden", boxShadow: "0 20px 40px rgba(2, 6, 23, 0.18)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px", background: "linear-gradient(90deg, rgba(17,24,39,0.9) 0%, rgba(15,23,32,0.7) 100%)", borderBottom: "1px solid var(--border)" }}>
@@ -2063,6 +2169,7 @@ function NewThreadView({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [mentionQuery, setMentionQuery] = useState("")
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([])
+  const [subforum, setSubforum] = useState<ThreadSubforum>("no_oficial")
 
   const mentionList = users.filter((user) =>
     user.id !== currentUser.id &&
@@ -2104,6 +2211,10 @@ function NewThreadView({
       setError("Debes mencionar al menos a un usuario para crear este reporte.")
       return
     }
+    if (category === "facciones" && subforum !== "no_oficial") {
+      setError("En facciones solo puedes abrir hilos en NO OFICIAL. FORMATO y OFICIAL son de solo lectura.")
+      return
+    }
 
     const mentionText = mentionedUserIds
       .map((id) => {
@@ -2125,6 +2236,7 @@ function NewThreadView({
       createdAt: new Date().toISOString(),
       replies: [],
       attachments,
+      subforum: category === "facciones" ? subforum : undefined,
     }
     setIsSubmitting(true)
     setError("")
@@ -2142,6 +2254,36 @@ function NewThreadView({
       <button onClick={goBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 24, display: "flex", alignItems: "center", gap: 6 }}>
         ← Volver al foro
       </button>
+
+      {category === "facciones" && (
+        <div style={{ marginBottom: 18 }}>
+          <label style={labelStyle}>Subforo de facción</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {(["no_oficial", "formato", "oficial"] as ThreadSubforum[]).map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setSubforum(item)}
+                style={{
+                  flex: 1,
+                  minWidth: 130,
+                  background: subforum === item ? "rgba(34,197,94,0.14)" : "transparent",
+                  border: `1px solid ${subforum === item ? "rgba(34,197,94,0.5)" : "var(--border2)"}`,
+                  borderRadius: 4,
+                  color: subforum === item ? "#86efac" : "var(--text-muted)",
+                  cursor: "pointer",
+                  padding: "8px 10px",
+                  fontSize: 11,
+                  fontFamily: "JetBrains Mono, monospace",
+                  letterSpacing: "0.04em",
+                }}
+              >
+                {FACTION_SUBFORUM_LABELS[item]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <h2 style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, fontWeight: 700, letterSpacing: "0.08em", color: "var(--text)", marginBottom: 24 }}>
         {initialCategory ? CATEGORY_THREAD_ACTIONS[initialCategory] : "NUEVO REPORTE"}
@@ -2337,6 +2479,7 @@ function ThreadView({
   onPinToggle,
   onDeleteThread,
   onDeleteReply,
+  onMoveFactionThread,
   goBack,
 }: {
   threadId: string
@@ -2350,6 +2493,7 @@ function ThreadView({
   onPinToggle: (threadId: string) => void
   onDeleteThread: (threadId: string) => void
   onDeleteReply: (threadId: string, replyId: string) => void
+  onMoveFactionThread: (threadId: string, targetSubforum: ThreadSubforum) => void
   goBack: () => void
 }) {
   const thread = threads.find((t) => t.id === threadId)
@@ -2372,7 +2516,9 @@ function ThreadView({
   const canEditThread = thread.category === "historias" && currentUser.id === thread.authorId
   const canDeleteThread = currentUser.id === thread.authorId || currentUser.role === "admin"
   const canAddThreadRolePoints = thread.category === "historias" && currentUser.role === "admin"
-  const canReply = thread.category !== "normativa" && !thread.adminOnly && (thread.status === "abierto" || thread.status === "en_revision" || isStaff)
+  const isFactionReadOnly = thread.category === "facciones" && (thread.subforum === "formato" || thread.subforum === "oficial")
+  const canReply = !isFactionReadOnly && thread.category !== "normativa" && !thread.adminOnly && (thread.status === "abierto" || thread.status === "en_revision" || isStaff)
+  const canMoveFactionThread = currentUser.role === "admin" && thread.category === "facciones" && thread.subforum !== "oficial"
 
   function startEditing() {
     setEditTitle(thread.title)
@@ -2434,6 +2580,10 @@ function ThreadView({
     e.preventDefault()
     if (thread.category === "normativa") {
       setError("No se pueden añadir respuestas en la sección de Normativa.")
+      return
+    }
+    if (thread.category === "facciones" && (thread.subforum === "formato" || thread.subforum === "oficial")) {
+      setError("Este subforo es de solo lectura. Para publicar una facción usa el subforo NO OFICIAL.")
       return
     }
     if (replyContent.trim().length < 5 && attachments.length === 0) {
@@ -2605,6 +2755,23 @@ function ThreadView({
 
         {(canEditThread || canAddThreadRolePoints || canDeleteThread) && (
           <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            {canMoveFactionThread && (
+              <button
+                onClick={() => onMoveFactionThread(thread.id, "oficial")}
+                style={{
+                  ...primaryBtn,
+                  width: "auto",
+                  padding: "8px 12px",
+                  fontSize: 11,
+                  background: "linear-gradient(135deg, rgba(34,197,94,0.22), rgba(20,83,45,0.22))",
+                  border: "1px solid rgba(34,197,94,0.5)",
+                  color: "#86efac",
+                  boxShadow: "none",
+                }}
+              >
+                MOVER A OFICIAL
+              </button>
+            )}
             {canEditThread && !isEditing && (
               <button onClick={startEditing} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11 }}>
                 EDITAR PUBLICACIÓN
@@ -3520,7 +3687,14 @@ export default function App() {
   }
 
   async function handleNewThread(thread: Thread, _mentionedUserIds: string[] = []) {
-    if (!currentUser || (thread.category === "normativa" && currentUser.role !== "admin")) return
+    if (!currentUser) return
+    if (thread.category === "normativa" && currentUser.role !== "admin") return
+    if (thread.category === "facciones") {
+      const subforum = thread.subforum || "no_oficial"
+      if (subforum === "formato" || subforum === "oficial") {
+        throw new Error("No puedes publicar directamente en FORMATO u OFICIAL. Usa NO OFICIAL y luego un administrador puede moverlo.")
+      }
+    }
     const { data: createdThread, error } = await supabase.from("threads").insert({
       title: thread.title,
       category: thread.category,
@@ -3529,6 +3703,7 @@ export default function App() {
       status: thread.status,
       pinned: thread.pinned || false,
       admin_only: thread.adminOnly || false,
+      subforum: thread.category === "facciones" ? (thread.subforum || "no_oficial") : null,
     }).select().single()
     if (error || !createdThread) {
       console.error("Could not create thread", error)
@@ -3560,6 +3735,7 @@ export default function App() {
     if (!currentUser) return
     const targetThread = threads.find((thread) => thread.id === threadId)
     if (!targetThread || targetThread.adminOnly || targetThread.category === "normativa") return
+    if (targetThread.category === "facciones" && (targetThread.subforum === "formato" || targetThread.subforum === "oficial")) return
     const { data: createdReply, error } = await supabase.from("replies").insert({
       thread_id: threadId,
       author_id: currentUser.id,
@@ -3587,6 +3763,14 @@ export default function App() {
   async function handleStatusChange(threadId: string, status: ThreadStatus) {
     const { error } = await supabase.from("threads").update({ status }).eq("id", threadId)
     if (error) console.error("Could not update thread status", error)
+    else await refreshForumState()
+  }
+
+  async function handleMoveFactionThread(threadId: string, targetSubforum: ThreadSubforum) {
+    const thread = threads.find((item) => item.id === threadId)
+    if (!thread || thread.category !== "facciones") return
+    const { error } = await supabase.from("threads").update({ subforum: targetSubforum }).eq("id", threadId)
+    if (error) console.error("Could not move faction thread", error)
     else await refreshForumState()
   }
 
@@ -3743,6 +3927,7 @@ export default function App() {
           onPinToggle={handlePinToggle}
           onDeleteThread={handleDeleteThread}
           onDeleteReply={handleDeleteReply}
+          onMoveFactionThread={handleMoveFactionThread}
           goBack={() => setView("forum")}
         />
       )}

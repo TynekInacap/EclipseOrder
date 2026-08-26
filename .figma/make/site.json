@@ -1,5 +1,6 @@
 {
-  "description": "Connect with fellow players on Eclipse Horder through a dedicated forum for reporting issues and sharing suggestions, featuring user login and admin tools.",
+  "title": "Eclipse Order | Foro de la comunidad",
+  "description": "Reporta problemas, comparte historias y participa en las facciones de Eclipse Order.",
   "robots": {
     "index": false
   },

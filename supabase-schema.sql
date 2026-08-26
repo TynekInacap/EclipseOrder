@@ -5,6 +5,7 @@
 create type public.user_role as enum ('user', 'moderator', 'admin');
 create type public.thread_category as enum ('bugs', 'reportes', 'historias', 'facciones', 'normativa');
 create type public.thread_status as enum ('abierto', 'cerrado', 'en_revision');
+create type public.thread_subforum as enum ('formato', 'no_oficial', 'oficial');
 create type public.attachment_type as enum ('image', 'video');
 
 create table public.profiles (
@@ -41,6 +42,7 @@ create table public.threads (
   id uuid primary key default gen_random_uuid(),
   title text not null check (char_length(trim(title)) >= 5),
   category public.thread_category not null,
+  subforum public.thread_subforum,
   author_id uuid not null references public.profiles(id) on delete cascade,
   content text not null default '',
   status public.thread_status not null default 'abierto',

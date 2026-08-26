@@ -245,9 +245,23 @@ async function loadSupabaseForum() {
     adminOnly: true,
   }
 
+  const factionFormatThread: Thread = {
+    id: "t-rules-facciones-formato",
+    title: "Formato para presentar una facción",
+    category: "facciones",
+    authorId: "u0",
+    content: "**FORMATO PARA PRESENTAR UNA FACCIÓN**\n\n> **Nombre de la facción:**\n> **Tipo:** (oficial o no oficial)\n> **Líder o responsables:**\n> **Objetivo principal:**\n> **Historia y contexto:**\n> **Zona de operaciones:**\n> **Miembros actuales:**\n> **Reglas internas:**\n> **Método de ingreso:**\n\nPresenta la facción usando este formato en un hilo dentro de NO OFICIAL. El staff revisará la propuesta y, si corresponde, moverá el hilo a OFICIAL.",
+    status: "abierto",
+    createdAt: "2026-08-03T09:00:00Z",
+    pinned: true,
+    replies: [],
+    adminOnly: true,
+    subforum: "formato",
+  }
+
   // Filter out duplicate rules thread and add it at the beginning
-  const filteredThreads = threads.filter((t) => t.id !== "t-rules-historias" && t.id !== "t-rules-reportes")
-  const allThreads = [rulesThread, reportRulesThread, ...filteredThreads]
+  const filteredThreads = threads.filter((t) => t.id !== "t-rules-historias" && t.id !== "t-rules-reportes" && t.id !== "t-rules-facciones-formato")
+  const allThreads = [rulesThread, reportRulesThread, factionFormatThread, ...filteredThreads]
 
   return { users, threads: allThreads }
 }
@@ -1535,7 +1549,7 @@ function CategoryView({
           {factionSubforums.map((subforum) => {
             const threadsForSubforum = factionThreads.filter((thread) => (thread.subforum || "no_oficial") === subforum)
             const isReadOnly = subforum === "formato" || subforum === "oficial"
-            const canCreate = subforum === "no_oficial" && currentUser.role !== "user"
+            const canCreate = subforum === "no_oficial"
             const canReply = subforum !== "formato" && subforum !== "oficial"
             const pinnedThread = threadsForSubforum.find((thread) => thread.pinned)
 
@@ -1559,7 +1573,7 @@ function CategoryView({
                       setView("new_thread")
                       onSound("success")
                     }}
-                    disabled={subforum !== "no_oficial"}
+                    disabled={!canCreate}
                     style={{
                       background: subforum === "no_oficial" ? "linear-gradient(135deg, rgba(34,197,94,0.2), rgba(20,83,45,0.2))" : "rgba(15,23,42,0.25)",
                       border: `1px solid ${subforum === "no_oficial" ? "rgba(34,197,94,0.5)" : "var(--border)"}`,
@@ -1570,10 +1584,10 @@ function CategoryView({
                       fontSize: 11,
                       fontFamily: "Oswald, sans-serif",
                       letterSpacing: "0.08em",
-                      opacity: subforum === "no_oficial" ? 1 : 0.7,
+                      opacity: canCreate ? 1 : 0.7,
                     }}
                   >
-                    {subforum === "no_oficial" ? "NUEVO HILO" : "SOLO LECTURA"}
+                    {canCreate ? "NUEVO HILO" : "SOLO LECTURA"}
                   </button>
                 </div>
 
@@ -1624,7 +1638,7 @@ function CategoryView({
         </div>
       )}
 
-      <main style={{ width: "100%", background: "linear-gradient(180deg, rgba(13, 20, 30, 0.96), rgba(11, 17, 25, 0.9))", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden", boxShadow: "0 20px 40px rgba(2, 6, 23, 0.18)" }}>
+      {category !== "facciones" && <main style={{ width: "100%", background: "linear-gradient(180deg, rgba(13, 20, 30, 0.96), rgba(11, 17, 25, 0.9))", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden", boxShadow: "0 20px 40px rgba(2, 6, 23, 0.18)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px", background: "linear-gradient(90deg, rgba(17,24,39,0.9) 0%, rgba(15,23,32,0.7) 100%)", borderBottom: "1px solid var(--border)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
             <div style={{ width: 5, height: 18, background: color, borderRadius: 999, boxShadow: `0 0 18px ${color}` }} />
@@ -1752,7 +1766,7 @@ function CategoryView({
             })
           )}
         </div>
-      </main>
+      </main>}
     </div>
   )
 }
@@ -2263,7 +2277,10 @@ function NewThreadView({
               <button
                 key={item}
                 type="button"
-                onClick={() => setSubforum(item)}
+                onClick={() => {
+                  if (item === "no_oficial") setSubforum(item)
+                }}
+                disabled={item !== "no_oficial"}
                 style={{
                   flex: 1,
                   minWidth: 130,
@@ -2271,11 +2288,12 @@ function NewThreadView({
                   border: `1px solid ${subforum === item ? "rgba(34,197,94,0.5)" : "var(--border2)"}`,
                   borderRadius: 4,
                   color: subforum === item ? "#86efac" : "var(--text-muted)",
-                  cursor: "pointer",
+                  cursor: item === "no_oficial" ? "pointer" : "not-allowed",
                   padding: "8px 10px",
                   fontSize: 11,
                   fontFamily: "JetBrains Mono, monospace",
                   letterSpacing: "0.04em",
+                  opacity: item === "no_oficial" ? 1 : 0.55,
                 }}
               >
                 {FACTION_SUBFORUM_LABELS[item]}
@@ -3695,7 +3713,7 @@ export default function App() {
         throw new Error("No puedes publicar directamente en FORMATO u OFICIAL. Usa NO OFICIAL y luego un administrador puede moverlo.")
       }
     }
-    const { data: createdThread, error } = await supabase.from("threads").insert({
+    const threadPayload = {
       title: thread.title,
       category: thread.category,
       author_id: currentUser.id,
@@ -3703,8 +3721,9 @@ export default function App() {
       status: thread.status,
       pinned: thread.pinned || false,
       admin_only: thread.adminOnly || false,
-      subforum: thread.category === "facciones" ? (thread.subforum || "no_oficial") : null,
-    }).select().single()
+      ...(thread.category === "facciones" ? { subforum: thread.subforum || "no_oficial" } : {}),
+    }
+    const { data: createdThread, error } = await supabase.from("threads").insert(threadPayload).select().single()
     if (error || !createdThread) {
       console.error("Could not create thread", error)
       throw new Error(error?.message || "No se pudo crear el hilo.")

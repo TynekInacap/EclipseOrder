@@ -52,6 +52,25 @@ create table public.threads (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+-- Migration for existing installations: add faction subforums after the base table exists.
+do $$
+begin
+  if not exists (
+    select 1 from pg_type
+    where typnamespace = 'public'::regnamespace and typname = 'thread_subforum'
+  ) then
+    create type public.thread_subforum as enum ('formato', 'no_oficial', 'oficial');
+  end if;
+end
+$$;
+
+alter table public.threads
+  add column if not exists subforum public.thread_subforum;
+
+update public.threads
+set subforum = 'no_oficial'
+where category = 'facciones' and subforum is null;
+
 create table public.thread_attachments (
   id uuid primary key default gen_random_uuid(),
   thread_id uuid not null references public.threads(id) on delete cascade,

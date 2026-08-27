@@ -4135,6 +4135,7 @@ export default function App() {
     const [operationMessage, setOperationMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const currentUserRef = useRef<User | null>(null)
+    const hydratingUserIdRef = useRef<string | null>(null)
   const notificationCountRef = useRef<{ userId: string; count: number } | null>(null)
   const navigationHistoryRef = useRef<NavigationSnapshot[]>([])
   const lastNavigationRef = useRef<NavigationSnapshot | null>(null)
@@ -4220,6 +4221,8 @@ export default function App() {
   }, [])
 
   async function hydrateSession(userId: string) {
+    if (hydratingUserIdRef.current === userId) return
+    hydratingUserIdRef.current = userId
     setIsLoading(true)
     try {
       let { data: profileRow, error: profileError } = await supabase
@@ -4278,6 +4281,7 @@ export default function App() {
         setView("forum")
       }
     } finally {
+      if (hydratingUserIdRef.current === userId) hydratingUserIdRef.current = null
       setIsLoading(false)
     }
   }

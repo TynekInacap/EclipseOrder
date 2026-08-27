@@ -238,6 +238,7 @@ function routeFromPath(pathname: string): RouteState {
   if (segments[0] === "tienda") return { view: "store" }
   if (segments[0] === "control") return { view: "control" }
   if (segments[0] === "admin") return { view: "admin" }
+  if (segments[0] === "registro") return { view: "register" }
   if (segments[0] === "perfil" && segments[1]) return { view: "profile", profileId: segments[1] }
   if (segments[0] === "hilo" && segments[1]) return { view: "thread", threadId: segments[1] }
   if (segments[0] === "foro" && segments[2] === "nuevo" && segments[1]) {
@@ -263,6 +264,7 @@ function pathFromState(view: View, profileId: string, threadId: string, category
   if (view === "store") return "/tienda"
   if (view === "control") return "/control"
   if (view === "admin") return "/admin"
+  if (view === "register") return "/registro"
   if (view === "thread" && threadId) return `/hilo/${encodeURIComponent(threadId)}`
   if (view === "new_thread") return `/foro/${category}/nuevo`
   if (view === "category") return `/foro/${category}`
@@ -4821,6 +4823,8 @@ export default function App() {
   }
 
   async function handleOpenProfile(user: User) {
+    setSelectedProfileId(user.id)
+    setView("profile")
     const { data, error } = await supabase
       .from("profiles")
       .select("id, username, role, avatar, avatar_url, bio, banner_url, role_points, redeemed_role_points, joined_at")
@@ -4833,8 +4837,6 @@ export default function App() {
       setUsers((previousUsers) => previousUsers.map((item) => item.id === loadedUser.id ? { ...item, ...loadedUser } : item))
       if (currentUser.id === loadedUser.id) setCurrentUser((previousUser) => previousUser ? { ...previousUser, ...loadedUser } : previousUser)
     }
-    setSelectedProfileId(user.id)
-    setView("profile")
   }
 
   function handleOpenCategory(category: Category) {

@@ -5,12 +5,39 @@ const rootRoute = createRootRoute({
   component: App,
 })
 
-const catchAllRoute = createRoute({
+const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "$",
+  path: "/",
 })
 
-const routeTree = rootRoute.addChildren([catchAllRoute])
+const registerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "registro",
+})
+
+const sectionRoutes = ["tienda", "miembros", "servidor", "control", "admin"].map((path) => createRoute({
+  getParentRoute: () => rootRoute,
+  path,
+}))
+
+const profileRoute = createRoute({ getParentRoute: () => rootRoute, path: "perfil/$profileId" })
+const threadRoute = createRoute({ getParentRoute: () => rootRoute, path: "hilo/$threadId" })
+const forumRoute = createRoute({ getParentRoute: () => rootRoute, path: "foro/$category" })
+const newThreadRoute = createRoute({ getParentRoute: () => rootRoute, path: "foro/$category/nuevo" })
+const reportStatusRoute = createRoute({ getParentRoute: () => rootRoute, path: "foro/reportes/$reportStatus" })
+const factionSubforumRoute = createRoute({ getParentRoute: () => rootRoute, path: "foro/facciones/$factionSubforum" })
+
+const routeTree = rootRoute.addChildren([
+  homeRoute,
+  registerRoute,
+  ...sectionRoutes,
+  profileRoute,
+  threadRoute,
+  newThreadRoute,
+  reportStatusRoute,
+  factionSubforumRoute,
+  forumRoute,
+])
 
 export const router = createRouter({ routeTree })
 

@@ -1439,6 +1439,17 @@ select:hover,
   background: rgba(230, 162, 60, 0.1) !important;
 }
 
+.header-store-link {
+  background: linear-gradient(90deg, rgba(255, 215, 0, 0) 0%, rgba(255, 215, 0, 0.3) 50%, rgba(255, 215, 0, 0) 100%) !important;
+  background-size: 200% 100%;
+  animation: goldenFlow 2.5s ease-in-out infinite;
+}
+
+@keyframes goldenFlow {
+  0%, 100% { background-position: 200% 0; }
+  50% { background-position: -200% 0; }
+}
+
 .header-account-menu {
   position: relative;
   z-index: 210;
@@ -1530,9 +1541,11 @@ select:hover,
   overflow: hidden;
   color: currentColor;
   font-family: 'Oswald', sans-serif;
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 500;
   line-height: 1.2;
   letter-spacing: 0.14em;
+  text-align: center;
   text-overflow: ellipsis;
   text-transform: uppercase;
   white-space: nowrap;

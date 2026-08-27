@@ -1551,7 +1551,7 @@ function Header({
             </button>
 
             <button
-              className={`header-primary-link ${view === "store" ? "is-active" : ""}`}
+              className={`header-primary-link header-store-link ${view === "store" ? "is-active" : ""}`}
               onClick={() => setView("store")}
               style={{ ...navBtn, color: view === "store" ? "#f8fafc" : "var(--text-dim)", background: view === "store" ? "rgba(114, 200, 191, 0.14)" : "transparent", padding: "10px 22px" }}
             >

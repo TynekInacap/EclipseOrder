@@ -2673,7 +2673,7 @@ function ServerView({ onBack }: { onBack: () => void }) {
         <div className="server-stats-grid">
           <div><span>RÉCORD ONLINE</span><strong>{serverStatus?.peak_player_count ?? 0}</strong><small>máximo registrado</small></div>
           <div><span>TIEMPO ONLINE</span><strong>{serverStatus?.online ? formatServerUptime(serverStatus.online_since) : "No disponible"}</strong><small>sesión actual</small></div>
-          <div><span>ÚLTIMA ACTUALIZACIÓN</span><strong>{serverStatus?.checked_at ? formatDate(serverStatus.checked_at) : "No disponible"}</strong></div>
+          <div><span>ÚLTIMO REINICIO</span><strong>{serverStatus?.online_since ? formatDate(serverStatus.online_since) : "No disponible"}</strong></div>
         </div>
       </section>
       <section className="server-roster" aria-label="Jugadores conectados">

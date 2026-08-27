@@ -1574,7 +1574,6 @@ function Header({
 
             <div className="header-account-menu">
               <button className="header-account-trigger" onClick={() => onOpenProfile(currentUser)} aria-haspopup="true">
-                <Avatar letter={currentUser.avatar} role={currentUser.role} size={30} imageUrl={currentUser.avatarUrl} />
                 <span className="header-account-copy">
                   <strong>{currentUser.username}</strong>
                   <small>{roleLabel(currentUser.role)}</small>
@@ -4832,15 +4831,8 @@ export default function App() {
   }
 
   const handleLoadMemberAvatars = useCallback(async (userIds: string[]) => {
-    const idsToLoad = userIds.filter((userId) => !users.find((user) => user.id === userId)?.avatarUrl)
-    if (idsToLoad.length === 0) return
-    const { data, error } = await supabase.from("profiles").select("id, avatar_url").in("id", idsToLoad)
-    if (error) {
-      console.error("Could not load member avatars", error)
-      return
-    }
-    const avatarsById = new Map((data || []).map((row) => [row.id, row.avatar_url || undefined]))
-    setUsers((previousUsers) => previousUsers.map((user) => avatarsById.has(user.id) ? { ...user, avatarUrl: avatarsById.get(user.id) } : user))
+    // Avatar loading disabled to reduce database load
+    return
   }, [users])
 
   async function handleOpenProfile(user: User) {

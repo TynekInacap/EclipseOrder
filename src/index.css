@@ -1530,7 +1530,7 @@ select:hover,
   overflow: hidden;
   color: currentColor;
   font-family: 'Oswald', sans-serif;
-  font-size: 12px;
+  font-size: 10px;
   line-height: 1.2;
   letter-spacing: 0.14em;
   text-overflow: ellipsis;

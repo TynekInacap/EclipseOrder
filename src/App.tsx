@@ -233,6 +233,7 @@ function routeFromLocation(): RouteState {
   const segments = window.location.pathname.split("/").filter(Boolean).map((segment) => decodeURIComponent(segment))
 
   if (segments[0] === "servidor") return { view: "server" }
+  if (segments[0] === "miembros") return { view: "members" }
   if (segments[0] === "perfil" && segments[1]) return { view: "profile", profileId: segments[1] }
   if (segments[0] === "hilo" && segments[1]) return { view: "thread", threadId: segments[1] }
   if (segments[0] === "foro" && segments[2] === "nuevo" && segments[1]) {
@@ -254,6 +255,7 @@ function routeFromLocation(): RouteState {
 function pathFromState(view: View, profileId: string, threadId: string, category: Category, reportStatus: ThreadStatus, factionSubforum: ThreadSubforum) {
   if (view === "profile" && profileId) return `/perfil/${encodeURIComponent(profileId)}`
   if (view === "server") return "/servidor"
+  if (view === "members") return "/miembros"
   if (view === "thread" && threadId) return `/hilo/${encodeURIComponent(threadId)}`
   if (view === "new_thread") return `/foro/${category}/nuevo`
   if (view === "category") return `/foro/${category}`
@@ -2619,7 +2621,16 @@ function MembersView({ users, onOpenProfile, onBack }: {
   onBack: () => void
 }) {
   const [search, setSearch] = useState("")
+  const [page, setPage] = useState(1)
   const filteredUsers = users.filter((user) => user.username.toLowerCase().includes(search.toLowerCase()))
+  const pageSize = 10
+  const pageCount = Math.max(1, Math.ceil(filteredUsers.length / pageSize))
+  const visibleUsers = filteredUsers.slice((page - 1) * pageSize, page * pageSize)
+
+  function handleSearch(value: string) {
+    setSearch(value)
+    setPage(1)
+  }
 
   return (
     <main className="members-view server-view" style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 20px 50px" }}>
@@ -2636,10 +2647,10 @@ function MembersView({ users, onOpenProfile, onBack }: {
       </div>
       <div className="members-toolbar">
         <span className="members-toolbar-label">DIRECTORIO DE MIEMBROS</span>
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar usuario..." style={{ ...inputStyle, maxWidth: 280 }} />
+        <input value={search} onChange={(event) => handleSearch(event.target.value)} placeholder="Buscar usuario..." style={{ ...inputStyle, maxWidth: 280 }} />
       </div>
-      <div className="members-grid">
-        {filteredUsers.map((user) => (
+      <div className="members-grid" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {visibleUsers.map((user) => (
           <button key={user.id} className="member-card" onClick={() => onOpenProfile(user)}>
             <Avatar letter={user.avatar} role={user.role} size={52} imageUrl={user.avatarUrl} />
             <span className="member-card-copy">
@@ -2652,6 +2663,17 @@ function MembersView({ users, onOpenProfile, onBack }: {
         ))}
       </div>
       {filteredUsers.length === 0 && <div className="members-empty">No se encontraron miembros.</div>}
+      {filteredUsers.length > 0 && pageCount > 1 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 20 }}>
+          <button onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))} disabled={page === 1} style={{ ...primaryBtn, width: "auto", padding: "8px 14px", fontSize: 10, opacity: page === 1 ? 0.45 : 1 }}>
+            ANTERIOR
+          </button>
+          <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11 }}>PÁGINA {page} DE {pageCount}</span>
+          <button onClick={() => setPage((currentPage) => Math.min(pageCount, currentPage + 1))} disabled={page === pageCount} style={{ ...primaryBtn, width: "auto", padding: "8px 14px", fontSize: 10, opacity: page === pageCount ? 0.45 : 1 }}>
+            SIGUIENTE
+          </button>
+        </div>
+      )}
     </main>
   )
 }

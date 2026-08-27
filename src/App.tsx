@@ -2648,9 +2648,10 @@ function ProfileView({
   )
 }
 
-function MembersView({ users, onOpenProfile, onBack }: {
+function MembersView({ users, onOpenProfile, onLoadMemberAvatars, onBack }: {
   users: User[]
   onOpenProfile: (user: User) => void
+  onLoadMemberAvatars: (userIds: string[]) => Promise<void>
   onBack: () => void
 }) {
   const [search, setSearch] = useState("")
@@ -2659,6 +2660,13 @@ function MembersView({ users, onOpenProfile, onBack }: {
   const pageSize = 10
   const pageCount = Math.max(1, Math.ceil(filteredUsers.length / pageSize))
   const visibleUsers = filteredUsers.slice((page - 1) * pageSize, page * pageSize)
+  const loadedAvatarIdsRef = useRef(new Set<string>())
+
+  useEffect(() => {
+    const usersWithoutAvatars = visibleUsers.filter((user) => !user.avatarUrl && !loadedAvatarIdsRef.current.has(user.id)).map((user) => user.id)
+    if (usersWithoutAvatars.length > 0) void onLoadMemberAvatars(usersWithoutAvatars)
+    usersWithoutAvatars.forEach((userId) => loadedAvatarIdsRef.current.add(userId))
+  }, [onLoadMemberAvatars, visibleUsers.map((user) => user.id).join(",")])
 
   function handleSearch(value: string) {
     setSearch(value)
@@ -4823,6 +4831,18 @@ export default function App() {
     else await refreshForumState()
   }
 
+  const handleLoadMemberAvatars = useCallback(async (userIds: string[]) => {
+    const idsToLoad = userIds.filter((userId) => !users.find((user) => user.id === userId)?.avatarUrl)
+    if (idsToLoad.length === 0) return
+    const { data, error } = await supabase.from("profiles").select("id, avatar_url").in("id", idsToLoad)
+    if (error) {
+      console.error("Could not load member avatars", error)
+      return
+    }
+    const avatarsById = new Map((data || []).map((row) => [row.id, row.avatar_url || undefined]))
+    setUsers((previousUsers) => previousUsers.map((user) => avatarsById.has(user.id) ? { ...user, avatarUrl: avatarsById.get(user.id) } : user))
+  }, [users])
+
   async function handleOpenProfile(user: User) {
     setSelectedProfileId(user.id)
     setView("profile")
@@ -4945,6 +4965,7 @@ export default function App() {
         <MembersView
           users={users}
           onOpenProfile={handleOpenProfile}
+          onLoadMemberAvatars={handleLoadMemberAvatars}
           onBack={handleGoBack}
         />
       )}

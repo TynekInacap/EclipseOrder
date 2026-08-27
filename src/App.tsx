@@ -93,6 +93,8 @@ interface Thread {
   factionRolePoints?: number
   factionRolePointsClaimed?: boolean
   visitorCount?: number
+  replyCount?: number
+  repliesLoaded?: boolean
 }
 
 interface ServerStatus {
@@ -308,6 +310,14 @@ type ReplyRow = {
   edited_at?: string | null
 }
 
+type ReplySummaryRow = {
+  thread_id: string
+  reply_count: number | string
+  last_reply_id?: string | null
+  last_author_id?: string | null
+  last_created_at?: string | null
+}
+
 type AttachmentRow = {
   id: string
   thread_id?: string
@@ -386,26 +396,23 @@ async function loadSupabaseForum(currentUserId?: string) {
     { data: profileRows, error: profilesError },
     { data: notificationRows, error: notificationsError },
     { data: threadRows, error: threadsError },
-    { data: replyRows, error: repliesError },
+    { data: replySummaryRows, error: replySummariesError },
     { data: threadAttachmentRows, error: threadAttachmentsError },
-    { data: replyAttachmentRows, error: replyAttachmentsError },
     { data: threadViewRows, error: threadViewsError },
   ] = await Promise.all([
     supabase.from("profiles").select("id, username, role, avatar, avatar_url, bio, banner_url, role_points, redeemed_role_points, joined_at").order("joined_at", { ascending: true }),
     notificationsQuery,
     supabase.from("threads").select("id, title, category, author_id, content, status, pinned, admin_only, created_at, edited_at, subforum, faction_role_points, faction_role_points_claimed").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
-    supabase.from("replies").select("id, thread_id, author_id, content, is_staff, created_at, edited_at").order("created_at", { ascending: true }),
+    supabase.rpc("get_thread_reply_summaries"),
     supabase.from("thread_attachments").select("id, thread_id, name, type, storage_path"),
-    supabase.from("reply_attachments").select("id, reply_id, name, type, storage_path"),
     supabase.rpc("get_thread_view_counts"),
   ])
 
   if (profilesError) throw profilesError
   if (notificationsError) throw notificationsError
   if (threadsError) throw threadsError
-  if (repliesError) throw repliesError
+  if (replySummariesError) throw replySummariesError
   if (threadAttachmentsError) throw threadAttachmentsError
-  if (replyAttachmentsError) throw replyAttachmentsError
   const threadViewCounts = threadViewsError ? [] : (threadViewRows || []) as { thread_id: string; visitor_count: number | string }[]
   const threadViewCountById = new Map(threadViewCounts.map((view) => [view.thread_id, Number(view.visitor_count)]))
 
@@ -420,9 +427,13 @@ async function loadSupabaseForum(currentUserId?: string) {
     return { ...profile, notifications: notificationsByUser.get(profile.id) || [] }
   })
   const threadAttachments = (threadAttachmentRows || []) as AttachmentRow[]
-  const replyAttachments = (replyAttachmentRows || []) as AttachmentRow[]
+  const replySummariesByThread = new Map((replySummaryRows || []).map((row) => {
+    const summary = row as ReplySummaryRow
+    return [summary.thread_id, summary] as const
+  }))
   const threads = (threadRows || []).map((row) => {
     const thread = row as ThreadRow
+    const replySummary = replySummariesByThread.get(thread.id)
     return {
       id: thread.id,
       title: thread.title,
@@ -436,18 +447,20 @@ async function loadSupabaseForum(currentUserId?: string) {
       factionRolePoints: thread.faction_role_points || 0,
       factionRolePointsClaimed: thread.faction_role_points_claimed || false,
       visitorCount: threadViewCountById.get(thread.id) || 0,
+      replyCount: Number(replySummary?.reply_count || 0),
+      repliesLoaded: false,
       createdAt: thread.created_at,
       editedAt: thread.edited_at || undefined,
       attachments: threadAttachments
         .filter((attachment) => attachment.thread_id === thread.id)
         .map((attachment) => ({ name: attachment.name, type: attachment.type, dataUrl: attachmentUrl(attachment) })),
-      replies: (replyRows || []).filter((reply) => (reply as ReplyRow).thread_id === thread.id).map((reply) => {
-        const mappedReply = mapReply(reply as ReplyRow)
-        mappedReply.attachments = replyAttachments
-          .filter((attachment) => attachment.reply_id === mappedReply.id)
-          .map((attachment) => ({ name: attachment.name, type: attachment.type, dataUrl: attachmentUrl(attachment) }))
-        return mappedReply
-      }),
+      replies: replySummary?.last_reply_id && replySummary.last_author_id && replySummary.last_created_at ? [{
+        id: replySummary.last_reply_id,
+        authorId: replySummary.last_author_id,
+        content: "",
+        createdAt: replySummary.last_created_at,
+        isStaff: false,
+      }] : [],
     }
   })
 
@@ -685,6 +698,7 @@ const SESSION_STORAGE_KEY = "eclipse-order-session"
 const LOCAL_USERS_STORAGE_KEY = "eclipse-order-local-users"
 const STORE_PRODUCTS_STORAGE_KEY = "eclipse-order-store-products"
 const STORE_REDEMPTIONS_STORAGE_KEY = "eclipse-order-store-redemptions"
+const REPLIES_PAGE_SIZE = 20
 
 const STATUS_LABELS: Record<ThreadStatus, string> = {
   abierto: "Abierto",
@@ -722,6 +736,10 @@ function formatServerUptime(onlineSince: string | null) {
 function threadLastActivity(thread: Thread) {
   const lastReply = thread.replies[thread.replies.length - 1]
   return new Date(lastReply?.createdAt || thread.createdAt).getTime()
+}
+
+function threadReplyCount(thread: Thread) {
+  return thread.replyCount ?? thread.replies.length
 }
 
 function uid() {
@@ -1646,7 +1664,7 @@ function ThreadRow({
       </div>
       <div style={{ textAlign: "right", flexShrink: 0, background: "rgba(15, 23, 42, 0.4)", borderRadius: 12, padding: "8px 10px", border: "1px solid var(--border2)" }}>
         <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 17, fontWeight: 600, color: "var(--text)" }}>
-          {thread.replies.length}
+          {threadReplyCount(thread)}
         </div>
         <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>
           RESP.
@@ -1970,7 +1988,7 @@ function CategoryView({
                   <small>Consulta obligatoria antes de publicar un reporte.</small>
                 </span>
                 <span>FIJO</span>
-                <span>{reportRulesThread.replies.length}</span>
+                <span>{threadReplyCount(reportRulesThread)}</span>
                 <span>{reportRulesThread.visitorCount || 0}</span>
                 <span className="report-directory-last">
                   <strong>Administración</strong>
@@ -1982,7 +2000,7 @@ function CategoryView({
               const sectionThreads = reportThreads.filter((thread) => thread.status === section.status)
               const latestThread = sectionThreads[0]
               const latestAuthor = latestThread ? users.find((user) => user.id === latestThread.authorId) : undefined
-              const messageCount = sectionThreads.reduce((total, thread) => total + thread.replies.length, 0)
+              const messageCount = sectionThreads.reduce((total, thread) => total + threadReplyCount(thread), 0)
               const visitorCount = sectionThreads.reduce((total, thread) => total + (thread.visitorCount || 0), 0)
               return (
                 <button
@@ -2059,7 +2077,7 @@ function CategoryView({
                       </div>
                     </div>
                   </div>
-                  <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", textAlign: "center" }}>{thread.replies.length}</div>
+                  <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", textAlign: "center" }}>{threadReplyCount(thread)}</div>
                   <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", textAlign: "center" }}>{category === "reportes" ? (thread.status === "cerrado" ? "0" : "1") : thread.status}</div>
                   <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", textAlign: "center" }}>{thread.visitorCount || 0}</div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
@@ -2152,7 +2170,7 @@ function ReportStatusView({
                   <strong><MarkdownText content={thread.title} inline /></strong>
                   <small>por {author?.username || "Usuario"} · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes</small>
                 </span>
-                <span>{thread.replies.length}</span>
+                <span>{threadReplyCount(thread)}</span>
                 <span>{STATUS_LABELS[thread.status]}</span>
                 <span>{thread.visitorCount || 0}</span>
                 <span className="report-directory-last">
@@ -2259,7 +2277,7 @@ function FactionSubforumView({
                   <strong style={{ fontFamily: "Oswald, sans-serif", fontSize: 16, letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><MarkdownText content={thread.title} inline /></strong>
                   <small style={{ color: "var(--text-dim)", fontSize: 12 }}>por {author?.username || "Usuario"} · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes</small>
                 </span>
-                <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, textAlign: "center" }}>{thread.replies.length} RESP.</span>
+                <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, textAlign: "center" }}>{threadReplyCount(thread)} RESP.</span>
                 <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, textAlign: "center" }}>{thread.visitorCount || 0}</span>
               </button>
             )
@@ -2319,7 +2337,7 @@ function ForumView({
               const c = CATEGORY_COLORS[cat]
               const categoryThreads = threads.filter((t) => t.category === cat)
               const topicCount = categoryThreads.length
-              const messageCount = categoryThreads.reduce((total, thread) => total + thread.replies.length, 0)
+              const messageCount = categoryThreads.reduce((total, thread) => total + threadReplyCount(thread), 0)
 
               return (
                 <button
@@ -3062,6 +3080,7 @@ function ThreadView({
   onPinToggle,
   onDeleteThread,
   onDeleteReply,
+  onLoadReplies,
   onMoveFactionThread,
   onAddFactionRolePoints,
   onClaimFactionRolePoints,
@@ -3080,6 +3099,7 @@ function ThreadView({
   onPinToggle: (threadId: string) => void
   onDeleteThread: (threadId: string) => void
   onDeleteReply: (threadId: string, replyId: string) => void
+  onLoadReplies: (threadId: string, before?: string) => Promise<boolean>
   onMoveFactionThread: (threadId: string, targetSubforum: ThreadSubforum) => void
   onAddFactionRolePoints: (threadId: string, amount: number) => void
   onClaimFactionRolePoints: (threadId: string) => void
@@ -3101,11 +3121,21 @@ function ThreadView({
   const [editingReplyId, setEditingReplyId] = useState<string | null>(null)
   const [editReplyContent, setEditReplyContent] = useState("")
   const [isSavingReply, setIsSavingReply] = useState(false)
+  const [isLoadingReplies, setIsLoadingReplies] = useState(false)
+  const [hasMoreReplies, setHasMoreReplies] = useState(false)
 
   useEffect(() => {
     if (!thread) return
     void onRegisterView(thread.id, currentUser.id)
   }, [currentUser.id, onRegisterView, thread?.id])
+
+  useEffect(() => {
+    if (!thread || thread.repliesLoaded) return
+    setIsLoadingReplies(true)
+    void onLoadReplies(thread.id)
+      .then((hasMore) => setHasMoreReplies(hasMore))
+      .finally(() => setIsLoadingReplies(false))
+  }, [onLoadReplies, thread?.id, thread?.repliesLoaded])
 
   if (!thread) return null
 
@@ -3503,7 +3533,12 @@ function ThreadView({
       </div>
 
       {/* Replies */}
-      {thread.replies.length > 0 && (
+      {isLoadingReplies && (
+        <div style={{ marginBottom: 12, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", fontSize: 11 }}>
+          CARGANDO RESPUESTAS...
+        </div>
+      )}
+      {thread.repliesLoaded && thread.replies.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em", marginBottom: 10 }}>
             {thread.replies.length} RESPUESTA{thread.replies.length !== 1 ? "S" : ""}
@@ -3600,6 +3635,24 @@ function ThreadView({
               )
             })}
           </div>
+          {hasMoreReplies && (
+            <button
+              onClick={async () => {
+                const oldestReply = thread.replies[0]
+                if (!oldestReply) return
+                setIsLoadingReplies(true)
+                try {
+                  setHasMoreReplies(await onLoadReplies(thread.id, oldestReply.createdAt))
+                } finally {
+                  setIsLoadingReplies(false)
+                }
+              }}
+              disabled={isLoadingReplies}
+              style={{ ...primaryBtn, width: "auto", marginTop: 10, padding: "8px 12px", fontSize: 10, opacity: isLoadingReplies ? 0.6 : 1 }}
+            >
+              {isLoadingReplies ? "CARGANDO..." : "CARGAR RESPUESTAS ANTERIORES"}
+            </button>
+          )}
         </div>
       )}
 
@@ -3811,7 +3864,7 @@ function AdminView({
                     <MarkdownText content={thread.title} inline />
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                    {author?.username} · {formatDate(thread.createdAt)} · {thread.replies.length} respuestas
+                    {author?.username} · {formatDate(thread.createdAt)} · {threadReplyCount(thread)} respuestas
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -4235,6 +4288,50 @@ export default function App() {
     setThreads(forum.threads)
   }
 
+  async function handleLoadReplies(threadId: string, before?: string) {
+    let repliesQuery = supabase
+      .from("replies")
+      .select("id, thread_id, author_id, content, is_staff, created_at, edited_at")
+      .eq("thread_id", threadId)
+      .order("created_at", { ascending: false })
+      .limit(REPLIES_PAGE_SIZE)
+    if (before) repliesQuery = repliesQuery.lt("created_at", before)
+
+    const { data: replyRows, error: repliesError } = await repliesQuery
+    if (repliesError) {
+      console.error("Could not load thread replies", repliesError)
+      return false
+    }
+
+    const rows = (replyRows || []) as ReplyRow[]
+    const replyIds = rows.map((reply) => reply.id)
+    const { data: attachmentRows, error: attachmentsError } = replyIds.length > 0
+      ? await supabase.from("reply_attachments").select("id, reply_id, name, type, storage_path").in("reply_id", replyIds)
+      : { data: [], error: null }
+    if (attachmentsError) {
+      console.error("Could not load reply attachments", attachmentsError)
+      return false
+    }
+
+    const attachments = (attachmentRows || []) as AttachmentRow[]
+    const loadedReplies = rows.map((row) => {
+      const reply = mapReply(row)
+      reply.attachments = attachments
+        .filter((attachment) => attachment.reply_id === reply.id)
+        .map((attachment) => ({ name: attachment.name, type: attachment.type, dataUrl: attachmentUrl(attachment) }))
+      return reply
+    }).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+
+    setThreads((previousThreads) => previousThreads.map((thread) => {
+      if (thread.id !== threadId) return thread
+      const replies = before
+        ? [...loadedReplies, ...thread.replies].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+        : loadedReplies
+      return { ...thread, replies, repliesLoaded: true }
+    }))
+    return rows.length === REPLIES_PAGE_SIZE
+  }
+
   const handleRegisterView = useCallback(async (threadId: string, userId: string) => {
     const { data, error } = await supabase.from("thread_views").upsert(
       { thread_id: threadId, user_id: userId },
@@ -4525,7 +4622,12 @@ export default function App() {
       return
     }
     const newReply = mapReply(createdReply as ReplyRow)
-    setThreads((previousThreads) => previousThreads.map((thread) => thread.id === threadId ? { ...thread, replies: [...thread.replies, newReply] } : thread))
+    setThreads((previousThreads) => previousThreads.map((thread) => thread.id === threadId ? {
+      ...thread,
+      replies: [...thread.replies, newReply],
+      replyCount: threadReplyCount(thread) + 1,
+      repliesLoaded: true,
+    } : thread))
     const notificationRecipients = [targetThread.authorId]
     if (targetThread.category === "reportes") {
       notificationRecipients.push(...users.filter((user) => user.role !== "user").map((user) => user.id))
@@ -4614,7 +4716,11 @@ export default function App() {
         console.error("Could not delete reply", error)
         return
       }
-      setThreads((previousThreads) => previousThreads.map((item) => item.id === threadId ? { ...item, replies: item.replies.filter((entry) => entry.id !== replyId) } : item))
+      setThreads((previousThreads) => previousThreads.map((item) => item.id === threadId ? {
+        ...item,
+        replies: item.replies.filter((entry) => entry.id !== replyId),
+        replyCount: Math.max(0, threadReplyCount(item) - 1),
+      } : item))
     } finally {
       setOperationMessage(null)
     }
@@ -4833,6 +4939,7 @@ export default function App() {
           onPinToggle={handlePinToggle}
           onDeleteThread={handleDeleteThread}
           onDeleteReply={handleDeleteReply}
+          onLoadReplies={handleLoadReplies}
           onMoveFactionThread={handleMoveFactionThread}
           onAddFactionRolePoints={handleAddFactionRolePoints}
           onClaimFactionRolePoints={handleClaimFactionRolePoints}

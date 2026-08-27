@@ -177,6 +177,32 @@ as $$
   group by thread_id;
 $$;
 
+create or replace function public.get_thread_reply_summaries()
+returns table(
+  thread_id uuid,
+  reply_count bigint,
+  last_reply_id uuid,
+  last_author_id uuid,
+  last_created_at timestamptz
+)
+language sql
+stable
+security invoker
+as $$
+  with summaries as (
+    select
+      thread_id,
+      count(*) as reply_count,
+      (array_agg(id order by created_at desc))[1] as last_reply_id,
+      (array_agg(author_id order by created_at desc))[1] as last_author_id,
+      max(created_at) as last_created_at
+    from public.replies
+    group by thread_id
+  )
+  select thread_id, reply_count, last_reply_id, last_author_id, last_created_at
+  from summaries;
+$$;
+
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql

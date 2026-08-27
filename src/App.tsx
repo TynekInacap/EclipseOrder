@@ -2632,6 +2632,10 @@ function MembersView({ users, onOpenProfile, onBack }: {
     setPage(1)
   }
 
+  const paginationItems = pageCount <= 7
+    ? Array.from({ length: pageCount }, (_, index) => index + 1)
+    : [1, page > 3 ? "..." : 2, ...[page - 1, page, page + 1].filter((value) => value > 1 && value < pageCount), page < pageCount - 2 ? "..." : pageCount - 1, pageCount]
+
   return (
     <main className="members-view server-view" style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 20px 50px" }}>
       <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
@@ -2664,14 +2668,18 @@ function MembersView({ users, onOpenProfile, onBack }: {
       </div>
       {filteredUsers.length === 0 && <div className="members-empty">No se encontraron miembros.</div>}
       {filteredUsers.length > 0 && pageCount > 1 && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 20 }}>
-          <button onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))} disabled={page === 1} style={{ ...primaryBtn, width: "auto", padding: "8px 14px", fontSize: 10, opacity: page === 1 ? 0.45 : 1 }}>
-            ANTERIOR
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, marginTop: 20, flexWrap: "wrap" }}>
+          <span style={{ color: "var(--text-muted)", fontSize: 11, marginRight: 6 }}>Páginas ({pageCount}):</span>
+          <button onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))} disabled={page === 1} style={{ ...primaryBtn, width: "auto", padding: "5px 8px", fontSize: 10, opacity: page === 1 ? 0.45 : 1 }}>
+            ← Anterior
           </button>
-          <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11 }}>PÁGINA {page} DE {pageCount}</span>
-          <button onClick={() => setPage((currentPage) => Math.min(pageCount, currentPage + 1))} disabled={page === pageCount} style={{ ...primaryBtn, width: "auto", padding: "8px 14px", fontSize: 10, opacity: page === pageCount ? 0.45 : 1 }}>
-            SIGUIENTE
-          </button>
+          {paginationItems.map((item, index) => item === "..." ? (
+            <span key={`ellipsis-${index}`} style={{ color: "var(--text-dim)", padding: "5px 3px", fontSize: 11 }}>...</span>
+          ) : (
+            <button key={item} onClick={() => setPage(item)} style={{ ...primaryBtn, width: "auto", minWidth: 28, padding: "5px 7px", fontSize: 10, background: item === page ? "rgba(230,162,60,0.2)" : "transparent", border: `1px solid ${item === page ? "#e6a23c" : "var(--border2)"}`, color: item === page ? "#ffe7a3" : "var(--text-muted)", boxShadow: "none" }}>
+              {item}
+            </button>
+          ))}
         </div>
       )}
     </main>

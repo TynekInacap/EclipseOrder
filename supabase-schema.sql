@@ -159,10 +159,23 @@ on conflict (id) do nothing;
 create index threads_category_created_idx on public.threads(category, created_at desc);
 create index threads_author_idx on public.threads(author_id);
 create index replies_thread_created_idx on public.replies(thread_id, created_at);
+create index replies_thread_created_desc_idx on public.replies(thread_id, created_at desc);
+create index replies_author_idx on public.replies(author_id);
 create index notifications_user_created_idx on public.notifications(user_id, created_at desc);
 create index thread_attachments_thread_idx on public.thread_attachments(thread_id);
 create index reply_attachments_reply_idx on public.reply_attachments(reply_id);
 create index thread_views_thread_idx on public.thread_views(thread_id);
+
+create or replace function public.get_thread_view_counts()
+returns table(thread_id uuid, visitor_count bigint)
+language sql
+stable
+security invoker
+as $$
+  select thread_id, count(*)
+  from public.thread_views
+  group by thread_id;
+$$;
 
 create or replace function public.set_updated_at()
 returns trigger

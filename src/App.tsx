@@ -378,7 +378,10 @@ function mapReply(row: ReplyRow): Reply {
   }
 }
 
-async function loadSupabaseForum() {
+async function loadSupabaseForum(currentUserId?: string) {
+  const notificationsQuery = supabase.from("notifications").select("id, user_id, text, read, created_at").order("created_at", { ascending: false })
+  if (currentUserId) notificationsQuery.eq("user_id", currentUserId)
+
   const [
     { data: profileRows, error: profilesError },
     { data: notificationRows, error: notificationsError },
@@ -389,12 +392,12 @@ async function loadSupabaseForum() {
     { data: threadViewRows, error: threadViewsError },
   ] = await Promise.all([
     supabase.from("profiles").select("id, username, role, avatar, avatar_url, bio, banner_url, role_points, redeemed_role_points, joined_at").order("joined_at", { ascending: true }),
-    supabase.from("notifications").select("id, user_id, text, read, created_at").order("created_at", { ascending: false }),
+    notificationsQuery,
     supabase.from("threads").select("id, title, category, author_id, content, status, pinned, admin_only, created_at, edited_at, subforum, faction_role_points, faction_role_points_claimed").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("replies").select("id, thread_id, author_id, content, is_staff, created_at, edited_at").order("created_at", { ascending: true }),
     supabase.from("thread_attachments").select("id, thread_id, name, type, storage_path"),
     supabase.from("reply_attachments").select("id, reply_id, name, type, storage_path"),
-    supabase.from("thread_views").select("thread_id"),
+    supabase.rpc("get_thread_view_counts"),
   ])
 
   if (profilesError) throw profilesError
@@ -403,7 +406,8 @@ async function loadSupabaseForum() {
   if (repliesError) throw repliesError
   if (threadAttachmentsError) throw threadAttachmentsError
   if (replyAttachmentsError) throw replyAttachmentsError
-  const threadViews = threadViewsError ? [] : (threadViewRows || []) as { thread_id: string }[]
+  const threadViewCounts = threadViewsError ? [] : (threadViewRows || []) as { thread_id: string; visitor_count: number | string }[]
+  const threadViewCountById = new Map(threadViewCounts.map((view) => [view.thread_id, Number(view.visitor_count)]))
 
   const notificationsByUser = new Map<string, NotificationItem[]>()
   for (const row of (notificationRows || []) as NotificationRow[]) {
@@ -431,7 +435,7 @@ async function loadSupabaseForum() {
       subforum: thread.subforum || (thread.category === "facciones" ? "no_oficial" : undefined),
       factionRolePoints: thread.faction_role_points || 0,
       factionRolePointsClaimed: thread.faction_role_points_claimed || false,
-      visitorCount: threadViews.filter((view) => view.thread_id === thread.id).length,
+      visitorCount: threadViewCountById.get(thread.id) || 0,
       createdAt: thread.created_at,
       editedAt: thread.edited_at || undefined,
       attachments: threadAttachments
@@ -4165,7 +4169,11 @@ export default function App() {
   async function hydrateSession(userId: string) {
     setIsLoading(true)
     try {
-      let { data: profileRow, error: profileError } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle()
+      let { data: profileRow, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, username, role, avatar, avatar_url, bio, banner_url, role_points, redeemed_role_points, joined_at")
+        .eq("id", userId)
+        .maybeSingle()
 
       if (profileError && profileError.code !== "PGRST116") {
         throw profileError
@@ -4185,7 +4193,7 @@ export default function App() {
             },
             { onConflict: "id" },
           )
-          .select("*")
+          .select("id, username, role, avatar, avatar_url, bio, banner_url, role_points, redeemed_role_points, joined_at")
           .single()
 
         if (insertResult.error) {
@@ -4196,7 +4204,7 @@ export default function App() {
       }
 
       const [forum] = await Promise.all([
-        loadSupabaseForum(),
+        loadSupabaseForum(userId),
       ])
 
       const profile = mapProfile(profileRow as ProfileRow)
@@ -4222,7 +4230,7 @@ export default function App() {
   }
 
   async function refreshForumState() {
-    const forum = await loadSupabaseForum()
+    const forum = await loadSupabaseForum(currentUserRef.current?.id)
     setUsers(forum.users)
     setThreads(forum.threads)
   }

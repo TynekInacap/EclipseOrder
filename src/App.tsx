@@ -201,6 +201,7 @@ type View =
   | "register"
   | "forum"
   | "members"
+  | "server"
   | "control"
   | "category"
   | "report_status"
@@ -229,6 +230,7 @@ type NavigationSnapshot = RouteState & {
 function routeFromLocation(): RouteState {
   const segments = window.location.pathname.split("/").filter(Boolean).map((segment) => decodeURIComponent(segment))
 
+  if (segments[0] === "servidor") return { view: "server" }
   if (segments[0] === "perfil" && segments[1]) return { view: "profile", profileId: segments[1] }
   if (segments[0] === "hilo" && segments[1]) return { view: "thread", threadId: segments[1] }
   if (segments[0] === "foro" && segments[2] === "nuevo" && segments[1]) {
@@ -249,6 +251,7 @@ function routeFromLocation(): RouteState {
 
 function pathFromState(view: View, profileId: string, threadId: string, category: Category, reportStatus: ThreadStatus, factionSubforum: ThreadSubforum) {
   if (view === "profile" && profileId) return `/perfil/${encodeURIComponent(profileId)}`
+  if (view === "server") return "/servidor"
   if (view === "thread" && threadId) return `/hilo/${encodeURIComponent(threadId)}`
   if (view === "new_thread") return `/foro/${category}/nuevo`
   if (view === "category") return `/foro/${category}`
@@ -1525,6 +1528,13 @@ function Header({
             >
               MIEMBROS
             </button>
+            <button
+              className={`header-primary-link ${view === "server" ? "is-active" : ""}`}
+              onClick={() => setView("server")}
+              style={{ ...navBtn, color: view === "server" ? "#f8fafc" : "var(--text-dim)", background: view === "server" ? "rgba(101, 214, 167, 0.14)" : "transparent", padding: "10px 22px" }}
+            >
+              SERVIDOR
+            </button>
 
             <div className="header-account-menu">
               <button className="header-account-trigger" onClick={() => onOpenProfile(currentUser)} aria-haspopup="true">
@@ -2572,34 +2582,10 @@ function MembersView({ users, onOpenProfile, onBack }: {
   onBack: () => void
 }) {
   const [search, setSearch] = useState("")
-  const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null)
-  const [serverPlayers, setServerPlayers] = useState<ServerPlayer[]>([])
   const filteredUsers = users.filter((user) => user.username.toLowerCase().includes(search.toLowerCase()))
 
-  useEffect(() => {
-    let mounted = true
-
-    async function loadServerPresence() {
-      const [{ data: status }, { data: players }] = await Promise.all([
-        supabase.from("server_status").select("online, player_count, peak_player_count, online_since, checked_at").eq("id", "main").maybeSingle(),
-        supabase.from("server_players").select("username").order("username", { ascending: true }),
-      ])
-
-      if (!mounted) return
-      setServerStatus((status as ServerStatus | null) || null)
-      setServerPlayers((players as ServerPlayer[] | null) || [])
-    }
-
-    loadServerPresence()
-    const refreshTimer = window.setInterval(loadServerPresence, 30_000)
-    return () => {
-      mounted = false
-      window.clearInterval(refreshTimer)
-    }
-  }, [])
-
   return (
-    <main className="members-view" style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 20px 50px" }}>
+    <main className="members-view server-view" style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 20px 50px" }}>
       <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
         ← Volver al foro
       </button>
@@ -2615,29 +2601,6 @@ function MembersView({ users, onOpenProfile, onBack }: {
         <span className="members-toolbar-label">DIRECTORIO DE MIEMBROS</span>
         <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar usuario..." style={{ ...inputStyle, maxWidth: 280 }} />
       </div>
-      <section aria-label="Jugadores conectados" style={{ marginBottom: 24, padding: "18px 20px", border: "1px solid rgba(114, 200, 191, 0.22)", background: "rgba(15, 35, 47, 0.72)" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-          <div>
-            <div style={{ color: "var(--text-dim)", fontSize: 11, letterSpacing: "0.12em", fontFamily: "JetBrains Mono, monospace" }}>SERVIDOR PROJECT ZOMBOID</div>
-            <strong style={{ display: "block", marginTop: 7, color: "var(--text-main)", fontSize: 18 }}>
-              {serverStatus?.online ? `${serverStatus.player_count} jugadores conectados` : "Servidor sin datos recientes"}
-            </strong>
-          </div>
-          <span style={{ color: serverStatus?.online ? "#65d6a7" : "var(--text-dim)", fontSize: 12, fontFamily: "JetBrains Mono, monospace" }}>
-            {serverStatus?.online ? "● EN LÍNEA" : "● FUERA DE LÍNEA"}
-          </span>
-        </div>
-        {serverPlayers.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }}>
-            {serverPlayers.map((player) => <span key={player.username} style={{ padding: "5px 9px", border: "1px solid rgba(114, 200, 191, 0.24)", color: "var(--text-muted)", fontSize: 12 }}>{player.username}</span>)}
-          </div>
-        )}
-        <div className="server-stats-grid">
-          <div><span>RÉCORD ONLINE</span><strong>{serverStatus?.peak_player_count ?? 0}</strong></div>
-          <div><span>TIEMPO ONLINE</span><strong>{serverStatus?.online ? formatServerUptime(serverStatus.online_since) : "No disponible"}</strong></div>
-          <div><span>ÚLTIMA ACTUALIZACIÓN</span><strong>{serverStatus?.checked_at ? formatDate(serverStatus.checked_at) : "No disponible"}</strong></div>
-        </div>
-      </section>
       <div className="members-grid">
         {filteredUsers.map((user) => (
           <button key={user.id} className="member-card" onClick={() => onOpenProfile(user)}>
@@ -2652,6 +2615,75 @@ function MembersView({ users, onOpenProfile, onBack }: {
         ))}
       </div>
       {filteredUsers.length === 0 && <div className="members-empty">No se encontraron miembros.</div>}
+    </main>
+  )
+}
+
+function ServerView({ onBack }: { onBack: () => void }) {
+  const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null)
+  const [serverPlayers, setServerPlayers] = useState<ServerPlayer[]>([])
+
+  useEffect(() => {
+    let mounted = true
+
+    async function loadServerPresence() {
+      const [{ data: status }, { data: players }] = await Promise.all([
+        supabase.from("server_status").select("online, player_count, peak_player_count, online_since, checked_at").eq("id", "main").maybeSingle(),
+        supabase.from("server_players").select("username").order("username", { ascending: true }),
+      ])
+
+      if (!mounted) return
+      setServerStatus((status as ServerStatus | null) || null)
+      setServerPlayers((players as ServerPlayer[] | null) || [])
+    }
+
+    void loadServerPresence()
+    const refreshTimer = window.setInterval(loadServerPresence, 30_000)
+    return () => {
+      mounted = false
+      window.clearInterval(refreshTimer)
+    }
+  }, [])
+
+  return (
+    <main className="members-view" style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 20px 50px" }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
+        ← Volver al foro
+      </button>
+      <div className="profile-page-heading">
+        <div>
+          <span>PROJECT ZOMBOID / ECLIPSE ORDER</span>
+          <h1>Servidor</h1>
+          <p>Estado, actividad y estadísticas en tiempo real del servidor.</p>
+        </div>
+        <div className="profile-page-mark">{serverStatus?.online ? "EN LÍNEA" : "SIN DATOS"}</div>
+      </div>
+      <section className="server-overview" aria-label="Estadísticas del servidor">
+        <div className="server-overview-heading">
+          <div>
+            <div className="server-kicker">SERVIDOR PROJECT ZOMBOID</div>
+            <strong className="server-player-count">
+              {serverStatus?.online ? `${serverStatus.player_count} jugadores conectados` : "Servidor sin datos recientes"}
+            </strong>
+          </div>
+          <span className={`server-live-status ${serverStatus?.online ? "is-online" : ""}`}>
+            {serverStatus?.online ? "● EN LÍNEA" : "● FUERA DE LÍNEA"}
+          </span>
+        </div>
+        <div className="server-stats-grid">
+          <div><span>RÉCORD ONLINE</span><strong>{serverStatus?.peak_player_count ?? 0}</strong><small>máximo registrado</small></div>
+          <div><span>TIEMPO ONLINE</span><strong>{serverStatus?.online ? formatServerUptime(serverStatus.online_since) : "No disponible"}</strong><small>sesión actual</small></div>
+          <div><span>ÚLTIMA ACTUALIZACIÓN</span><strong>{serverStatus?.checked_at ? formatDate(serverStatus.checked_at) : "No disponible"}</strong></div>
+        </div>
+      </section>
+      <section className="server-roster" aria-label="Jugadores conectados">
+        <div className="server-roster-heading"><div><span className="server-kicker">PRESENCIA EN TIEMPO REAL</span><h2>Jugadores conectados</h2></div><small>{serverPlayers.length} ONLINE</small></div>
+        {serverPlayers.length > 0 ? (
+          <div className="server-player-list">
+            {serverPlayers.map((player) => <span className="server-player-chip" key={player.username}><i aria-hidden="true" />{player.username}</span>)}
+          </div>
+        ) : <div className="members-empty">No hay jugadores conectados.</div>}
+      </section>
     </main>
   )
 }
@@ -4682,6 +4714,7 @@ export default function App() {
           onBack={handleGoBack}
         />
       )}
+      {view === "server" && <ServerView onBack={handleGoBack} />}
       {view === "control" && (
         <ControlPanelView
           currentUser={currentUser}

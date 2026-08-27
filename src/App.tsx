@@ -4831,8 +4831,23 @@ export default function App() {
   }
 
   const handleLoadMemberAvatars = useCallback(async (userIds: string[]) => {
-    // Avatar loading disabled to reduce database load
-    return
+    if (userIds.length === 0) return
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, avatar_url")
+      .in("id", userIds)
+
+    if (error) {
+      console.error("Could not load member avatars", error)
+      return
+    }
+
+    const avatarsByUserId = new Map((data || []).map((row) => [row.id, row.avatar_url]))
+    setUsers((previousUsers) => previousUsers.map((user) => (
+      avatarsByUserId.has(user.id)
+        ? { ...user, avatarUrl: avatarsByUserId.get(user.id) || undefined }
+        : user
+    )))
   }, [users])
 
   async function handleOpenProfile(user: User) {

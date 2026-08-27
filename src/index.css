@@ -1529,9 +1529,12 @@ select:hover,
 .header-account-copy strong {
   overflow: hidden;
   color: currentColor;
+  font-family: 'Oswald', sans-serif;
   font-size: 12px;
   line-height: 1.2;
+  letter-spacing: 0.14em;
   text-overflow: ellipsis;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 

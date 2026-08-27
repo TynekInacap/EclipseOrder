@@ -1690,6 +1690,12 @@ function CategorySection({
   setSelectedThread: (id: string) => void
 }) {
   const color = CATEGORY_COLORS[category]
+  const [threadPage, setThreadPage] = useState(1)
+  const shouldPaginateThreads = category === "historias" || category === "facciones"
+
+  useEffect(() => {
+    setThreadPage(1)
+  }, [category])
   const sorted = [...threads].sort((a, b) => {
     if (a.pinned && !b.pinned) return -1
     if (!a.pinned && b.pinned) return 1
@@ -1840,7 +1846,14 @@ function CategoryView({
   const factionSubforums: ThreadSubforum[] = ["no_oficial", "oficial"]
   const factionThreads = tabThreads.filter((t) => t.category === "facciones")
   const factionFormatThread = factionThreads.find((thread) => thread.id === "t-rules-facciones-formato")
-  const visibleThreads = tabThreads
+  const threadPageSize = 10
+  const threadPageCount = Math.max(1, Math.ceil(tabThreads.length / threadPageSize))
+  const visibleThreads = shouldPaginateThreads
+    ? tabThreads.slice((threadPage - 1) * threadPageSize, threadPage * threadPageSize)
+    : tabThreads
+  const paginationItems = threadPageCount <= 7
+    ? Array.from({ length: threadPageCount }, (_, index) => index + 1)
+    : [1, threadPage > 3 ? "..." : 2, ...[threadPage - 1, threadPage, threadPage + 1].filter((value) => value > 1 && value < threadPageCount), threadPage < threadPageCount - 2 ? "..." : threadPageCount - 1, threadPageCount]
   const reportSections = [
     { status: "abierto" as ThreadStatus, label: "Activos", description: "Reportes abiertos pendientes de una resolución.", color: "#f59e0b" },
     { status: "cerrado" as ThreadStatus, label: "Aceptados", description: "Todos los reportes aceptados y resueltos.", color: "#60a5fa" },
@@ -2094,6 +2107,21 @@ function CategoryView({
             })
           )}
         </div>
+        {shouldPaginateThreads && tabThreads.length > 0 && threadPageCount > 1 && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, marginTop: 18, flexWrap: "wrap" }}>
+            <span style={{ color: "var(--text-muted)", fontSize: 11, marginRight: 6 }}>Páginas ({threadPageCount}):</span>
+            <button onClick={() => setThreadPage((currentPage) => Math.max(1, currentPage - 1))} disabled={threadPage === 1} style={{ ...primaryBtn, width: "auto", padding: "5px 8px", fontSize: 10, opacity: threadPage === 1 ? 0.45 : 1 }}>
+              ← Anterior
+            </button>
+            {paginationItems.map((item, index) => item === "..." ? (
+              <span key={`thread-ellipsis-${index}`} style={{ color: "var(--text-dim)", padding: "5px 3px", fontSize: 11 }}>...</span>
+            ) : (
+              <button key={item} onClick={() => setThreadPage(item)} style={{ ...primaryBtn, width: "auto", minWidth: 28, padding: "5px 7px", fontSize: 10, background: item === threadPage ? "rgba(230,162,60,0.2)" : "transparent", border: `1px solid ${item === threadPage ? "#e6a23c" : "var(--border2)"}`, color: item === threadPage ? "#ffe7a3" : "var(--text-muted)", boxShadow: "none" }}>
+                {item}
+              </button>
+            ))}
+          </div>
+        )}
       </main>}
     </div>
   )

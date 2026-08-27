@@ -1576,7 +1576,6 @@ function Header({
               <button className="header-account-trigger" onClick={() => onOpenProfile(currentUser)} aria-haspopup="true">
                 <span className="header-account-copy">
                   <strong>{currentUser.username}</strong>
-                  <small>{roleLabel(currentUser.role)}</small>
                 </span>
                 {unreadNotifications.length > 0 && <span className="header-account-count">{unreadNotifications.length}</span>}
               </button>

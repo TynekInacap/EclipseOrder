@@ -1504,7 +1504,6 @@ function Header({
     let mounted = true
 
     async function loadServerStatus() {
-      await supabase.functions.invoke("server-status", { body: {} })
       const { data } = await supabase.from("server_status").select("online, player_count, peak_player_count, online_since, checked_at").eq("id", "main").maybeSingle()
       if (mounted) setServerStatus((data as ServerStatus | null) || null)
     }
@@ -4825,6 +4824,8 @@ export default function App() {
   }
 
   async function handleOpenProfile(user: User) {
+    setSelectedProfileId(user.id)
+    setView("profile")
     const { data, error } = await supabase
       .from("profiles")
       .select("id, username, role, avatar, avatar_url, bio, banner_url, role_points, redeemed_role_points, joined_at")
@@ -4837,8 +4838,6 @@ export default function App() {
       setUsers((previousUsers) => previousUsers.map((item) => item.id === loadedUser.id ? { ...item, ...loadedUser } : item))
       if (currentUser.id === loadedUser.id) setCurrentUser((previousUser) => previousUser ? { ...previousUser, ...loadedUser } : previousUser)
     }
-    setSelectedProfileId(user.id)
-    setView("profile")
   }
 
   function handleOpenCategory(category: Category) {

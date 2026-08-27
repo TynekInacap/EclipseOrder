@@ -1697,12 +1697,6 @@ function CategorySection({
   setSelectedThread: (id: string) => void
 }) {
   const color = CATEGORY_COLORS[category]
-  const [threadPage, setThreadPage] = useState(1)
-  const shouldPaginateThreads = category === "historias" || category === "facciones"
-
-  useEffect(() => {
-    setThreadPage(1)
-  }, [category])
   const sorted = [...threads].sort((a, b) => {
     if (a.pinned && !b.pinned) return -1
     if (!a.pinned && b.pinned) return 1
@@ -1833,6 +1827,12 @@ function CategoryView({
   onOpenFactionSubforum: (subforum: ThreadSubforum) => void
 }) {
   const color = CATEGORY_COLORS[category]
+  const [threadPage, setThreadPage] = useState(1)
+  const shouldPaginateThreads = category === "historias" || category === "facciones"
+
+  useEffect(() => {
+    setThreadPage(1)
+  }, [category])
 
   const sortThreads = (list: Thread[], cat: Category) =>
     [...list].sort((a, b) => {

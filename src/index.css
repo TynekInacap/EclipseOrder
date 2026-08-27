@@ -1440,21 +1440,7 @@ select:hover,
 }
 
 .header-store-link {
-  position: relative;
-  color: #fbbf24;
-  text-shadow: 0 0 12px rgba(251, 191, 36, 0.5);
-  animation: goldenBrighten 2s ease-in-out infinite;
-}
-
-@keyframes goldenBrighten {
-  0%, 100% { 
-    color: #fbbf24;
-    text-shadow: 0 0 12px rgba(251, 191, 36, 0.4);
-  }
-  50% { 
-    color: #fde047;
-    text-shadow: 0 0 20px rgba(253, 224, 71, 0.7);
-  }
+  animation: catalogColorShift 1.5s ease-in-out infinite;
 }
 
 .header-account-menu {

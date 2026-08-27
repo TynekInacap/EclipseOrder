@@ -234,6 +234,9 @@ function routeFromLocation(): RouteState {
 
   if (segments[0] === "servidor") return { view: "server" }
   if (segments[0] === "miembros") return { view: "members" }
+  if (segments[0] === "tienda") return { view: "store" }
+  if (segments[0] === "control") return { view: "control" }
+  if (segments[0] === "admin") return { view: "admin" }
   if (segments[0] === "perfil" && segments[1]) return { view: "profile", profileId: segments[1] }
   if (segments[0] === "hilo" && segments[1]) return { view: "thread", threadId: segments[1] }
   if (segments[0] === "foro" && segments[2] === "nuevo" && segments[1]) {
@@ -256,6 +259,9 @@ function pathFromState(view: View, profileId: string, threadId: string, category
   if (view === "profile" && profileId) return `/perfil/${encodeURIComponent(profileId)}`
   if (view === "server") return "/servidor"
   if (view === "members") return "/miembros"
+  if (view === "store") return "/tienda"
+  if (view === "control") return "/control"
+  if (view === "admin") return "/admin"
   if (view === "thread" && threadId) return `/hilo/${encodeURIComponent(threadId)}`
   if (view === "new_thread") return `/foro/${category}/nuevo`
   if (view === "category") return `/foro/${category}`

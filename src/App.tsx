@@ -715,6 +715,11 @@ function formatServerUptime(onlineSince: string | null) {
   return `${minutes}m`
 }
 
+function threadLastActivity(thread: Thread) {
+  const lastReply = thread.replies[thread.replies.length - 1]
+  return new Date(lastReply?.createdAt || thread.createdAt).getTime()
+}
+
 function uid() {
   return Math.random().toString(36).slice(2, 10)
 }
@@ -1664,6 +1669,10 @@ function CategorySection({
   const sorted = [...threads].sort((a, b) => {
     if (a.pinned && !b.pinned) return -1
     if (!a.pinned && b.pinned) return 1
+    // Historias move a thread up when someone replies to it.
+    if (category === "historias") {
+      return threadLastActivity(b) - threadLastActivity(a)
+    }
     // Normativa orders oldest first (ascending), others newest first (descending)
     if (category === "normativa") {
       return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
@@ -1792,6 +1801,10 @@ function CategoryView({
     [...list].sort((a, b) => {
       if (a.pinned && !b.pinned) return -1
       if (!a.pinned && b.pinned) return 1
+      // Historias move a thread up when someone replies to it.
+      if (cat === "historias") {
+        return threadLastActivity(b) - threadLastActivity(a)
+      }
       // Normativa orders oldest first (ascending), others newest first (descending)
       if (cat === "normativa") {
         return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()

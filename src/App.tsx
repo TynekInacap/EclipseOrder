@@ -397,8 +397,9 @@ function mapReply(row: ReplyRow): Reply {
 }
 
 async function loadSupabaseForum(currentUserId?: string) {
-  const notificationsQuery = supabase.from("notifications").select("id, user_id, text, read, created_at").order("created_at", { ascending: false })
-  if (currentUserId) notificationsQuery.eq("user_id", currentUserId)
+  const notificationsQuery = currentUserId
+    ? supabase.from("notifications").select("id, user_id, text, read, created_at").eq("user_id", currentUserId).order("created_at", { ascending: false })
+    : Promise.resolve({ data: [], error: null })
 
   const [
     { data: profileRows, error: profilesError },
@@ -408,7 +409,7 @@ async function loadSupabaseForum(currentUserId?: string) {
     { data: threadAttachmentRows, error: threadAttachmentsError },
     { data: threadViewRows, error: threadViewsError },
   ] = await Promise.all([
-    supabase.from("profiles").select("id, username, role, avatar, bio, role_points, redeemed_role_points, joined_at").order("joined_at", { ascending: true }),
+    supabase.from("profiles").select("id, username, role, avatar, avatar_url, bio, role_points, redeemed_role_points, joined_at").order("joined_at", { ascending: true }),
     notificationsQuery,
     supabase.from("threads").select("id, title, category, author_id, content, status, pinned, admin_only, created_at, edited_at, subforum, faction_role_points, faction_role_points_claimed").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
     supabase.rpc("get_thread_reply_summaries"),
@@ -4296,7 +4297,7 @@ export default function App() {
     try {
       let { data: profileRow, error: profileError } = await supabase
         .from("profiles")
-        .select("id, username, role, avatar, bio, role_points, redeemed_role_points, joined_at")
+        .select("id, username, role, avatar, avatar_url, bio, role_points, redeemed_role_points, joined_at")
         .eq("id", userId)
         .maybeSingle()
 
@@ -4318,7 +4319,7 @@ export default function App() {
             },
             { onConflict: "id" },
           )
-          .select("id, username, role, avatar, bio, role_points, redeemed_role_points, joined_at")
+          .select("id, username, role, avatar, avatar_url, bio, role_points, redeemed_role_points, joined_at")
           .single()
 
         if (insertResult.error) {

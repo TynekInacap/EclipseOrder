@@ -400,7 +400,7 @@ async function loadSupabaseForum(currentUserId?: string) {
     { data: threadAttachmentRows, error: threadAttachmentsError },
     { data: threadViewRows, error: threadViewsError },
   ] = await Promise.all([
-    supabase.from("profiles").select("id, username, role, avatar, avatar_url, bio, banner_url, role_points, redeemed_role_points, joined_at").order("joined_at", { ascending: true }),
+    supabase.from("profiles").select("id, username, role, avatar, bio, role_points, redeemed_role_points, joined_at").order("joined_at", { ascending: true }),
     notificationsQuery,
     supabase.from("threads").select("id, title, category, author_id, content, status, pinned, admin_only, created_at, edited_at, subforum, faction_role_points, faction_role_points_claimed").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
     supabase.rpc("get_thread_reply_summaries"),
@@ -4227,7 +4227,7 @@ export default function App() {
     try {
       let { data: profileRow, error: profileError } = await supabase
         .from("profiles")
-        .select("id, username, role, avatar, avatar_url, bio, banner_url, role_points, redeemed_role_points, joined_at")
+        .select("id, username, role, avatar, bio, role_points, redeemed_role_points, joined_at")
         .eq("id", userId)
         .maybeSingle()
 
@@ -4249,7 +4249,7 @@ export default function App() {
             },
             { onConflict: "id" },
           )
-          .select("id, username, role, avatar, avatar_url, bio, banner_url, role_points, redeemed_role_points, joined_at")
+          .select("id, username, role, avatar, bio, role_points, redeemed_role_points, joined_at")
           .single()
 
         if (insertResult.error) {
@@ -4760,7 +4760,19 @@ export default function App() {
     else await refreshForumState()
   }
 
-  function handleOpenProfile(user: User) {
+  async function handleOpenProfile(user: User) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, username, role, avatar, avatar_url, bio, banner_url, role_points, redeemed_role_points, joined_at")
+      .eq("id", user.id)
+      .maybeSingle()
+    if (error) {
+      console.error("Could not load profile media", error)
+    } else if (data) {
+      const loadedUser = mapProfile(data as ProfileRow)
+      setUsers((previousUsers) => previousUsers.map((item) => item.id === loadedUser.id ? { ...item, ...loadedUser } : item))
+      if (currentUser.id === loadedUser.id) setCurrentUser((previousUser) => previousUser ? { ...previousUser, ...loadedUser } : previousUser)
+    }
     setSelectedProfileId(user.id)
     setView("profile")
   }

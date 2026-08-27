@@ -1440,12 +1440,18 @@ select:hover,
 }
 
 .header-store-link {
-  animation: goldenGradientText 2s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent 0%, #fbbf24 25%, #fde047 50%, #fbbf24 75%, transparent 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: goldenShineMove 2.5s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.4));
 }
 
-@keyframes goldenGradientText {
-  0%, 100% { color: #fbbf24; }
-  50% { color: #fde047; }
+@keyframes goldenShineMove {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
 .header-account-menu {

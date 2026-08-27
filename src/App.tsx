@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from "react"
-import { useNavigate, useRouterState } from "@tanstack/react-router"
 import DOMPurify from "dompurify"
 import { marked } from "marked"
 import { supabase } from "@/lib/supabase"
@@ -230,8 +229,8 @@ type NavigationSnapshot = RouteState & {
   factionSubforum: ThreadSubforum
 }
 
-function routeFromPath(pathname: string): RouteState {
-  const segments = pathname.split("/").filter(Boolean).map((segment) => decodeURIComponent(segment))
+function routeFromLocation(): RouteState {
+  const segments = window.location.pathname.split("/").filter(Boolean).map((segment) => decodeURIComponent(segment))
 
   if (segments[0] === "servidor") return { view: "server" }
   if (segments[0] === "miembros") return { view: "members" }
@@ -4184,9 +4183,7 @@ const navBtn: React.CSSProperties = {
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const routerLocation = useRouterState({ select: (state) => state.location })
-  const navigate = useNavigate()
-  const initialRouteRef = useRef<RouteState>(routeFromPath(routerLocation.pathname))
+  const initialRouteRef = useRef<RouteState>(routeFromLocation())
   const [users, setUsers] = useState<User[]>([])
   const [threads, setThreads] = useState<Thread[]>([])
   const [storeProducts, setStoreProducts] = useState<StoreProduct[]>([])
@@ -4209,19 +4206,26 @@ export default function App() {
   const restoringNavigationRef = useRef(false)
 
   useEffect(() => {
-    const route = routeFromPath(routerLocation.pathname)
-    setView(route.view)
-    setSelectedThread(route.threadId || "")
-    setSelectedProfileId(route.profileId || "")
-    if (route.category) setSelectedCategory(route.category)
-    if (route.reportStatus) setSelectedReportStatus(route.reportStatus)
-    if (route.factionSubforum) setSelectedFactionSubforum(route.factionSubforum)
-  }, [routerLocation.pathname])
+    const handlePopState = () => {
+      const route = routeFromLocation()
+      setView(route.view)
+      setSelectedThread(route.threadId || "")
+      setSelectedProfileId(route.profileId || "")
+      if (route.category) setSelectedCategory(route.category)
+      if (route.reportStatus) setSelectedReportStatus(route.reportStatus)
+      if (route.factionSubforum) setSelectedFactionSubforum(route.factionSubforum)
+    }
+
+    window.addEventListener("popstate", handlePopState)
+    return () => window.removeEventListener("popstate", handlePopState)
+  }, [])
 
   useEffect(() => {
     const nextPath = pathFromState(view, selectedProfileId, selectedThread, selectedCategory, selectedReportStatus, selectedFactionSubforum)
-    if (routerLocation.pathname !== nextPath) void navigate({ to: nextPath })
-  }, [navigate, routerLocation.pathname, view, selectedProfileId, selectedThread, selectedCategory, selectedReportStatus, selectedFactionSubforum])
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, "", nextPath)
+    }
+  }, [view, selectedProfileId, selectedThread, selectedCategory, selectedReportStatus, selectedFactionSubforum])
 
   useEffect(() => {
     if (!authReady) return

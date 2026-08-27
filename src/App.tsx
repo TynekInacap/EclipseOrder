@@ -95,6 +95,7 @@ interface Thread {
   visitorCount?: number
   replyCount?: number
   repliesLoaded?: boolean
+  contentLoaded?: boolean
 }
 
 interface ServerStatus {
@@ -284,6 +285,11 @@ type ProfileRow = {
   joined_at: string
 }
 
+type ProfileUpdates = Partial<User> & {
+  avatarFile?: File
+  bannerFile?: File
+}
+
 type NotificationRow = {
   id: string
   user_id: string
@@ -398,30 +404,28 @@ function mapReply(row: ReplyRow): Reply {
 
 async function loadSupabaseForum(currentUserId?: string) {
   const notificationsQuery = currentUserId
-    ? supabase.from("notifications").select("id, user_id, text, read, created_at").eq("user_id", currentUserId).order("created_at", { ascending: false })
+    ? supabase.from("notifications").select("id, user_id, text, read, created_at").eq("user_id", currentUserId).order("created_at", { ascending: false }).limit(50)
     : Promise.resolve({ data: [], error: null })
+  const threadQuery = supabase.from("threads").select("id, title, category, author_id, status, pinned, admin_only, created_at, edited_at, subforum, faction_role_points, faction_role_points_claimed").order("pinned", { ascending: false }).order("created_at", { ascending: false })
+  const { data: threadRows, error: threadsError } = await threadQuery
+  if (threadsError) throw threadsError
+  const requestedThreadIds = (threadRows || []).map((thread) => thread.id)
 
   const [
     { data: profileRows, error: profilesError },
     { data: notificationRows, error: notificationsError },
-    { data: threadRows, error: threadsError },
     { data: replySummaryRows, error: replySummariesError },
-    { data: threadAttachmentRows, error: threadAttachmentsError },
     { data: threadViewRows, error: threadViewsError },
   ] = await Promise.all([
     supabase.from("profiles").select("id, username, role, avatar, bio, role_points, redeemed_role_points, joined_at").order("joined_at", { ascending: true }),
     notificationsQuery,
-    supabase.from("threads").select("id, title, category, author_id, content, status, pinned, admin_only, created_at, edited_at, subforum, faction_role_points, faction_role_points_claimed").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
-    supabase.rpc("get_thread_reply_summaries"),
-    supabase.from("thread_attachments").select("id, thread_id, name, type, storage_path"),
-    supabase.rpc("get_thread_view_counts"),
+    supabase.rpc("get_thread_reply_summaries", { requested_thread_ids: requestedThreadIds }),
+    supabase.rpc("get_thread_view_counts", { requested_thread_ids: requestedThreadIds }),
   ])
 
   if (profilesError) throw profilesError
   if (notificationsError) throw notificationsError
-  if (threadsError) throw threadsError
   if (replySummariesError) throw replySummariesError
-  if (threadAttachmentsError) throw threadAttachmentsError
   const threadViewCounts = threadViewsError ? [] : (threadViewRows || []) as { thread_id: string; visitor_count: number | string }[]
   const threadViewCountById = new Map(threadViewCounts.map((view) => [view.thread_id, Number(view.visitor_count)]))
 
@@ -435,7 +439,6 @@ async function loadSupabaseForum(currentUserId?: string) {
     const profile = mapProfile(row as ProfileRow)
     return { ...profile, notifications: notificationsByUser.get(profile.id) || [] }
   })
-  const threadAttachments = (threadAttachmentRows || []) as AttachmentRow[]
   const replySummariesByThread = new Map((replySummaryRows || []).map((row) => {
     const summary = row as ReplySummaryRow
     return [summary.thread_id, summary] as const
@@ -448,7 +451,7 @@ async function loadSupabaseForum(currentUserId?: string) {
       title: thread.title,
       category: thread.category,
       authorId: thread.author_id,
-      content: thread.content,
+      content: "",
       status: thread.status,
       pinned: thread.pinned,
       adminOnly: thread.admin_only,
@@ -458,11 +461,10 @@ async function loadSupabaseForum(currentUserId?: string) {
       visitorCount: threadViewCountById.get(thread.id) || 0,
       replyCount: Number(replySummary?.reply_count || 0),
       repliesLoaded: false,
+      contentLoaded: false,
       createdAt: thread.created_at,
       editedAt: thread.edited_at || undefined,
-      attachments: threadAttachments
-        .filter((attachment) => attachment.thread_id === thread.id)
-        .map((attachment) => ({ name: attachment.name, type: attachment.type, dataUrl: attachmentUrl(attachment) })),
+      attachments: [],
       replies: replySummary?.last_reply_id && replySummary.last_author_id && replySummary.last_created_at ? [{
         id: replySummary.last_reply_id,
         authorId: replySummary.last_author_id,
@@ -482,6 +484,7 @@ async function loadSupabaseForum(currentUserId?: string) {
     content: "**FORMATO PARA FICHAS DEL PERSONAJE**\n\n> **Nombre y Apellido:**\n> **Edad:**\n> **Historia Breve Del Personaje:**\n> **Descripción Psicológica Del Personaje**\n> **Foto/ilustración del personaje**\n\n**Todo personaje** debe presentar una biografía breve y básica antes de su participación activa. La biografía define únicamente el punto de partida del personaje y no su desarrollo completo. Debe establecer de forma clara un origen general, rasgos psicológicos principales, motivaciones iniciales y límites concretos, como miedos, debilidades o conflictos internos. No se exige profundidad ni extensión inicial, ya que el desarrollo del personaje ocurre dentro del mismo servidor.\n\nEl desarrollo activo de la biografía durante el juego otorga peso narrativo real. Las decisiones tomadas, los vínculos construidos, los conflictos sostenidos y la evolución psicológica forman parte del canon personal del personaje. Las biografías que se desarrollen de manera coherente y sostenida serán recompensadas ya sea con **PDR** o **FDR** de manera casual.\n\nEn el caso que el usuario no interprete humanamente un personaje, fuerce situaciones conflictivas o innecesarias, será bloqueado por nula interpretación.\n\nLos usuarios que realicen roles relevantes para el futuro deberán guardar capturas de sus roles previos.\n\nAl cierre de cada temporada, el staff podrá reconocer a aquellos personajes que hayan demostrado un desarrollo, coherencia narrativa sostenida. Estas premiaciones más que nada es para incentivar el rolear y mantener un personaje bien construído.\n\nCada personaje creado por un usuario debe ser único e irrepetible. No está permitido reutilizar historias, perfiles psicológicos, rasgos, antecedentes ni recrear vínculos familiares con personajes anteriores.\n\nTodos los personajes deben tener un mínimo de **16 años**, sin excepciones.",
     status: "abierto",
     createdAt: "2026-08-03T11:00:00Z",
+    contentLoaded: true,
     pinned: true,
     replies: [],
     adminOnly: true,
@@ -495,6 +498,7 @@ async function loadSupabaseForum(currentUserId?: string) {
     content: "**Reglas específicas de la sección de reportes**\n\n- En los reportes solo hablan los acusados, el que reporta y el miembro del Staff que tome el reporte. Aunque hayas estado involucrado (como testigo o con pruebas) no podrás participar.\n\n- El motivo de sanción debe ser claro.\n\n- El título del reporte debe seguir el formato: **Nombre Apellido**.\n\n- Si el usuario que reporta o el usuario reportado están baneados permanentemente o de forma indefinida, el reporte será rechazado.\n\n- El denunciante, luego de 72 horas, puede solicitar al Encargado de Staff que coloque un encargado para responder su reporte. Aun así esto no quiere decir que el reporte sea tomado sí o cuando el usuario lo solicite. El Equipo del Staff y los Administradores se reserva el derecho de tomar el reporte cuando sea conveniente.\n\n- Cualquier reporte hecho con la intención de molestar, hostigar o con pruebas editadas para incriminar a un usuario/staff terminará con tu cuenta baneada de la comunidad.\n\n- El reporte estará en estado de pendiente hasta que el acusado responda o un Staff pida la respuesta del acusado (con un mínimo de 24 horas de espera). Esto quiere decir que si se excede el límite de tiempo y todavía el acusado no ha respondido se podrá tomar como aceptado el reporte sin problema alguno, basándose en los hechos que aclaró el denunciante.\n\n- En caso de que el Staff considere que las pruebas entregadas son suficientes para una resolución, no estará obligado a esperar la respuesta del acusado.\n\n- El caso no se tomará en cuenta si se reporta luego de 2 semanas de lo ocurrido.\n\n- Las pruebas no pueden estar manipuladas de ninguna forma. Si se muestran dichas pruebas, deben de estar en su formato original. Esto incluye el ocultado de información como puede ser tapar el chat o los nombres de los personajes. En caso de que esto se realice, el reporte será cerrado a favor del contrincante (si las pruebas son editadas por el acusado, el reporte es aceptado mientras que si las pruebas son editadas por el denunciante, el reporte es rechazado).\n\n- Además, la manipulación de pruebas puede llevar a una sanción, llegando hasta la expulsión de nuestra comunidad en ciertos casos.\n\n- La explicación de los hechos no puede superar los 1000 caracteres.\n\n**Modus operandi**\n\n**General:**\n\nAl realizar el reporte, el denunciante o creador del mismo deberá de dar toda la información que pueda al respecto del caso. Si es un reporte múltiple (con varios acusados) los motivos de sanción deben de ser idénticos para cada persona. Por ejemplo, en caso de que un acusado haya sido denunciado erróneamente por DM y este lo remarque, el reporte será rechazado para todos. Si quiere reportar a un grupo de personas por distintos motivos, realice distintos reportes.\n\nLas pruebas deben de ser claras y la explicación breve y concisa, no se vaya por las ramas porque solo entorpecerá la resolución de dicha denuncia/reporte. Procure explicar todo lo que pueda teniendo chances limitadas para defender su palabra. Una vez cree el reporte, no podrá contestarlo hasta que un Staff le permita hacerlo. Deberá de esperar a la respuesta del acusado o del Staff que se haga cargo de dicha denuncia.\n\nSi usted fue el acusado, deberá de responder el reporte lo más rápido que pueda. No es necesario que cuente con pruebas a excepción de que comente que las tiene o que hable sobre sucesos los cuales las pruebas del contrincante no los muestran. El comentar tener pruebas y luego no mostrarlas es un indicativo que tomará el Staff para creerle más al denunciante que al acusado. Usted deberá de responder el reporte y esperar a la respuesta del Staff.\n\nSi el acusado vuelve a responder sin que el Staff le dé el permiso, el Staff podrá aceptar el reporte por este mismo motivo aun si las pruebas no son del todo convincentes. A la vez, si el acusado responde al denunciante sin el permiso del Staff, el Staff podrá rechazar el reporte aun si las pruebas son convincentes.\n\nEl denunciante luego de crear el post solo podrá volver a comentar en el mismo si el Staff le da permiso, mientras que el acusado luego de dar una respuesta al post solo podrá volver a comentar si el Staff le otorga el permiso.\n\nEl editar o eliminar el post luego de una respuesta podrá resultar en una sanción por parte del Staff a cargo de dicho reporte.\n\n**Contra usuarios:**\n\nEs obligatorio que dicho reporte cuente con pruebas sobre lo relatado. En caso de no tenerlas, el reporte será rechazado a excepción de que el Staff vea conveniente no hacerlo.\n\n**Plantilla/formato del reporte**\n\n**Nombre del denunciante:** Responder aquí.\n\n**Nombre del acusado:** Responder aquí.\n\n**Fecha de lo ocurrido:** Responder aquí.\n\n**Motivos de sanción:** Responder aquí.\n\n**Breve explicación de los hechos:** Responder aquí.\n\n**Pruebas sobre lo relatado:** Responder aquí.",
     status: "abierto",
     createdAt: "2026-08-03T10:00:00Z",
+    contentLoaded: true,
     pinned: true,
     replies: [],
     adminOnly: true,
@@ -508,6 +512,7 @@ async function loadSupabaseForum(currentUserId?: string) {
     content: "**El titulo del hilo debe ser nombre de la facción**\n\n**Introducción y Lore**:\n\n**Ubicación**:\n\n**Miembros**:\n\n**Screenshots (Si requiere)**:",
     status: "abierto",
     createdAt: "2026-08-03T09:00:00Z",
+    contentLoaded: true,
     pinned: true,
     replies: [],
     adminOnly: true,
@@ -2430,7 +2435,7 @@ function ProfileView({
   currentUser: User
   users: User[]
   selectedUserId: string
-  onSaveProfile: (userId: string, updates: Partial<User>) => Promise<void>
+  onSaveProfile: (userId: string, updates: ProfileUpdates) => Promise<void>
   onBack: () => void
 }) {
   const selectedUser = users.find((u) => u.id === selectedUserId) || currentUser
@@ -2442,6 +2447,8 @@ function ProfileView({
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [profileSaveMessage, setProfileSaveMessage] = useState("")
   const [copyMessage, setCopyMessage] = useState("")
+  const avatarFileRef = useRef<File | null>(null)
+  const bannerFileRef = useRef<File | null>(null)
 
   useEffect(() => {
     setBio(selectedUser.bio || "")
@@ -2482,6 +2489,7 @@ function ProfileView({
     const reader = new FileReader()
     reader.onload = (ev) => {
       const imageData = String(ev.target?.result || "")
+      avatarFileRef.current = file
       setAvatarUrl(imageData)
     }
     reader.readAsDataURL(file)
@@ -2495,6 +2503,7 @@ function ProfileView({
     const reader = new FileReader()
     reader.onload = (ev) => {
       const imageData = String(ev.target?.result || "")
+      bannerFileRef.current = file
       setPendingBannerUrl(imageData)
       setBannerUrl(imageData)
     }
@@ -2609,7 +2618,11 @@ function ProfileView({
                           avatarUrl,
                           bio,
                           bannerUrl: nextBannerUrl,
+                          avatarFile: avatarFileRef.current || undefined,
+                          bannerFile: bannerFileRef.current || undefined,
                         })
+                        avatarFileRef.current = null
+                        bannerFileRef.current = null
                         setPendingBannerUrl("")
                         setProfileSaveMessage("Perfil guardado correctamente.")
                       } catch (saveError) {
@@ -3151,6 +3164,7 @@ function ThreadView({
   onDeleteThread,
   onDeleteReply,
   onLoadReplies,
+  onLoadThread,
   onMoveFactionThread,
   onAddFactionRolePoints,
   onClaimFactionRolePoints,
@@ -3170,6 +3184,7 @@ function ThreadView({
   onDeleteThread: (threadId: string) => void
   onDeleteReply: (threadId: string, replyId: string) => void
   onLoadReplies: (threadId: string, before?: string) => Promise<boolean>
+  onLoadThread: (threadId: string) => Promise<void>
   onMoveFactionThread: (threadId: string, targetSubforum: ThreadSubforum) => void
   onAddFactionRolePoints: (threadId: string, amount: number) => void
   onClaimFactionRolePoints: (threadId: string) => void
@@ -3193,11 +3208,18 @@ function ThreadView({
   const [isSavingReply, setIsSavingReply] = useState(false)
   const [isLoadingReplies, setIsLoadingReplies] = useState(false)
   const [hasMoreReplies, setHasMoreReplies] = useState(false)
+  const [isLoadingThread, setIsLoadingThread] = useState(false)
 
   useEffect(() => {
     if (!thread) return
     void onRegisterView(thread.id, currentUser.id)
   }, [currentUser.id, onRegisterView, thread?.id])
+
+  useEffect(() => {
+    if (!thread || thread.contentLoaded) return
+    setIsLoadingThread(true)
+    void onLoadThread(thread.id).catch(() => undefined).finally(() => setIsLoadingThread(false))
+  }, [onLoadThread, thread?.contentLoaded, thread?.id])
 
   useEffect(() => {
     if (!thread || thread.repliesLoaded) return
@@ -3542,7 +3564,7 @@ function ThreadView({
             wordBreak: "break-word",
           }}
         >
-          {isEditing ? "Revisa el contenido en el formulario superior antes de guardar." : <MarkdownText content={thread.content} />}
+          {isEditing ? "Revisa el contenido en el formulario superior antes de guardar." : isLoadingThread ? "CARGANDO HILO..." : <MarkdownText content={thread.content} />}
         </div>
         {thread.category === "facciones" && (
           <div style={{ marginTop: 18, padding: "13px 15px", border: "1px solid rgba(77,216,223,0.3)", borderRadius: 10, background: "linear-gradient(135deg, rgba(77,216,223,0.1), rgba(10,22,35,0.7))", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
@@ -4210,6 +4232,7 @@ export default function App() {
   const navigationHistoryRef = useRef<NavigationSnapshot[]>([])
   const lastNavigationRef = useRef<NavigationSnapshot | null>(null)
   const restoringNavigationRef = useRef(false)
+  const threadLoadPromisesRef = useRef(new Map<string, Promise<void>>())
 
   useEffect(() => {
     const handlePopState = () => {
@@ -4361,6 +4384,36 @@ export default function App() {
     setUsers(forum.users)
     setThreads(forum.threads)
   }
+
+  const handleLoadThread = useCallback((threadId: string) => {
+    const existingRequest = threadLoadPromisesRef.current.get(threadId)
+    if (existingRequest) return existingRequest
+
+    const request = (async () => {
+      const [{ data: threadRow, error: threadError }, { data: attachmentRows, error: attachmentsError }] = await Promise.all([
+        supabase.from("threads").select("id, title, content, edited_at").eq("id", threadId).maybeSingle(),
+        supabase.from("thread_attachments").select("id, thread_id, name, type, data_url, storage_path").eq("thread_id", threadId),
+      ])
+      if (threadError) throw threadError
+      if (attachmentsError) throw attachmentsError
+      const attachments = (attachmentRows || []) as AttachmentRow[]
+      setThreads((previousThreads) => previousThreads.map((thread) => thread.id === threadId ? {
+        ...thread,
+        title: threadRow?.title || thread.title,
+        content: threadRow?.content || "",
+        editedAt: threadRow?.edited_at || undefined,
+        attachments: attachments.map((attachment) => ({ name: attachment.name, type: attachment.type, dataUrl: attachmentUrl(attachment) })),
+        contentLoaded: true,
+      } : thread))
+    })()
+
+    threadLoadPromisesRef.current.set(threadId, request)
+    void request.catch((error) => {
+      threadLoadPromisesRef.current.delete(threadId)
+      console.error("Could not load thread content", error)
+    })
+    return request
+  }, [])
 
   async function handleLoadReplies(threadId: string, before?: string) {
     let repliesQuery = supabase
@@ -4883,11 +4936,21 @@ export default function App() {
     setView("faction_subforum")
   }
 
-  async function handleSaveProfile(userId: string, updates: Partial<User>) {
+  async function handleSaveProfile(userId: string, updates: ProfileUpdates) {
+    const uploadProfileMedia = async (file: File, kind: "avatar" | "banner") => {
+      const extension = file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "bin"
+      const path = `${userId}/${kind}-${crypto.randomUUID()}.${extension}`
+      const { error: uploadError } = await supabase.storage.from("profile-media").upload(path, file, { contentType: file.type, upsert: false })
+      if (uploadError) throw new Error(uploadError.message)
+      return supabase.storage.from("profile-media").getPublicUrl(path).data.publicUrl
+    }
+
+    const avatarUrl = updates.avatarFile ? await uploadProfileMedia(updates.avatarFile, "avatar") : updates.avatarUrl
+    const bannerUrl = updates.bannerFile ? await uploadProfileMedia(updates.bannerFile, "banner") : updates.bannerUrl
     const { error } = await supabase.from("profiles").update({
-      avatar_url: updates.avatarUrl,
+      avatar_url: avatarUrl,
       bio: updates.bio,
-      banner_url: updates.bannerUrl,
+      banner_url: bannerUrl,
     }).eq("id", userId)
     if (error) throw new Error(error.message)
     await hydrateSession(userId)
@@ -5047,6 +5110,7 @@ export default function App() {
           onDeleteThread={handleDeleteThread}
           onDeleteReply={handleDeleteReply}
           onLoadReplies={handleLoadReplies}
+          onLoadThread={handleLoadThread}
           onMoveFactionThread={handleMoveFactionThread}
           onAddFactionRolePoints={handleAddFactionRolePoints}
           onClaimFactionRolePoints={handleClaimFactionRolePoints}

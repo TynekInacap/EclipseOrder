@@ -12,6 +12,10 @@ insert into storage.buckets (id, name, public)
 values ('forum-attachments', 'forum-attachments', true)
 on conflict (id) do update set public = true;
 
+insert into storage.buckets (id, name, public)
+values ('profile-media', 'profile-media', true)
+on conflict (id) do update set public = true;
+
 create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   username text not null unique check (char_length(trim(username)) >= 3),
@@ -158,6 +162,8 @@ on conflict (id) do nothing;
 
 drop index if exists public.replies_thread_created_idx;
 drop index if exists public.thread_views_thread_idx;
+drop function if exists public.get_thread_view_counts();
+drop function if exists public.get_thread_reply_summaries();
 
 create index if not exists threads_category_created_idx on public.threads(category, created_at desc);
 create index if not exists threads_pinned_created_idx on public.threads(pinned desc, created_at desc);
@@ -169,7 +175,7 @@ create index if not exists notifications_user_created_idx on public.notification
 create index if not exists thread_attachments_thread_idx on public.thread_attachments(thread_id);
 create index if not exists reply_attachments_reply_idx on public.reply_attachments(reply_id);
 
-create or replace function public.get_thread_view_counts()
+create or replace function public.get_thread_view_counts(requested_thread_ids uuid[])
 returns table(thread_id uuid, visitor_count bigint)
 language sql
 stable
@@ -177,10 +183,11 @@ security invoker
 as $$
   select thread_id, count(*)
   from public.thread_views
+  where thread_id = any(requested_thread_ids)
   group by thread_id;
 $$;
 
-create or replace function public.get_thread_reply_summaries()
+create or replace function public.get_thread_reply_summaries(requested_thread_ids uuid[])
 returns table(
   thread_id uuid,
   reply_count bigint,
@@ -200,6 +207,7 @@ as $$
       (array_agg(author_id order by created_at desc))[1] as last_author_id,
       max(created_at) as last_created_at
     from public.replies
+    where thread_id = any(requested_thread_ids)
     group by thread_id
   )
   select thread_id, reply_count, last_reply_id, last_author_id, last_created_at
@@ -270,6 +278,16 @@ create policy "Authenticated users can upload forum attachments"
 on storage.objects for insert
 to authenticated
 with check (bucket_id = 'forum-attachments');
+
+create policy "Authenticated users can read profile media"
+on storage.objects for select
+to authenticated
+using (bucket_id = 'profile-media');
+
+create policy "Authenticated users can upload profile media"
+on storage.objects for insert
+to authenticated
+with check (bucket_id = 'profile-media');
 
 create policy "Profiles are publicly readable"
 on public.profiles for select
@@ -355,13 +373,12 @@ on public.notifications for update
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 
-create policy "Authenticated users can create notifications"
-on public.notifications for insert
-to authenticated
-with check (auth.uid() is not null);
+drop policy if exists "Authenticated users can create notifications" on public.notifications;
+drop policy if exists "Staff can create notifications" on public.notifications;
 
 create policy "Staff can create notifications"
 on public.notifications for insert
+to authenticated
 with check (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'moderator')));
 
 create policy "Authenticated users can read thread views"

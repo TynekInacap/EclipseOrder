@@ -98,6 +98,8 @@ interface Thread {
 interface ServerStatus {
   online: boolean
   player_count: number
+  peak_player_count: number
+  online_since: string | null
   checked_at: string
 }
 
@@ -697,6 +699,17 @@ function formatDate(iso: string) {
     hour: "2-digit",
     minute: "2-digit",
   })
+}
+
+function formatServerUptime(onlineSince: string | null) {
+  if (!onlineSince) return "No disponible"
+  const elapsedMinutes = Math.max(0, Math.floor((Date.now() - new Date(onlineSince).getTime()) / 60_000))
+  const days = Math.floor(elapsedMinutes / 1_440)
+  const hours = Math.floor((elapsedMinutes % 1_440) / 60)
+  const minutes = elapsedMinutes % 60
+  if (days > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${minutes}m`
+  return `${minutes}m`
 }
 
 function uid() {
@@ -1452,7 +1465,7 @@ function Header({
 
     async function loadServerStatus() {
       await supabase.functions.invoke("server-status", { body: {} })
-      const { data } = await supabase.from("server_status").select("online, player_count, checked_at").eq("id", "main").maybeSingle()
+      const { data } = await supabase.from("server_status").select("online, player_count, peak_player_count, online_since, checked_at").eq("id", "main").maybeSingle()
       if (mounted) setServerStatus((data as ServerStatus | null) || null)
     }
 
@@ -2568,7 +2581,7 @@ function MembersView({ users, onOpenProfile, onBack }: {
 
     async function loadServerPresence() {
       const [{ data: status }, { data: players }] = await Promise.all([
-        supabase.from("server_status").select("online, player_count, checked_at").eq("id", "main").maybeSingle(),
+        supabase.from("server_status").select("online, player_count, peak_player_count, online_since, checked_at").eq("id", "main").maybeSingle(),
         supabase.from("server_players").select("username").order("username", { ascending: true }),
       ])
 
@@ -2619,6 +2632,11 @@ function MembersView({ users, onOpenProfile, onBack }: {
             {serverPlayers.map((player) => <span key={player.username} style={{ padding: "5px 9px", border: "1px solid rgba(114, 200, 191, 0.24)", color: "var(--text-muted)", fontSize: 12 }}>{player.username}</span>)}
           </div>
         )}
+        <div className="server-stats-grid">
+          <div><span>RÉCORD ONLINE</span><strong>{serverStatus?.peak_player_count ?? 0}</strong></div>
+          <div><span>TIEMPO ONLINE</span><strong>{serverStatus?.online ? formatServerUptime(serverStatus.online_since) : "No disponible"}</strong></div>
+          <div><span>ÚLTIMA ACTUALIZACIÓN</span><strong>{serverStatus?.checked_at ? formatDate(serverStatus.checked_at) : "No disponible"}</strong></div>
+        </div>
       </section>
       <div className="members-grid">
         {filteredUsers.map((user) => (

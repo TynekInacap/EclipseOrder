@@ -1711,6 +1711,42 @@ select:hover,
   letter-spacing: 0.12em;
 }
 
+.server-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.server-stats-grid > div {
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--border2);
+  background: rgba(2, 6, 23, 0.24);
+}
+
+.server-stats-grid span,
+.server-stats-grid strong {
+  display: block;
+}
+
+.server-stats-grid span {
+  overflow: hidden;
+  color: var(--text-dim);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.server-stats-grid strong {
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+}
+
 .members-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -1929,6 +1965,10 @@ select:hover,
 
   .members-toolbar input {
     max-width: none !important;
+  }
+
+  .server-stats-grid {
+    grid-template-columns: 1fr;
   }
 
   .control-panel-layout,

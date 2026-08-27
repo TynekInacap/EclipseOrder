@@ -133,6 +133,29 @@ create table public.thread_views (
   primary key (thread_id, user_id)
 );
 
+-- Public read-only presence reported by the dedicated Project Zomboid server.
+create table public.server_status (
+  id text primary key default 'main',
+  online boolean not null default false,
+  player_count integer not null default 0 check (player_count >= 0),
+  peak_player_count integer not null default 0 check (peak_player_count >= 0),
+  online_since timestamptz,
+  checked_at timestamptz not null default timezone('utc', now())
+);
+
+alter table public.server_status
+  add column if not exists peak_player_count integer not null default 0,
+  add column if not exists online_since timestamptz;
+
+create table public.server_players (
+  username text primary key,
+  last_seen timestamptz not null default timezone('utc', now())
+);
+
+insert into public.server_status (id)
+values ('main')
+on conflict (id) do nothing;
+
 create index threads_category_created_idx on public.threads(category, created_at desc);
 create index threads_author_idx on public.threads(author_id);
 create index replies_thread_created_idx on public.replies(thread_id, created_at);
@@ -186,6 +209,16 @@ alter table public.replies enable row level security;
 alter table public.reply_attachments enable row level security;
 alter table public.notifications enable row level security;
 alter table public.thread_views enable row level security;
+alter table public.server_status enable row level security;
+alter table public.server_players enable row level security;
+
+create policy "Server status is publicly readable"
+on public.server_status for select
+using (true);
+
+create policy "Server players are publicly readable"
+on public.server_players for select
+using (true);
 
 create policy "Forum attachments are publicly readable"
 on storage.objects for select
@@ -231,6 +264,17 @@ using (
   auth.uid() = author_id
   or exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'moderator'))
 );
+
+-- Migration for existing installations: remove the old Project Zomboid account-linking data.
+drop function if exists public.redeem_pz_link_code(text, text, text);
+drop function if exists public.redeem_pz_link_code(text, text);
+drop table if exists public.pz_link_codes cascade;
+alter table public.profiles
+  drop column if exists pz_username,
+  drop column if exists pz_steam_id,
+  drop column if exists pz_linked_at;
+alter table public.server_status
+  drop column if exists last_reminder_at;
 
 create policy "Authenticated users can read replies"
 on public.replies for select

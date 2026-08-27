@@ -93,10 +93,21 @@ Deno.serve(async (request) => {
   try {
     const players = await getPlayers()
     const now = new Date().toISOString()
+    const { data: previousStatus, error: previousStatusError } = await supabase
+      .from("server_status")
+      .select("online, peak_player_count, online_since")
+      .eq("id", "main")
+      .maybeSingle()
+    if (previousStatusError) throw previousStatusError
+
+    const peakPlayerCount = Math.max(previousStatus?.peak_player_count || 0, players.length)
+    const onlineSince = previousStatus?.online && previousStatus.online_since ? previousStatus.online_since : now
     const { error: statusError } = await supabase.from("server_status").upsert({
       id: "main",
       online: true,
       player_count: players.length,
+      peak_player_count: peakPlayerCount,
+      online_since: onlineSince,
       checked_at: now,
     })
     if (statusError) throw statusError
@@ -118,6 +129,7 @@ Deno.serve(async (request) => {
       id: "main",
       online: false,
       player_count: 0,
+      online_since: null,
       checked_at: new Date().toISOString(),
     })
     return Response.json({ error: errorMessage || "No se pudo consultar RCON" }, { status: 502 })

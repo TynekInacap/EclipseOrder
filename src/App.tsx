@@ -4297,7 +4297,7 @@ export default function App() {
     try {
       let { data: profileRow, error: profileError } = await supabase
         .from("profiles")
-        .select("id, username, role, avatar, avatar_url, bio, role_points, redeemed_role_points, joined_at")
+        .select("id, username, role, avatar, bio, role_points, redeemed_role_points, joined_at")
         .eq("id", userId)
         .maybeSingle()
 
@@ -4319,7 +4319,7 @@ export default function App() {
             },
             { onConflict: "id" },
           )
-          .select("id, username, role, avatar, avatar_url, bio, role_points, redeemed_role_points, joined_at")
+          .select("id, username, role, avatar, bio, role_points, redeemed_role_points, joined_at")
           .single()
 
         if (insertResult.error) {

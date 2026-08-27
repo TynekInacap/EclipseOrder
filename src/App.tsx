@@ -4476,21 +4476,29 @@ export default function App() {
 
   async function handleEditThread(threadId: string, title: string, content: string) {
     if (!currentUser) return
-    const { error } = await supabase.from("threads").update({ title, content, edited_at: new Date().toISOString() }).eq("id", threadId).eq("author_id", currentUser.id)
-    if (error) console.error("Could not edit thread", error)
-    else await refreshForumState()
+    const editedAt = new Date().toISOString()
+    const { error } = await supabase.from("threads").update({ title, content, edited_at: editedAt }).eq("id", threadId).eq("author_id", currentUser.id)
+    if (error) {
+      console.error("Could not edit thread", error)
+      return
+    }
+    setThreads((previousThreads) => previousThreads.map((thread) => thread.id === threadId ? { ...thread, title, content, editedAt } : thread))
   }
 
   async function handleEditReply(threadId: string, replyId: string, content: string) {
     if (!currentUser || content.trim().length < 5) return
+    const editedAt = new Date().toISOString()
     const { error } = await supabase
       .from("replies")
-      .update({ content: content.trim(), edited_at: new Date().toISOString() })
+      .update({ content: content.trim(), edited_at: editedAt })
       .eq("id", replyId)
       .eq("thread_id", threadId)
       .eq("author_id", currentUser.id)
     if (error) throw new Error(error.message)
-    await refreshForumState()
+    setThreads((previousThreads) => previousThreads.map((thread) => thread.id === threadId ? {
+      ...thread,
+      replies: thread.replies.map((reply) => reply.id === replyId ? { ...reply, content: content.trim(), editedAt } : reply),
+    } : thread))
   }
 
   async function handleReply(threadId: string, content: string, _attachments: Attachment[], _mentionedUserIds: string[] = []) {
@@ -4508,6 +4516,8 @@ export default function App() {
       console.error("Could not create reply", error)
       return
     }
+    const newReply = mapReply(createdReply as ReplyRow)
+    setThreads((previousThreads) => previousThreads.map((thread) => thread.id === threadId ? { ...thread, replies: [...thread.replies, newReply] } : thread))
     const notificationRecipients = [targetThread.authorId]
     if (targetThread.category === "reportes") {
       notificationRecipients.push(...users.filter((user) => user.role !== "user").map((user) => user.id))
@@ -4518,7 +4528,6 @@ export default function App() {
         ? `${currentUser.username} ha respondido al reporte: ${targetThread.title}`
         : `${currentUser.username} ha respondido a tu publicación: ${targetThread.title}`,
     )
-    await refreshForumState()
   }
 
   async function handleStatusChange(threadId: string, status: ThreadStatus) {
@@ -4597,7 +4606,7 @@ export default function App() {
         console.error("Could not delete reply", error)
         return
       }
-      await refreshForumState()
+      setThreads((previousThreads) => previousThreads.map((item) => item.id === threadId ? { ...item, replies: item.replies.filter((entry) => entry.id !== replyId) } : item))
     } finally {
       setOperationMessage(null)
     }

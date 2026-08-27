@@ -284,6 +284,10 @@ create policy "Authenticated users can create replies"
 on public.replies for insert
 with check (auth.uid() = author_id);
 
+create policy "Authors can delete replies"
+on public.replies for delete
+using (auth.uid() = author_id);
+
 create policy "Authenticated users can read thread attachments"
 on public.thread_attachments for select
 using (auth.role() = 'authenticated');

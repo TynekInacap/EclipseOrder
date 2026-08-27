@@ -4574,8 +4574,17 @@ export default function App() {
     if (!window.confirm("¿Seguro que quieres eliminar esta respuesta? Esta acción no se puede deshacer.")) return
     setOperationMessage("ELIMINANDO RESPUESTA...")
     try {
-      setThreads((previousThreads) => previousThreads.map((item) => item.id === threadId ? { ...item, replies: item.replies.filter((entry) => entry.id !== replyId) } : item))
-      await new Promise((resolve) => window.setTimeout(resolve, 260))
+      const { error } = await supabase
+        .from("replies")
+        .delete()
+        .eq("id", replyId)
+        .eq("thread_id", threadId)
+        .eq("author_id", currentUser.id)
+      if (error) {
+        console.error("Could not delete reply", error)
+        return
+      }
+      await refreshForumState()
     } finally {
       setOperationMessage(null)
     }

@@ -1440,12 +1440,17 @@ select:hover,
 }
 
 .header-store-link {
-  animation: goldenColorShift 1.8s ease-in-out infinite;
+  background: linear-gradient(90deg, #fbbf24 0%, #fde047 50%, #fbbf24 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: goldenGradientShift 2s ease-in-out infinite;
 }
 
-@keyframes goldenColorShift {
-  0%, 100% { color: #fbbf24; text-shadow: 0 0 16px rgba(251, 191, 36, 0.6); }
-  50% { color: #fde047; text-shadow: 0 0 20px rgba(253, 224, 71, 0.7); }
+@keyframes goldenGradientShift {
+  0%, 100% { background-position: 200% 0; }
+  50% { background-position: -200% 0; }
 }
 
 .header-account-menu {

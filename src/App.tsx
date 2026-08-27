@@ -1303,6 +1303,7 @@ function StoreView({
   currentUser,
   threads,
   products,
+  redemptions,
   onCreateProduct,
   onRedeemProduct,
   onBack,
@@ -1310,8 +1311,9 @@ function StoreView({
   currentUser: User
   threads: Thread[]
   products: StoreProduct[]
+  redemptions: StoreRedemption[]
   onCreateProduct: (product: StoreProduct) => void
-  onRedeemProduct: (product: StoreProduct) => void
+  onRedeemProduct: (product: StoreProduct) => void | Promise<void>
   onBack: () => void
 }) {
   const [title, setTitle] = useState("")
@@ -1320,7 +1322,7 @@ function StoreView({
   const [imageUrl, setImageUrl] = useState("")
   const [productKind, setProductKind] = useState<"personal" | "faccion">("personal")
   const [error, setError] = useState("")
-  const ownedProductIds = currentUser.ownedProductIds || []
+  const ownedProductIds = redemptions.filter((redemption) => redemption.userId === currentUser.id).map((redemption) => redemption.productId)
   const balance = Math.max(0, (currentUser.rolePoints || 0) - (currentUser.redeemedRolePoints || 0))
   const factionBalance = threads
     .filter((thread) => thread.category === "facciones" && thread.authorId === currentUser.id && !thread.factionRolePointsClaimed)
@@ -4228,6 +4230,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    localStorage.removeItem(LOCAL_USERS_STORAGE_KEY)
     setStoreProducts(readStoreProducts())
     setRedemptions(readStoreRedemptions())
     let mounted = true
@@ -4327,32 +4330,38 @@ export default function App() {
     localStorage.setItem(STORE_PRODUCTS_STORAGE_KEY, JSON.stringify(nextProducts))
   }
 
-  function handleRedeemProduct(product: StoreProduct) {
+  async function handleRedeemProduct(product: StoreProduct) {
     if (!currentUser) return
     const balance = Math.max(0, (currentUser.rolePoints || 0) - (currentUser.redeemedRolePoints || 0))
-    if (balance < product.price || currentUser.ownedProductIds?.includes(product.id)) return
-    const updatedUser = {
-      ...currentUser,
-      redeemedRolePoints: (currentUser.redeemedRolePoints || 0) + product.price,
-      ownedProductIds: [...(currentUser.ownedProductIds || []), product.id],
+    if (balance < product.price || redemptions.some((redemption) => redemption.userId === currentUser.id && redemption.productId === product.id)) return
+
+    const updatedRedeemedPoints = (currentUser.redeemedRolePoints || 0) + product.price
+    const { error: profileError } = await supabase
+      .from("profiles")
+      .update({ redeemed_role_points: updatedRedeemedPoints })
+      .eq("id", currentUser.id)
+    if (profileError) {
+      console.error("Could not redeem store product", profileError)
+      return
     }
-    const nextUsers = users.map((user) => user.id === updatedUser.id ? updatedUser : user)
-    localStorage.setItem(LOCAL_USERS_STORAGE_KEY, JSON.stringify(nextUsers))
-    setUsers(nextUsers)
-    setCurrentUser(updatedUser)
 
     const redemption: StoreRedemption = {
       id: uid(),
-      userId: updatedUser.id,
-      username: updatedUser.username,
+      userId: currentUser.id,
+      username: currentUser.username,
       productId: product.id,
       productTitle: product.title,
       price: product.price,
       createdAt: new Date().toISOString(),
     }
     const nextRedemptions = [...redemptions, redemption]
-    localStorage.setItem(STORE_REDEMPTIONS_STORAGE_KEY, JSON.stringify(nextRedemptions))
+    try {
+      localStorage.setItem(STORE_REDEMPTIONS_STORAGE_KEY, JSON.stringify(nextRedemptions))
+    } catch (storageError) {
+      console.error("Could not persist store redemption locally", storageError)
+    }
     setRedemptions(nextRedemptions)
+    await refreshForumState()
   }
 
   function handleToggleSuspend(userId: string) {
@@ -4702,6 +4711,7 @@ export default function App() {
           currentUser={currentUser}
           threads={threads}
           products={storeProducts}
+          redemptions={redemptions}
           onCreateProduct={handleCreateProduct}
           onRedeemProduct={handleRedeemProduct}
           onBack={handleGoBack}

@@ -1171,6 +1171,8 @@ select:hover,
 }
 
 .profile-identity > div:last-child {
+  width: fit-content;
+  max-width: calc(100% - 88px);
   padding: 10px 16px;
   border-left: 2px solid var(--accent);
   background: rgba(4, 9, 15, 0.58);
@@ -1747,7 +1749,8 @@ select:hover,
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 150px;
+  min-width: 0;
+  width: max-content;
   padding: 10px 14px;
   border: 0;
   border-radius: 8px;
@@ -2363,8 +2366,10 @@ select:hover,
 .control-current-name {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
+  width: fit-content;
+  max-width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--border2);
   border-radius: 8px;

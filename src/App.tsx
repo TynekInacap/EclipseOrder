@@ -6,6 +6,7 @@ import logoImg from "@/imports/bg,f8f8f8-flat,750x,075,f-pad,750x1000,f8f8f8.jpg
 import siteLogoImg from "@/imports/final123.png"
 import defaultBannerImg from "@/imports/default-banner.jpg"
 import eclipseGif from "@/imports/giphy.gif"
+import accountNameGuideImg from "@/imports/dasdsadasdasdsadas.png"
 
 const DEFAULT_BANNER_URL = defaultBannerImg
 
@@ -108,6 +109,29 @@ interface ServerStatus {
 
 interface ServerPlayer {
   username: string
+}
+
+interface PlayerLink {
+  id: string
+  forum_user_id: string
+  pz_username: string | null
+  character_name: string
+  server_name: string
+  verified: boolean
+  verified_by?: string | null
+  verified_at: string
+  last_seen?: string | null
+}
+
+interface PlayerLinkRequest {
+  id: string
+  forum_user_id: string
+  pz_username: string
+  status: "pending" | "approved" | "rejected"
+  rejection_reason?: string | null
+  reviewed_by?: string | null
+  reviewed_at?: string | null
+  created_at: string
 }
 
 interface PlayerPlaytime {
@@ -221,6 +245,7 @@ type View =
   | "members"
   | "server"
   | "control"
+  | "verification"
   | "category"
   | "report_status"
   | "faction_subforum"
@@ -252,6 +277,7 @@ function routeFromLocation(): RouteState {
   if (segments[0] === "miembros") return { view: "members" }
   if (segments[0] === "tienda") return { view: "store" }
   if (segments[0] === "control") return { view: "control" }
+  if (segments[0] === "verificacion") return { view: "verification" }
   if (segments[0] === "admin") return { view: "admin" }
   if (segments[0] === "perfil" && segments[1]) return { view: "profile", profileId: segments[1] }
   if (segments[0] === "hilo" && segments[1]) return { view: "thread", threadId: segments[1] }
@@ -277,6 +303,7 @@ function pathFromState(view: View, profileId: string, threadId: string, category
   if (view === "members") return "/miembros"
   if (view === "store") return "/tienda"
   if (view === "control") return "/control"
+  if (view === "verification") return "/verificacion"
   if (view === "admin") return "/admin"
   if (view === "thread" && threadId) return `/hilo/${encodeURIComponent(threadId)}`
   if (view === "new_thread") return `/foro/${category}/nuevo`
@@ -1127,13 +1154,13 @@ function LoginView({
 
             <form onSubmit={handleSubmit}>
               <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>Nombre del personaje</label>
+                <label style={labelStyle}>Nombre de personaje o usuario</label>
                 <input
                   className="login-input"
                   style={inputStyle}
                   value={characterName}
                   onChange={(e) => setCharacterName(e.target.value)}
-                  placeholder="Tu nombre en Project Zomboid"
+                  placeholder="Nombre de tu cuenta PZ o username verificado"
                   autoFocus
                 />
               </div>
@@ -1530,6 +1557,7 @@ function Header({
   view,
   onOpenProfile,
   onClearNotifications,
+  onRefreshNotifications,
   onOpenAdmin,
   onOpenControl,
 }: {
@@ -1539,6 +1567,7 @@ function Header({
   view: View
   onOpenProfile: (user: User) => void
   onClearNotifications: () => void
+  onRefreshNotifications: () => void
   onOpenAdmin: () => void
   onOpenControl: () => void
 }) {
@@ -1563,6 +1592,11 @@ function Header({
       window.clearInterval(refreshTimer)
     }
   }, [])
+
+  useEffect(() => {
+    const refreshTimer = window.setInterval(onRefreshNotifications, 30_000)
+    return () => window.clearInterval(refreshTimer)
+  }, [onRefreshNotifications])
 
   return (
     <>
@@ -1620,8 +1654,8 @@ function Header({
               SERVIDOR
             </button>
 
-            <div className="header-account-menu">
-              <button className="header-account-trigger" onClick={() => onOpenProfile(currentUser)} aria-haspopup="true">
+            <div className="header-account-menu" onMouseEnter={onRefreshNotifications}>
+              <button className="header-account-trigger" onClick={() => onOpenProfile(currentUser)} aria-haspopup="true" title="Notificaciones y cuenta">
                 <span className="header-account-copy">
                   <strong>{currentUser.username}</strong>
                 </span>
@@ -2397,6 +2431,23 @@ function ForumView({
   selectedCategory: Category
   onOpenCategory: (category: Category) => void
 }) {
+  const [isAccountVerified, setIsAccountVerified] = useState(false)
+  const [isVerificationNoticeDismissed, setIsVerificationNoticeDismissed] = useState(() => window.localStorage.getItem(`verification-notice-dismissed-${currentUser.id}`) === "true")
+
+  useEffect(() => {
+    let mounted = true
+    void supabase
+      .from("player_links")
+      .select("id, pz_username, verified")
+      .eq("forum_user_id", currentUser.id)
+      .eq("verified", true)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (mounted) setIsAccountVerified(Boolean(data))
+      })
+    return () => { mounted = false }
+  }, [currentUser.id])
+
   return (
     <div className="forum-shell" style={{ maxWidth: 1360, margin: "0 auto", padding: "18px 14px 40px" }}>
       <div className="forum-hero">
@@ -2411,6 +2462,21 @@ function ForumView({
         </div>
       </div>
       <div className="forum-layout">
+        {isAccountVerified && !isVerificationNoticeDismissed ? (
+          <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 10, margin: "0 0 14px", padding: "10px 16px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.55)", borderRadius: 6, color: "#6ee7b7", fontSize: 13 }}>
+            <span aria-hidden="true" style={{ display: "inline-grid", placeItems: "center", width: 20, height: 20, borderRadius: "50%", background: "#16a34a", color: "#fff", fontWeight: 700 }}>✓</span>
+            <strong>Cuenta verificada</strong>
+            <button type="button" aria-label="Ocultar aviso de cuenta verificada" title="Ocultar aviso" onClick={() => { window.localStorage.setItem(`verification-notice-dismissed-${currentUser.id}`, "true"); setIsVerificationNoticeDismissed(true) }} style={{ marginLeft: "auto", border: 0, background: "transparent", color: "#6ee7b7", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
+          </div>
+        ) : !isAccountVerified && !isVerificationNoticeDismissed ? (
+          <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", margin: "0 0 14px", padding: "12px 16px", background: "rgba(192,57,43,0.14)", border: "1px solid rgba(231,76,60,0.7)", borderRadius: 6 }}>
+            <div>
+              <strong style={{ display: "block", color: "#ff8275", fontSize: 14 }}>Verificá tu cuenta</strong>
+              <span style={{ display: "block", marginTop: 4, color: "#f4b4ad", fontSize: 12 }}>Debés ingresar el nombre exacto de la cuenta con la que entrás al servidor. Administración revisará tu solicitud.</span>
+            </div>
+            <button type="button" onClick={() => setView("verification")} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 10, background: "#c0392b", boxShadow: "0 8px 18px rgba(192,57,43,0.25)", whiteSpace: "nowrap" }}>SOLICITAR VERIFICACIÓN</button>
+          </div>
+        ) : null}
         <main className="forum-directory">
           <div className="forum-directory-heading">
             <div>
@@ -2732,6 +2798,7 @@ function ProfileView({
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [profileSaveMessage, setProfileSaveMessage] = useState("")
   const [copyMessage, setCopyMessage] = useState("")
+  const [isVerified, setIsVerified] = useState(false)
   const avatarFileRef = useRef<File | null>(null)
   const bannerFileRef = useRef<File | null>(null)
 
@@ -2742,6 +2809,20 @@ function ProfileView({
     setAvatarUrl(selectedUser.avatarUrl || "")
     setProfileSaveMessage("")
   }, [selectedUserId, selectedUser.bio, selectedUser.bannerUrl, selectedUser.avatarUrl])
+
+  useEffect(() => {
+    let mounted = true
+    void supabase
+      .from("player_links")
+      .select("id")
+      .eq("forum_user_id", selectedUser.id)
+      .eq("verified", true)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (mounted) setIsVerified(Boolean(data))
+      })
+    return () => { mounted = false }
+  }, [selectedUser.id])
 
   const bannerBackground = bannerUrl && bannerUrl !== DEFAULT_BANNER_URL
     ? `url(${bannerUrl}) center/cover no-repeat`
@@ -2831,7 +2912,10 @@ function ProfileView({
             <div className="profile-identity" style={{ position: "absolute", left: 24, bottom: -28, display: "flex", alignItems: "center", gap: 16 }}>
               <Avatar letter={profileUser.avatar} role={profileUser.role} size={72} imageUrl={profileUser.avatarUrl} />
               <div>
-                <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 26, letterSpacing: "0.06em", color: "#fff" }}>{profileUser.username}<RoleMark role={profileUser.role} /></div>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "Oswald, sans-serif", fontSize: 26, letterSpacing: "0.06em", color: "#fff" }}>
+                  {profileUser.username}<RoleMark role={profileUser.role} />
+                  {isVerified && <span title="Esta cuenta esta verificada" aria-label="Esta cuenta esta verificada" style={{ display: "inline-grid", placeItems: "center", width: 19, height: 19, borderRadius: "50%", background: "#16a34a", color: "#fff", fontFamily: "Arial, sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: 0, cursor: "help" }}>✓</span>}
+                </div>
                 <div style={{ fontSize: 11, color: "rgba(255,255,255,0.8)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>{roleLabel(profileUser.role)}</div>
               </div>
             </div>
@@ -3024,21 +3108,37 @@ function MembersView({ users, onOpenProfile, onLoadMemberAvatars, onBack }: {
   )
 }
 
-function ServerView({ onBack }: { onBack: () => void }) {
+function ServerView({ users, onOpenProfile, onBack }: { users: User[]; onOpenProfile: (user: User) => void; onBack: () => void }) {
   const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null)
   const [serverPlayers, setServerPlayers] = useState<ServerPlayer[]>([])
   const [playerPlaytime, setPlayerPlaytime] = useState<PlayerPlaytime[]>([])
   const [serverActivity, setServerActivity] = useState<ServerActivityItem[]>([])
+  const [verifiedPlayerLinks, setVerifiedPlayerLinks] = useState<PlayerLink[]>([])
+
+  async function openVerifiedProfile(username: string) {
+    const { data, error } = await supabase
+      .from("player_links")
+      .select("forum_user_id")
+      .eq("pz_username", username)
+      .eq("verified", true)
+      .maybeSingle()
+    if (error || !data) return
+    const profileUser = users.find((user) => user.id === data.forum_user_id)
+    if (profileUser) onOpenProfile(profileUser)
+  }
+  const [isLoadingPresence, setIsLoadingPresence] = useState(true)
 
   useEffect(() => {
     let mounted = true
 
     async function loadServerPresence() {
-      const [{ data: status }, { data: players }, { data: playtime }, { data: activity }] = await Promise.all([
+      setIsLoadingPresence(true)
+      const [{ data: status }, { data: players }, { data: playtime }, { data: activity }, { data: links }] = await Promise.all([
         supabase.from("server_status").select("online, player_count, peak_player_count, online_since, checked_at").eq("id", "main").maybeSingle(),
         supabase.from("server_players").select("username").order("username", { ascending: true }),
         supabase.from("player_playtime").select("username, total_seconds").order("total_seconds", { ascending: false }).limit(10),
         supabase.from("server_activity").select("id, type, title, message, username, metadata, created_at").order("created_at", { ascending: false }).limit(8),
+        supabase.from("player_links").select("id, forum_user_id, pz_username, verified").eq("verified", true),
       ])
 
       if (!mounted) return
@@ -3046,6 +3146,8 @@ function ServerView({ onBack }: { onBack: () => void }) {
       setServerPlayers((players as ServerPlayer[] | null) || [])
       setPlayerPlaytime((playtime as PlayerPlaytime[] | null) || [])
       setServerActivity((activity as ServerActivityItem[] | null) || [])
+      setVerifiedPlayerLinks((links as PlayerLink[] | null) || [])
+      setIsLoadingPresence(false)
     }
 
     void loadServerPresence()
@@ -3089,7 +3191,9 @@ function ServerView({ onBack }: { onBack: () => void }) {
       </section>
       <section className="server-roster" aria-label="Jugadores conectados">
         <div className="server-roster-heading"><div><span className="server-kicker">PRESENCIA EN TIEMPO REAL</span><h2>Jugadores conectados</h2></div><small>{serverPlayers.length} ONLINE</small></div>
-        {serverPlayers.length > 0 ? (
+        {isLoadingPresence ? (
+          <div className="members-empty">Cargando jugadores conectados...</div>
+        ) : serverPlayers.length > 0 ? (
           <div className="server-player-list">
             {serverPlayers.map((player) => <span className="server-player-chip" key={player.username}><i aria-hidden="true" />{player.username}</span>)}
           </div>
@@ -3103,12 +3207,22 @@ function ServerView({ onBack }: { onBack: () => void }) {
           </div>
           <small>TOP {playerPlaytime.length}</small>
         </div>
-        {playerPlaytime.length > 0 ? (
+        {isLoadingPresence ? (
+          <div className="members-empty">Cargando top histórico...</div>
+        ) : playerPlaytime.length > 0 ? (
           <div className="server-ranking-list" style={{ display: "grid", gap: 8 }}>
             {playerPlaytime.map((player, index) => (
               <div className={`server-ranking-row ${index === 0 ? "is-first" : ""}`} key={player.username} style={{ display: "grid", gridTemplateColumns: "32px minmax(0, 1fr) auto", alignItems: "center", gap: 10, padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 8, background: index === 0 ? "rgba(230,162,60,0.1)" : "rgba(10,14,23,0.45)" }}>
                 <strong style={{ color: index === 0 ? "#f3d38a" : "var(--text-muted)", fontFamily: "JetBrains Mono, monospace" }}>#{index + 1}</strong>
-                <span style={{ color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{player.username}</span>
+                {(() => {
+                  const linkedUser = verifiedPlayerLinks.find((link) => link.pz_username === player.username)
+                  const profileUser = linkedUser ? users.find((user) => user.id === linkedUser.forum_user_id) : undefined
+                  return profileUser ? (
+                    <button type="button" onClick={() => void openVerifiedProfile(player.username)} title="Ver perfil verificado" style={{ border: 0, background: "transparent", color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left", padding: 0, cursor: "pointer", fontWeight: 700 }}>{player.username}</button>
+                  ) : (
+                    <span style={{ color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{player.username}</span>
+                  )
+                })()}
                 <strong style={{ color: "#f3d38a", fontFamily: "JetBrains Mono, monospace", fontSize: 12 }}>{formatPlaytime(player.total_seconds)}</strong>
               </div>
             ))}
@@ -3125,7 +3239,9 @@ function ServerView({ onBack }: { onBack: () => void }) {
           </div>
           <small>{serverActivity.length} REGISTROS</small>
         </div>
-        {serverActivity.length > 0 ? (
+        {isLoadingPresence ? (
+          <div className="members-empty">Cargando eventos del servidor...</div>
+        ) : serverActivity.length > 0 ? (
           <div className="server-activity-list" style={{ display: "grid", gap: 10 }}>
             {serverActivity.map((activity) => (
               <div className="server-activity-item" key={activity.id} style={{ border: "1px solid var(--border)", borderRadius: 14, background: "rgba(10, 14, 23, 0.7)", padding: "14px 16px" }}>
@@ -3145,15 +3261,128 @@ function ServerView({ onBack }: { onBack: () => void }) {
   )
 }
 
+function PlayerLinkRequestCard({ userId }: { userId: string }) {
+  const [pzUsername, setPzUsername] = useState("")
+  const [request, setRequest] = useState<PlayerLinkRequest | null>(null)
+  const [link, setLink] = useState<PlayerLink | null>(null)
+  const [message, setMessage] = useState("")
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSending, setIsSending] = useState(false)
+
+  const loadRequest = useCallback(async () => {
+    setIsLoading(true)
+    const [{ data: linkRow }, { data: requestRows }] = await Promise.all([
+      supabase.from("player_links").select("*").eq("forum_user_id", userId).maybeSingle(),
+      supabase.from("player_link_requests").select("*").eq("forum_user_id", userId).order("created_at", { ascending: false }).limit(1),
+    ])
+    setLink((linkRow as PlayerLink | null) || null)
+    setRequest((requestRows?.[0] as PlayerLinkRequest | undefined) || null)
+    setIsLoading(false)
+  }, [userId])
+
+  useEffect(() => {
+    void loadRequest()
+  }, [loadRequest])
+
+  async function handleRequest(event: React.FormEvent) {
+    event.preventDefault()
+    const normalizedUsername = pzUsername.trim()
+    if (!normalizedUsername) {
+      setMessage("Escribí el nombre exacto de tu cuenta del servidor.")
+      return
+    }
+
+    setIsSending(true)
+    setMessage("")
+    const { data: player, error: playerError } = await supabase
+      .from("player_playtime")
+      .select("username")
+      .eq("username", normalizedUsername)
+      .maybeSingle()
+
+    if (playerError || !player) {
+      setMessage("No encontramos ese nombre en el historial del servidor. Revisá mayúsculas, minúsculas, espacios y símbolos.")
+      setIsSending(false)
+      return
+    }
+
+    const { error } = await supabase.from("player_link_requests").insert({
+      forum_user_id: userId,
+      pz_username: player.username,
+      status: "pending",
+    })
+
+    if (error) {
+      setMessage(error.code === "23505" ? "Ya existe una solicitud para ese nombre." : "No se pudo enviar la solicitud.")
+    } else {
+      setPzUsername("")
+      setMessage("Solicitud enviada a administración.")
+      await loadRequest()
+    }
+    setIsSending(false)
+  }
+
+  if (isLoading) return <section className="control-panel-card">Cargando vinculación con Project Zomboid...</section>
+
+  return (
+    <section className="control-panel-card" style={{ gridColumn: "1 / -1" }}>
+      <div className="profile-section-heading"><span>Vinculación con Project Zomboid</span><small>{link ? "VERIFICADA" : "PENDIENTE"}</small></div>
+      {link ? (
+        <p style={{ margin: 0, color: "#6ee7b7", fontSize: 13 }}>Tu cuenta está vinculada al jugador <strong>{link.pz_username}</strong>.</p>
+      ) : request?.status === "pending" ? (
+        <p style={{ margin: 0, color: "#fbbf24", fontSize: 13 }}>Solicitud <strong>en revisión</strong> para <strong>{request.pz_username}</strong>. Administración revisará tu identidad.</p>
+      ) : request?.status === "rejected" ? (
+        <form onSubmit={handleRequest} style={{ display: "grid", gap: 10, maxWidth: 620 }}>
+          <p style={{ margin: 0, color: "#fca5a5", fontSize: 13 }}>Tu solicitud fue rechazada. <strong>Motivo:</strong> {request.rejection_reason || "Administración no indicó un motivo."}</p>
+          <label style={labelStyle}>Nombre exacto de la cuenta<input value={pzUsername} onChange={(event) => setPzUsername(event.target.value)} placeholder="Ejemplo: Tynek" required style={inputStyle} /></label>
+          {message && <p style={{ margin: 0, color: message.includes("enviada") ? "#6ee7b7" : "#fca5a5", fontSize: 12 }}>{message}</p>}
+          <button type="submit" disabled={isSending} style={{ ...primaryBtn, width: "auto", justifySelf: "start", opacity: isSending ? 0.6 : 1 }}>{isSending ? "CONSULTANDO..." : "REENVIAR SOLICITUD"}</button>
+        </form>
+      ) : (
+        <form onSubmit={handleRequest} style={{ display: "grid", gap: 10, maxWidth: 620 }}>
+          <p style={{ margin: 0, color: "var(--text-dim)", fontSize: 13, lineHeight: 1.5 }}>Ingresá exactamente el nombre de la cuenta con la que entrás al servidor. La consulta distingue mayúsculas, minúsculas, espacios y símbolos.</p>
+          <label style={labelStyle}>Nombre exacto del servidor<input value={pzUsername} onChange={(event) => setPzUsername(event.target.value)} placeholder="Ejemplo: Tynek" required style={inputStyle} /></label>
+          {message && <p style={{ margin: 0, color: message.includes("enviada") ? "#6ee7b7" : "#fca5a5", fontSize: 12 }}>{message}</p>}
+          <button type="submit" disabled={isSending} style={{ ...primaryBtn, width: "auto", justifySelf: "start", opacity: isSending ? 0.6 : 1 }}>{isSending ? "CONSULTANDO..." : "ENVIAR SOLICITUD"}</button>
+        </form>
+      )}
+    </section>
+  )
+}
+
+function VerificationView({ currentUser, onBack }: { currentUser: User; onBack: () => void }) {
+  return (
+    <main className="control-panel-view" style={{ maxWidth: 820, margin: "0 auto", padding: "30px 20px 50px" }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
+        ← Volver al foro
+      </button>
+      <div className="profile-page-heading">
+        <div>
+          <span>CUENTA / PROJECT ZOMBOID</span>
+          <h1>Verificación de cuenta</h1>
+          <p>Solicitá a administración la vinculación de tu cuenta del foro con tu nombre de acceso al servidor.</p>
+        </div>
+        <div className="profile-page-mark">VERIFICACIÓN</div>
+      </div>
+      <figure style={{ margin: "0 0 18px", padding: 12, background: "rgba(15,23,32,0.7)", border: "1px solid var(--border)", borderRadius: 8 }}>
+        <img src={accountNameGuideImg} alt="Pantalla del servidor donde aparece resaltado el nombre de la cuenta" style={{ display: "block", width: "100%", height: "auto", borderRadius: 4 }} />
+        <figcaption style={{ marginTop: 8, color: "var(--text-dim)", fontSize: 12 }}>Usá el nombre resaltado de tu cuenta, no el nombre del personaje.</figcaption>
+      </figure>
+      <PlayerLinkRequestCard userId={currentUser.id} />
+    </main>
+  )
+}
+
 function ControlPanelView({ currentUser, onSaveAccount, onBack }: {
   currentUser: User
-  onSaveAccount: (updates: { firstName: string; lastName: string; password: string }) => Promise<void>
+  onSaveAccount: (updates: { username?: string; firstName: string; lastName: string; password: string }) => Promise<void>
   onBack: () => void
 }) {
   const [firstName, setFirstName] = useState("")
   const [lastName, setLastName] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+  const [isVerified, setIsVerified] = useState(false)
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
   const [isSaving, setIsSaving] = useState(false)
@@ -3170,12 +3399,25 @@ function ControlPanelView({ currentUser, onSaveAccount, onBack }: {
     return () => { mounted = false }
   }, [])
 
+  useEffect(() => {
+    let mounted = true
+    void supabase.from("player_links").select("id").eq("forum_user_id", currentUser.id).eq("verified", true).maybeSingle().then(({ data }) => {
+      if (mounted) setIsVerified(Boolean(data))
+    })
+    return () => { mounted = false }
+  }, [currentUser.id])
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     setMessage("")
     setError("")
-    if (!firstName.trim() || !lastName.trim()) {
+    if (!isVerified && (!firstName.trim() || !lastName.trim())) {
       setError("Debes indicar tu nombre y apellido para continuar.")
+      return
+    }
+    const username = isVerified ? firstName.trim() : undefined
+    if (isVerified && (!username || username.length < 3)) {
+      setError("El nombre de usuario debe tener al menos 3 caracteres.")
       return
     }
     if (password && password.length < 6) {
@@ -3188,7 +3430,7 @@ function ControlPanelView({ currentUser, onSaveAccount, onBack }: {
     }
     setIsSaving(true)
     try {
-      await onSaveAccount({ firstName: firstName.trim(), lastName: lastName.trim(), password })
+      await onSaveAccount({ username, firstName: firstName.trim(), lastName: lastName.trim(), password })
       setPassword("")
       setConfirmPassword("")
       setMessage("Cambios guardados correctamente.")
@@ -3216,10 +3458,14 @@ function ControlPanelView({ currentUser, onSaveAccount, onBack }: {
         <form className="control-panel-card" onSubmit={handleSubmit}>
           <div className="profile-section-heading"><span>Datos personales</span><small>IDENTIDAD</small></div>
           <div className="control-current-name"><span>Nombre actual</span><strong>{currentUser.username}</strong></div>
-          <div className="control-panel-form-grid">
-            <label style={labelStyle}>Nombre<input value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="Tu nombre" required style={inputStyle} /></label>
-            <label style={labelStyle}>Apellido<input value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Tu apellido" required style={inputStyle} /></label>
-          </div>
+          {isVerified ? (
+            <label style={labelStyle}>Nombre de usuario<input value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="Tu nombre de usuario" required style={inputStyle} /></label>
+          ) : (
+            <div className="control-panel-form-grid">
+              <label style={labelStyle}>Nombre<input value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="Tu nombre" required style={inputStyle} /></label>
+              <label style={labelStyle}>Apellido<input value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Tu apellido" required style={inputStyle} /></label>
+            </div>
+          )}
           <div className="profile-section-heading control-panel-section-heading"><span>Seguridad</span><small>SUPABASE AUTH</small></div>
           <label style={labelStyle}>Nueva contraseña<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Dejar vacío para mantenerla" style={inputStyle} /></label>
           <label style={labelStyle}>Repetir contraseña<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repite la nueva contraseña" style={inputStyle} /></label>
@@ -4185,6 +4431,206 @@ function ThreadView({
 
 // ─── Admin View ───────────────────────────────────────────────────────────────
 
+function PlayerLinksAdminPanel({ users, currentUser }: { users: User[]; currentUser: User }) {
+  const [onlinePlayers, setOnlinePlayers] = useState<ServerPlayer[]>([])
+  const [links, setLinks] = useState<PlayerLink[]>([])
+  const [requests, setRequests] = useState<PlayerLinkRequest[]>([])
+  const [pzUsername, setPzUsername] = useState("")
+  const [forumUserId, setForumUserId] = useState("")
+  const [message, setMessage] = useState("")
+  const [rejectionReasons, setRejectionReasons] = useState<Record<string, string>>({})
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+
+  const loadLinks = useCallback(async () => {
+    setIsLoading(true)
+    const [{ data: players }, { data: linkRows, error }, { data: requestRows }] = await Promise.all([
+      supabase.from("server_players").select("username").order("username", { ascending: true }),
+      supabase.from("player_links").select("*").order("pz_username", { ascending: true }),
+      supabase.from("player_link_requests").select("*").order("created_at", { ascending: false }),
+    ])
+
+    setOnlinePlayers((players as ServerPlayer[] | null) || [])
+    if (!error) setLinks((linkRows as PlayerLink[] | null) || [])
+    setRequests((requestRows as PlayerLinkRequest[] | null) || [])
+    setIsLoading(false)
+  }, [])
+
+  useEffect(() => {
+    if (currentUser.role === "admin") void loadLinks()
+  }, [currentUser.role, loadLinks])
+
+  async function handleLink(event: React.FormEvent) {
+    event.preventDefault()
+    const normalizedUsername = pzUsername.trim()
+    if (!normalizedUsername || !forumUserId) {
+      setMessage("Seleccioná un jugador y una cuenta del foro.")
+      return
+    }
+
+    const existingUsernameLink = links.find((link) => link.pz_username?.toLowerCase() === normalizedUsername.toLowerCase())
+    const existingForumLink = links.find((link) => link.forum_user_id === forumUserId && link.pz_username?.toLowerCase() !== normalizedUsername.toLowerCase())
+    if (existingUsernameLink && existingUsernameLink.forum_user_id !== forumUserId) {
+      setMessage("Ese jugador ya está vinculado a otra cuenta.")
+      return
+    }
+    if (existingForumLink) {
+      setMessage("Esa cuenta del foro ya está vinculada a otro jugador.")
+      return
+    }
+
+    setIsSaving(true)
+    setMessage("")
+    const linkValues = {
+      forum_user_id: forumUserId,
+      pz_username: normalizedUsername,
+      character_name: "",
+      server_name: "Eclipse Order",
+      verified: true,
+      verified_by: currentUser.id,
+      verified_at: new Date().toISOString(),
+      last_seen: new Date().toISOString(),
+    }
+    const { error } = existingUsernameLink
+      ? await supabase.from("player_links").update(linkValues).eq("id", existingUsernameLink.id)
+      : await supabase.from("player_links").insert(linkValues)
+
+    if (error) {
+      setMessage(`No se pudo guardar el vínculo: ${error.message}`)
+    } else {
+      setMessage("Vínculo guardado correctamente.")
+      setPzUsername("")
+      setForumUserId("")
+      await loadLinks()
+    }
+    setIsSaving(false)
+  }
+
+  async function handleUnlink(link: PlayerLink) {
+    const { error } = await supabase.from("player_links").delete().eq("id", link.id)
+    setMessage(error ? "No se pudo quitar el vínculo." : "Vínculo eliminado.")
+    if (!error) await loadLinks()
+  }
+
+  async function reviewRequest(request: PlayerLinkRequest, status: "approved" | "rejected") {
+    const rejectionReason = status === "rejected" ? rejectionReasons[request.id]?.trim() || null : null
+    if (status === "rejected" && !rejectionReason) {
+      setMessage("Escribí un motivo para rechazar la solicitud.")
+      return
+    }
+    if (status === "approved") {
+      const existingLink = links.find((link) => link.pz_username === request.pz_username || link.forum_user_id === request.forum_user_id)
+      if (existingLink) {
+        setMessage("No se puede aprobar: el jugador o la cuenta ya tienen un vínculo.")
+        return
+      }
+      const { error: linkError } = await supabase.from("player_links").insert({
+        forum_user_id: request.forum_user_id,
+        pz_username: request.pz_username,
+        character_name: "",
+        server_name: "Eclipse Order",
+        verified: true,
+        verified_by: currentUser.id,
+        verified_at: new Date().toISOString(),
+        last_seen: new Date().toISOString(),
+      })
+      if (linkError) {
+        setMessage(`No se pudo crear el vínculo aprobado: ${linkError.message}`)
+        return
+      }
+    }
+
+    const { error } = await supabase.from("player_link_requests").update({
+      status,
+      rejection_reason: rejectionReason,
+      reviewed_by: currentUser.id,
+      reviewed_at: new Date().toISOString(),
+    }).eq("id", request.id)
+    if (error) {
+      setMessage(`No se pudo actualizar la solicitud: ${error.message}`)
+      return
+    }
+
+    const notificationText = status === "approved"
+      ? `Tu cuenta fue verificada. Se vinculó el nombre de servidor ${request.pz_username}.`
+      : `Tu solicitud de verificación para ${request.pz_username} fue rechazada. Motivo: ${rejectionReason}`
+    const { error: notificationError } = await supabase.from("notifications").insert({
+      user_id: request.forum_user_id,
+      text: notificationText,
+      read: false,
+    })
+    setMessage(notificationError
+      ? `Solicitud ${status === "approved" ? "aprobada" : "rechazada"}, pero no se pudo enviar la notificación: ${notificationError.message}`
+      : status === "approved" ? "Solicitud aprobada y usuario notificado." : "Solicitud rechazada y usuario notificado.")
+    await loadLinks()
+  }
+
+  if (currentUser.role !== "admin") return null
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "0.08em" }}>SOLICITUDES PENDIENTES · {requests.filter((request) => request.status === "pending").length}</div>
+        {requests.filter((request) => request.status === "pending").length === 0 ? (
+          <div style={{ padding: 18, color: "var(--text-dim)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>No hay solicitudes pendientes.</div>
+        ) : requests.filter((request) => request.status === "pending").map((request) => (
+          <div key={request.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", padding: "12px 14px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+            <div>
+              <strong style={{ color: "var(--text)" }}>{request.pz_username}</strong>
+              <span style={{ color: "var(--text-dim)", fontSize: 12 }}> · {users.find((user) => user.id === request.forum_user_id)?.username || "Cuenta eliminada"}</span>
+              <div style={{ color: "var(--text-dim)", fontSize: 11, marginTop: 3 }}>{formatDate(request.created_at)}</div>
+              <input value={rejectionReasons[request.id] || ""} onChange={(event) => setRejectionReasons((previous) => ({ ...previous, [request.id]: event.target.value }))} placeholder="Motivo si se rechaza" style={{ ...inputStyle, width: 260, padding: "6px 8px", marginTop: 8, fontSize: 11 }} />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" onClick={() => void reviewRequest(request, "approved")} style={{ ...primaryBtn, width: "auto", padding: "6px 10px", fontSize: 10, background: "rgba(16,185,129,0.15)", color: "#6ee7b7", boxShadow: "none" }}>APROBAR</button>
+              <button type="button" onClick={() => void reviewRequest(request, "rejected")} style={{ ...primaryBtn, width: "auto", padding: "6px 10px", fontSize: 10, background: "rgba(239,68,68,0.12)", color: "#fca5a5", boxShadow: "none" }}>RECHAZAR</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <form onSubmit={handleLink} style={{ display: "grid", gap: 12, padding: 18, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+        <div>
+          <h3 style={{ margin: 0, color: "var(--text)", fontFamily: "Oswald, sans-serif", fontSize: 18 }}>Vinculación manual</h3>
+          <p style={{ margin: "5px 0 0", color: "var(--text-dim)", fontSize: 12 }}>Los jugadores conectados provienen de la última consulta RCON.</p>
+        </div>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={labelStyle}>Jugador de Project Zomboid</span>
+          <input list="server-player-names" value={pzUsername} onChange={(event) => setPzUsername(event.target.value)} placeholder="Nombre exacto del jugador" style={inputStyle} />
+          <datalist id="server-player-names">
+            {onlinePlayers.map((player) => <option key={player.username} value={player.username} />)}
+          </datalist>
+        </label>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={labelStyle}>Cuenta del foro</span>
+          <select value={forumUserId} onChange={(event) => setForumUserId(event.target.value)} style={inputStyle}>
+            <option value="">Seleccionar usuario...</option>
+            {users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}
+          </select>
+        </label>
+        <button type="submit" disabled={isSaving} style={{ ...primaryBtn, width: "auto", justifySelf: "start", opacity: isSaving ? 0.6 : 1 }}>
+          {isSaving ? "GUARDANDO..." : "VINCULAR CUENTA"}
+        </button>
+        {message && <p style={{ margin: 0, color: message.includes("correctamente") || message.includes("eliminado") ? "#6ee7b7" : "#fca5a5", fontSize: 12 }}>{message}</p>}
+      </form>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "0.08em" }}>VÍNCULOS CONFIRMADOS · {links.length}</div>
+        {isLoading ? <div style={{ color: "var(--text-dim)", padding: 18 }}>Cargando vínculos...</div> : links.length === 0 ? (
+          <div style={{ padding: 24, textAlign: "center", color: "var(--text-dim)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>Todavía no hay vínculos confirmados.</div>
+        ) : links.map((link) => (
+          <div key={link.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", padding: "12px 14px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+            <div>
+              <strong style={{ color: "var(--text)" }}>{link.pz_username || "Nombre pendiente"}</strong>
+              <span style={{ color: "var(--text-dim)", fontSize: 12 }}> · {users.find((user) => user.id === link.forum_user_id)?.username || "Cuenta eliminada"}</span>
+            </div>
+            <button type="button" onClick={() => void handleUnlink(link)} style={{ ...primaryBtn, width: "auto", padding: "6px 10px", fontSize: 10, background: "rgba(239,68,68,0.12)", color: "#fca5a5", boxShadow: "none" }}>DESVINCULAR</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function AdminView({
   threads,
   users,
@@ -4216,7 +4662,7 @@ function AdminView({
   setView: (v: View) => void
   setSelectedThread: (id: string) => void
 }) {
-  const [tab, setTab] = useState<"threads" | "users" | "redemptions">("threads")
+  const [tab, setTab] = useState<"threads" | "users" | "redemptions" | "player-links">("threads")
   const [pointsToAdd, setPointsToAdd] = useState<Record<string, string>>({})
   const [contactMessages, setContactMessages] = useState<Record<string, string>>({})
   const [userSearch, setUserSearch] = useState("")
@@ -4239,10 +4685,10 @@ function AdminView({
       </div>
 
       <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: "1px solid #1e2330", paddingBottom: 0 }}>
-        {[{ id: "threads", label: "Gestión de Hilos" }, { id: "users", label: "Gestión de Usuarios" }, { id: "redemptions", label: "Canjes" }].map((t) => (
+        {[{ id: "threads", label: "Gestión de Hilos" }, { id: "users", label: "Gestión de Usuarios" }, { id: "redemptions", label: "Canjes" }, ...(currentUser.role === "admin" ? [{ id: "player-links", label: "Vínculos PZ" }] : [])].map((t) => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id as "threads" | "users" | "redemptions")}
+            onClick={() => setTab(t.id as "threads" | "users" | "redemptions" | "player-links")}
             style={{
               background: "none",
               border: "none",
@@ -4261,6 +4707,8 @@ function AdminView({
           </button>
         ))}
       </div>
+
+      {tab === "player-links" && <PlayerLinksAdminPanel users={users} currentUser={currentUser} />}
 
       {tab === "threads" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -4565,6 +5013,7 @@ export default function App() {
     const [operationMessage, setOperationMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const currentUserRef = useRef<User | null>(null)
+  const notificationIdsRef = useRef<Set<string>>(new Set())
     const hydratingUserIdRef = useRef<string | null>(null)
   const notificationCountRef = useRef<{ userId: string; count: number } | null>(null)
     const welcomePendingUsernameRef = useRef<string | null>(null)
@@ -4620,6 +5069,31 @@ export default function App() {
     if (!AudioCtor) return
 
     const audioCtx = new AudioCtor()
+
+    if (type === "notification") {
+      const bellDuration = 0.95
+      const bellPartials = [
+        { frequency: 660, volume: 0.028 },
+        { frequency: 1320, volume: 0.018 },
+        { frequency: 1980, volume: 0.009 },
+      ]
+      bellPartials.forEach(({ frequency, volume }) => {
+        const bellOscillator = audioCtx.createOscillator()
+        const bellGain = audioCtx.createGain()
+        bellOscillator.type = "sine"
+        bellOscillator.frequency.value = frequency
+        bellGain.gain.setValueAtTime(0.0001, audioCtx.currentTime)
+        bellGain.gain.linearRampToValueAtTime(volume, audioCtx.currentTime + 0.012)
+        bellGain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + bellDuration)
+        bellOscillator.connect(bellGain)
+        bellGain.connect(audioCtx.destination)
+        bellOscillator.start()
+        bellOscillator.stop(audioCtx.currentTime + bellDuration)
+      })
+      setTimeout(() => void audioCtx.close(), bellDuration * 1000 + 40)
+      return
+    }
+
     const oscillator = audioCtx.createOscillator()
     const gainNode = audioCtx.createGain()
 
@@ -4698,22 +5172,19 @@ export default function App() {
       const profile = mapProfile(profileRow as ProfileRow)
       setUsers(forum.users)
       setThreads(forum.threads)
-      setCurrentUser(profile)
+      const hydratedUser = {
+        ...profile,
+        notifications: forum.users.find((user) => user.id === profile.id)?.notifications || [],
+      }
+      notificationIdsRef.current = new Set(hydratedUser.notifications?.map((notification) => notification.id) || [])
+      setCurrentUser(hydratedUser)
       if (welcomePendingUsernameRef.current === profile.username) {
         welcomePendingUsernameRef.current = null
         setShowWelcome(true)
       }
-      const initialRoute = initialRouteRef.current
-      if (!currentUserRef.current && initialRoute.view === "profile" && initialRoute.profileId) {
-        setSelectedProfileId(initialRoute.profileId)
-        setView("profile")
-      } else if (!currentUserRef.current && initialRoute.view === "thread" && initialRoute.threadId) {
-        setSelectedThread(initialRoute.threadId)
-        setView("thread")
-      } else if (!currentUserRef.current && initialRoute.view !== "forum") {
-        setView(initialRoute.view)
-      } else if (!currentUserRef.current) {
+      if (!currentUserRef.current) {
         setSelectedProfileId(profile.id)
+        setSelectedThread("")
         setView("forum")
       }
     } finally {
@@ -4726,6 +5197,32 @@ export default function App() {
     const forum = await loadSupabaseForum(currentUserRef.current?.id)
     setUsers(forum.users)
     setThreads(forum.threads)
+  }
+
+  async function refreshCurrentUserNotifications() {
+    const userId = currentUserRef.current?.id
+    if (!userId) return
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("id, user_id, text, read, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(50)
+    if (error) {
+      console.error("Could not refresh notifications", error)
+      return
+    }
+    const notifications = ((data || []) as NotificationRow[]).map((row) => ({
+      id: row.id,
+      text: row.text,
+      read: row.read,
+      createdAt: row.created_at,
+    }))
+    const hasNewUnreadNotification = notifications.some((notification) => !notification.read && !notificationIdsRef.current.has(notification.id))
+    if (notificationIdsRef.current.size > 0 && hasNewUnreadNotification) playInteractionSound("notification")
+    notificationIdsRef.current = new Set(notifications.map((notification) => notification.id))
+    setCurrentUser((previousUser) => previousUser ? { ...previousUser, notifications } : previousUser)
+    setUsers((previousUsers) => previousUsers.map((user) => user.id === userId ? { ...user, notifications } : user))
   }
 
   const handleLoadThread = useCallback((threadId: string) => {
@@ -4880,8 +5377,27 @@ export default function App() {
   }, [currentUser])
 
   async function handleLogin(characterName: string, password: string) {
+    let loginName = characterName
+    const { data: forumProfile, error: profileLookupError } = await supabase
+      .from("profiles")
+      .select("id, username")
+      .eq("username", characterName)
+      .maybeSingle()
+    if (profileLookupError && profileLookupError.code !== "PGRST116") throw new Error(profileLookupError.message)
+
+    if (forumProfile) {
+      const { data: verifiedLink, error: linkLookupError } = await supabase
+        .from("player_links")
+        .select("pz_username")
+        .eq("forum_user_id", forumProfile.id)
+        .eq("verified", true)
+        .maybeSingle()
+      if (linkLookupError) throw new Error(linkLookupError.message)
+      if (verifiedLink?.pz_username) loginName = verifiedLink.pz_username
+    }
+
     const { data: authData, error } = await supabase.auth.signInWithPassword({
-      email: authEmailForCharacter(characterName),
+      email: authEmailForCharacter(loginName),
       password,
     })
     if (error) throw new Error(error.message)
@@ -5302,17 +5818,26 @@ export default function App() {
     await hydrateSession(userId)
   }
 
-  async function handleSaveAccount(updates: { firstName: string; lastName: string; password: string }) {
+  async function handleSaveAccount(updates: { username?: string; firstName: string; lastName: string; password: string }) {
     if (!currentUser) return
-    const fullName = `${updates.firstName.trim()} ${updates.lastName.trim()}`.trim()
-    if (fullName.length < 3) throw new Error("Debes indicar tu nombre y apellido.")
+    let nextUsername: string
+    if (updates.username !== undefined) {
+      const { data: verifiedLink, error: linkError } = await supabase.from("player_links").select("id").eq("forum_user_id", currentUser.id).eq("verified", true).maybeSingle()
+      if (linkError) throw new Error(linkError.message)
+      if (!verifiedLink) throw new Error("Solo las cuentas verificadas pueden usar un nombre de usuario libre.")
+      nextUsername = updates.username.trim()
+      if (nextUsername.length < 3) throw new Error("El nombre de usuario debe tener al menos 3 caracteres.")
+    } else {
+      nextUsername = `${updates.firstName.trim()} ${updates.lastName.trim()}`.trim()
+      if (nextUsername.length < 3) throw new Error("Debes indicar tu nombre y apellido.")
+    }
     const authUpdates: { password?: string; data: { first_name: string; last_name: string } } = {
       data: { first_name: updates.firstName, last_name: updates.lastName },
     }
     if (updates.password) authUpdates.password = updates.password
     const { error: authError } = await supabase.auth.updateUser(authUpdates)
     if (authError) throw new Error(authError.message)
-    const { error: profileError } = await supabase.from("profiles").update({ username: fullName }).eq("id", currentUser.id)
+    const { error: profileError } = await supabase.from("profiles").update({ username: nextUsername }).eq("id", currentUser.id)
     if (profileError) throw new Error(profileError.message)
     await hydrateSession(currentUser.id)
   }
@@ -5321,7 +5846,11 @@ export default function App() {
     if (!currentUser) return
     const { error } = await supabase.from("notifications").delete().eq("user_id", currentUser.id)
     if (error) console.error("Could not clear notifications", error)
-    else await hydrateSession(currentUser.id)
+    else {
+      notificationIdsRef.current = new Set()
+      setCurrentUser((previousUser) => previousUser ? { ...previousUser, notifications: [] } : previousUser)
+      setUsers((previousUsers) => previousUsers.map((user) => user.id === currentUser.id ? { ...user, notifications: [] } : user))
+    }
   }
 
   function handleGoBack() {
@@ -5362,6 +5891,7 @@ export default function App() {
         view={view}
         onOpenProfile={handleOpenProfile}
         onClearNotifications={handleClearNotifications}
+        onRefreshNotifications={() => void refreshCurrentUserNotifications()}
         onOpenAdmin={() => setView("admin")}
         onOpenControl={() => setView("control")}
       />
@@ -5385,7 +5915,7 @@ export default function App() {
           onBack={handleGoBack}
         />
       )}
-      {view === "server" && <ServerView onBack={handleGoBack} />}
+      {view === "server" && <ServerView users={users} onOpenProfile={handleOpenProfile} onBack={handleGoBack} />}
       {view === "control" && (
         <ControlPanelView
           currentUser={currentUser}
@@ -5393,6 +5923,7 @@ export default function App() {
           onBack={handleGoBack}
         />
       )}
+      {view === "verification" && <VerificationView currentUser={currentUser} onBack={handleGoBack} />}
       {view === "forum" && (
         <ForumView
           threads={threads}

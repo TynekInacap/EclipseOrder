@@ -163,6 +163,60 @@ create table public.player_playtime (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+-- Manual forum-to-server links approved by staff.
+create table if not exists public.player_links (
+  id uuid primary key default gen_random_uuid(),
+  forum_user_id uuid not null unique references public.profiles(id) on delete cascade,
+  pz_username text not null unique,
+  character_name text not null default '',
+  server_name text not null default 'Eclipse Order',
+  verified boolean not null default true,
+  verified_by uuid references public.profiles(id) on delete set null,
+  verified_at timestamptz not null default timezone('utc', now()),
+  last_seen timestamptz,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+-- Compatibility migration for installations that had the former Steam-ID table.
+alter table public.player_links
+  add column if not exists pz_username text,
+  add column if not exists character_name text not null default '',
+  add column if not exists server_name text not null default 'Eclipse Order',
+  add column if not exists verified boolean not null default true,
+  add column if not exists verified_by uuid references public.profiles(id) on delete set null,
+  add column if not exists verified_at timestamptz not null default timezone('utc', now()),
+  add column if not exists last_seen timestamptz,
+  add column if not exists created_at timestamptz not null default timezone('utc', now());
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'player_links' and column_name = 'steam_id'
+  ) then
+    alter table public.player_links alter column steam_id drop not null;
+  end if;
+end
+$$;
+
+create unique index if not exists player_links_pz_username_idx
+  on public.player_links(pz_username)
+  where pz_username is not null;
+
+create table if not exists public.player_link_requests (
+  id uuid primary key default gen_random_uuid(),
+  forum_user_id uuid not null references public.profiles(id) on delete cascade,
+  pz_username text not null,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  rejection_reason text,
+  reviewed_by uuid references public.profiles(id) on delete set null,
+  reviewed_at timestamptz,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+alter table public.player_link_requests
+  add column if not exists rejection_reason text;
+
 create table public.server_activity (
   id uuid primary key default gen_random_uuid(),
   type text not null default 'system',
@@ -281,6 +335,8 @@ alter table public.thread_views enable row level security;
 alter table public.server_status enable row level security;
 alter table public.server_players enable row level security;
 alter table public.player_playtime enable row level security;
+alter table public.player_links enable row level security;
+alter table public.player_link_requests enable row level security;
 
 create policy "Server status is publicly readable"
 on public.server_status for select
@@ -293,6 +349,50 @@ using (true);
 create policy "Player playtime is publicly readable"
 on public.player_playtime for select
 using (true);
+
+create policy "Users can read their own player link"
+on public.player_links for select
+using (auth.uid() = forum_user_id);
+
+drop policy if exists "Everyone can read verified player links" on public.player_links;
+
+create policy "Everyone can read verified player links"
+on public.player_links for select
+using (verified = true);
+
+create policy "Admins can read all player links"
+on public.player_links for select
+using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
+
+create policy "Admins can create player links"
+on public.player_links for insert
+with check (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
+
+create policy "Admins can update player links"
+on public.player_links for update
+using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'))
+with check (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
+
+create policy "Admins can delete player links"
+on public.player_links for delete
+using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
+
+create policy "Users can read their own player link requests"
+on public.player_link_requests for select
+using (auth.uid() = forum_user_id);
+
+create policy "Users can create their own player link requests"
+on public.player_link_requests for insert
+with check (auth.uid() = forum_user_id);
+
+create policy "Admins can read all player link requests"
+on public.player_link_requests for select
+using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
+
+create policy "Admins can review player link requests"
+on public.player_link_requests for update
+using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'))
+with check (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
 
 create policy "Forum attachments are publicly readable"
 on storage.objects for select
@@ -396,6 +496,12 @@ create policy "Users can update their notifications"
 on public.notifications for update
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
+
+drop policy if exists "Users can delete their notifications" on public.notifications;
+
+create policy "Users can delete their notifications"
+on public.notifications for delete
+using (auth.uid() = user_id);
 
 drop policy if exists "Authenticated users can create notifications" on public.notifications;
 drop policy if exists "Staff can create notifications" on public.notifications;

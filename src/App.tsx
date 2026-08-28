@@ -406,7 +406,7 @@ async function loadSupabaseForum(currentUserId?: string) {
   const notificationsQuery = currentUserId
     ? supabase.from("notifications").select("id, user_id, text, read, created_at").eq("user_id", currentUserId).order("created_at", { ascending: false }).limit(50)
     : Promise.resolve({ data: [], error: null })
-  const threadQuery = supabase.from("threads").select("id, title, category, author_id, status, pinned, admin_only, created_at, edited_at, subforum, faction_role_points, faction_role_points_claimed").order("pinned", { ascending: false }).order("created_at", { ascending: false })
+  const threadQuery = supabase.from("threads").select("id, title, category, author_id, content, status, pinned, admin_only, created_at, edited_at, subforum, faction_role_points, faction_role_points_claimed").order("pinned", { ascending: false }).order("created_at", { ascending: false })
   const { data: threadRows, error: threadsError } = await threadQuery
   if (threadsError) throw threadsError
   const requestedThreadIds = (threadRows || []).map((thread) => thread.id)
@@ -451,7 +451,7 @@ async function loadSupabaseForum(currentUserId?: string) {
       title: thread.title,
       category: thread.category,
       authorId: thread.author_id,
-      content: "",
+      content: thread.content,
       status: thread.status,
       pinned: thread.pinned,
       adminOnly: thread.admin_only,
@@ -461,7 +461,7 @@ async function loadSupabaseForum(currentUserId?: string) {
       visitorCount: threadViewCountById.get(thread.id) || 0,
       replyCount: Number(replySummary?.reply_count || 0),
       repliesLoaded: false,
-      contentLoaded: false,
+      contentLoaded: true,
       createdAt: thread.created_at,
       editedAt: thread.edited_at || undefined,
       attachments: [],

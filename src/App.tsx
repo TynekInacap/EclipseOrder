@@ -236,8 +236,24 @@ function MarkdownToolbar({ editorRef, onInsertImage }: { editorRef: React.RefObj
   </div>
 }
 
-function VisualEditor({ editorRef, onChange, placeholder = "Escribe el contenido del hilo..." }: { editorRef: React.RefObject<HTMLDivElement | null>; onChange: (html: string, text: string) => void; placeholder?: string }) {
-  return <div ref={editorRef} contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" onInput={(event) => { const element = event.currentTarget; onChange(element.innerHTML, element.textContent || "") }} className="visual-editor" data-placeholder={placeholder} />
+function VisualEditor({ editorRef, onChange, onPaste, placeholder = "Escribe el contenido del hilo..." }: { editorRef: React.RefObject<HTMLDivElement | null>; onChange: (html: string, text: string) => void; onPaste?: (event: React.ClipboardEvent<HTMLDivElement>) => void; placeholder?: string }) {
+  return <div ref={editorRef} contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" onPaste={onPaste} onInput={(event) => { const element = event.currentTarget; onChange(element.innerHTML, element.textContent || "") }} className="visual-editor" data-placeholder={placeholder} />
+}
+
+function pasteImageIntoEditor(event: React.ClipboardEvent<HTMLDivElement>, editorRef: React.RefObject<HTMLDivElement | null>, onChange: (html: string, text: string) => void) {
+  const imageItem = Array.from(event.clipboardData.items).find((item) => item.type.startsWith("image/"))
+  if (!imageItem) return
+  event.preventDefault()
+  const file = imageItem.getAsFile()
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = () => {
+    editorRef.current?.focus()
+    document.execCommand("insertImage", false, String(reader.result))
+    const element = editorRef.current
+    if (element) onChange(element.innerHTML, element.textContent || "")
+  }
+  reader.readAsDataURL(file)
 }
 
 type View =
@@ -2275,7 +2291,7 @@ function ReportStatusView({
   onOpenStatus: (status: ThreadStatus) => void
   onSound: (type: "click" | "select" | "success" | "notification") => void
 }) {
-  const statusSections = category === "bugs" ? {
+  const statusSection = category === "bugs" ? {
     cerrado: { label: "Cerrados", description: "Bugs resueltos o cerrados.", color: "#60a5fa" },
     en_revision: { label: "En revisión", description: "Bugs que están siendo analizados.", color: "#facc15" },
     abierto: { label: "Activos", description: "Bugs abiertos pendientes de resolución.", color: "#f59e0b" },
@@ -2316,19 +2332,11 @@ function ReportStatusView({
         ← Volver a {category === "bugs" ? "bugs" : "reportes"}
       </button>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-        <div style={{ width: 5, height: 26, background: section.color, borderRadius: 999, boxShadow: `0 0 18px ${section.color}` }} />
+        <div style={{ width: 5, height: 26, background: statusSection.color, borderRadius: 999, boxShadow: `0 0 18px ${statusSection.color}` }} />
         <div>
-          <h2 style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, letterSpacing: "0.08em", color: "var(--text)", margin: 0 }}>{section.label.toUpperCase()}</h2>
-          <div style={{ color: "var(--text-dim)", fontSize: 13 }}>{section.description}</div>
+          <h2 style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, letterSpacing: "0.08em", color: "var(--text)", margin: 0 }}>{statusSection.label.toUpperCase()}</h2>
+          <div style={{ color: "var(--text-dim)", fontSize: 13 }}>{statusSection.description}</div>
         </div>
-      </div>
-      <div className="report-directory" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", marginBottom: 18, border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
-        {directorySections.map((directorySection) => (
-          <button key={directorySection.status} type="button" onClick={() => onOpenStatus(directorySection.status)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", border: 0, borderRight: "1px solid var(--border)", background: directorySection.status === status ? "rgba(230,162,60,0.14)" : "rgba(15,23,42,0.5)", color: directorySection.status === status ? "var(--text)" : "var(--text-dim)", cursor: "pointer", textAlign: "left" }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: directorySection.color, boxShadow: `0 0 10px ${directorySection.color}` }} />
-            <strong style={{ fontSize: 12 }}>{directorySection.label}</strong>
-          </button>
-        ))}
       </div>
       <div className="report-directory" style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
         <div className="report-directory-head">
@@ -2354,7 +2362,7 @@ function ReportStatusView({
                   setView("thread")
                   onSound("select")
                 }}
-                style={{ "--report-color": section.color } as React.CSSProperties}
+                style={{ "--report-color": statusSection.color } as React.CSSProperties}
               >
                 <span className="report-directory-icon">●</span>
                 <span className="report-directory-copy">
@@ -3726,7 +3734,7 @@ function NewThreadView({
         <div style={{ marginBottom: 18 }}>
           <label style={labelStyle}>Descripción</label>
           <div className="visual-editor-shell">
-            <VisualEditor editorRef={contentRef} onChange={(html, text) => { setContent(html); setContentText(text) }} />
+            <VisualEditor editorRef={contentRef} onChange={(html, text) => { setContent(html); setContentText(text) }} onPaste={(event) => pasteImageIntoEditor(event, contentRef, (html, text) => { setContent(html); setContentText(text) })} />
             <MarkdownToolbar editorRef={contentRef} onInsertImage={(file) => {
               const reader = new FileReader()
               reader.onload = () => {
@@ -4422,6 +4430,7 @@ function ThreadView({
                 editorRef={replyContentRef}
                 placeholder="Escribe tu respuesta..."
                 onChange={(html) => setReplyContent(html)}
+                onPaste={(event) => pasteImageIntoEditor(event, replyContentRef, (html) => setReplyContent(html))}
               />
               <MarkdownToolbar
                 editorRef={replyContentRef}

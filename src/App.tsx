@@ -480,7 +480,7 @@ async function loadSupabaseForum(currentUserId?: string) {
     { data: replySummaryRows, error: replySummariesError },
     { data: threadViewRows, error: threadViewsError },
   ] = await Promise.all([
-    supabase.from("profiles").select("id, username, role, avatar, bio, role_points, redeemed_role_points, joined_at").order("joined_at", { ascending: true }),
+    supabase.from("profiles").select("id, username, role, avatar, avatar_url, banner_url, bio, role_points, redeemed_role_points, joined_at").order("joined_at", { ascending: true }),
     notificationsQuery,
     supabase.rpc("get_thread_reply_summaries", { requested_thread_ids: requestedThreadIds }),
     supabase.rpc("get_thread_view_counts", { requested_thread_ids: requestedThreadIds }),

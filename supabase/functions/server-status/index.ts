@@ -87,12 +87,48 @@ async function getPlayers(): Promise<string[]> {
   }
 }
 
+async function recordPlayerPlaytime(players: string[], now: string): Promise<void> {
+  if (players.length === 0) return
+
+  const { data, error } = await supabase
+    .from("player_playtime")
+    .select("username, total_seconds, last_seen")
+    .in("username", players)
+  if (error) throw error
+
+  const previousByUsername = new Map((data || []).map((row) => [row.username, row]))
+  const nowMs = new Date(now).getTime()
+  const updates = players.map((username) => {
+    const previous = previousByUsername.get(username)
+    if (!previous) {
+      return { username, total_seconds: 0, last_seen: now, updated_at: now }
+    }
+
+    const elapsedSeconds = Math.max(0, Math.min(600, Math.floor((nowMs - new Date(previous.last_seen).getTime()) / 1000)))
+    return {
+      username,
+      total_seconds: Number(previous.total_seconds || 0) + elapsedSeconds,
+      last_seen: now,
+      updated_at: now,
+    }
+  })
+
+  const { error: upsertError } = await supabase.from("player_playtime").upsert(updates)
+  if (upsertError) throw upsertError
+}
+
 Deno.serve(async (request) => {
   if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 })
 
   try {
     const players = await getPlayers()
     const now = new Date().toISOString()
+    await recordPlayerPlaytime(players, now)
+    const { data: previousPlayers, error: previousPlayersError } = await supabase
+      .from("server_players")
+      .select("username")
+    if (previousPlayersError) throw previousPlayersError
+
     const { data: previousStatus, error: previousStatusError } = await supabase
       .from("server_status")
       .select("online, peak_player_count, online_since")
@@ -121,13 +157,31 @@ Deno.serve(async (request) => {
         message: `El servidor volvió a estar online con ${players.length} jugadores conectados.`,
         metadata: { player_count: players.length },
       })
-    } else if (players.length !== previousPlayerCount) {
-      activityEvents.push({
-        type: "presence",
-        title: "Cambio de presencia",
-        message: `La presencia del servidor cambió de ${previousPlayerCount} a ${players.length} jugadores.`,
-        metadata: { previous_player_count: previousPlayerCount, player_count: players.length },
-      })
+    }
+
+    const previousPlayerNames = new Set((previousPlayers || []).map((player) => player.username))
+    const currentPlayerNames = new Set(players)
+    for (const username of players) {
+      if (!previousPlayerNames.has(username)) {
+        activityEvents.push({
+          type: "player_joined",
+          title: "Jugador conectado",
+          message: `${username} se conectó al servidor.`,
+          username,
+          metadata: { username },
+        })
+      }
+    }
+    for (const username of previousPlayerNames) {
+      if (!currentPlayerNames.has(username)) {
+        activityEvents.push({
+          type: "player_left",
+          title: "Jugador desconectado",
+          message: `${username} salió del servidor.`,
+          username,
+          metadata: { username },
+        })
+      }
     }
 
     const { error: deleteError } = await supabase.from("server_players").delete().neq("username", "")

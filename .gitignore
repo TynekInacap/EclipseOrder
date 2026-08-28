@@ -6,6 +6,7 @@ build/
 !.env.example
 migrate-attachments.mjs
 .vite/
+supabase/.temp/
 vite.config.*.timestamp-*
 *.tsbuildinfo
 *-debug.log*

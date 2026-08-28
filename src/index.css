@@ -470,6 +470,11 @@ select:hover,
   66% { color: #38bdf8; text-shadow: 0 0 14px rgba(56, 189, 248, 0.3); }
 }
 
+@keyframes serverPanelShift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
 @keyframes storeNavColorShift {
   from { background-position: 0% 50%; }
   to { background-position: 100% 50%; }
@@ -2013,8 +2018,16 @@ select:hover,
   min-height: 112px;
   padding: 15px 16px;
   border: 1px solid rgba(135, 211, 204, 0.14);
+  border-radius: 12px;
   background: rgba(5, 16, 20, 0.56);
   overflow: hidden;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.server-stats-grid > div:hover {
+  border-color: rgba(101, 214, 167, 0.38);
+  background: rgba(14, 43, 44, 0.68);
+  transform: translateY(-3px);
 }
 
 .server-stats-grid > div::after {
@@ -2064,9 +2077,11 @@ select:hover,
   margin-bottom: 18px;
   padding: 24px;
   border: 1px solid rgba(45, 212, 191, 0.26);
-  background: linear-gradient(135deg, rgba(15, 42, 45, 0.9), rgba(9, 24, 29, 0.9));
+  background: linear-gradient(120deg, rgba(15, 42, 45, 0.96), rgba(9, 24, 29, 0.92), rgba(38, 28, 35, 0.9));
+  background-size: 220% 220%;
   box-shadow: 0 18px 44px rgba(1, 10, 13, 0.24);
   overflow: hidden;
+  animation: serverPanelShift 12s ease-in-out infinite;
 }
 
 .server-overview::before {
@@ -2116,9 +2131,77 @@ select:hover,
 }
 
 .server-roster {
+  position: relative;
+  overflow: hidden;
   padding: 24px;
   border: 1px solid var(--border);
+  border-radius: 18px;
   background: linear-gradient(180deg, rgba(14, 29, 33, 0.9), rgba(9, 21, 25, 0.8));
+  box-shadow: 0 18px 42px rgba(1, 10, 13, 0.18);
+}
+
+.server-view {
+  position: relative;
+}
+
+.server-view::before,
+.server-view::after {
+  position: absolute;
+  z-index: -1;
+  content: "";
+  pointer-events: none;
+}
+
+.server-view::before {
+  top: 176px;
+  right: 0;
+  width: 58%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(101, 214, 167, 0.22), transparent);
+}
+
+.server-view::after {
+  top: 300px;
+  left: 0;
+  width: 100%;
+  height: 220px;
+  background-image: repeating-linear-gradient(135deg, transparent 0, transparent 31px, rgba(116, 190, 211, 0.035) 32px, transparent 33px);
+}
+
+.server-overview {
+  border-radius: 22px;
+}
+
+.server-ranking-list,
+.server-activity-list {
+  position: relative;
+  z-index: 1;
+}
+
+.server-ranking-row {
+  border-radius: 12px !important;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.server-ranking-row:hover {
+  border-color: rgba(101, 214, 167, 0.38) !important;
+  background: rgba(20, 52, 51, 0.72) !important;
+  transform: translateX(3px);
+}
+
+.server-ranking-row.is-first {
+  box-shadow: inset 3px 0 0 #e6a23c, 0 10px 24px rgba(230, 162, 60, 0.08);
+}
+
+.server-activity-item {
+  border-radius: 12px !important;
+  background: rgba(5, 16, 20, 0.48) !important;
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+.server-activity-item:hover {
+  border-color: rgba(255, 107, 95, 0.34) !important;
+  transform: translateX(3px);
 }
 
 .server-roster-heading {
@@ -2134,6 +2217,10 @@ select:hover,
   font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.server-ranking-title {
+  animation: catalogColorShift 1.5s ease-in-out infinite;
 }
 
 .server-roster-heading > small {
@@ -3019,7 +3106,9 @@ body {
   }
 
   .store-catalog-title,
-  .role-points-title { animation: none; }
+  .role-points-title,
+  .server-ranking-title,
+  .server-overview { animation: none; }
 
   .store-product { transition: none; }
 }

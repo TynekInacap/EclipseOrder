@@ -110,6 +110,11 @@ interface ServerPlayer {
   username: string
 }
 
+interface PlayerPlaytime {
+  username: string
+  total_seconds: number
+}
+
 interface ServerActivityItem {
   id: string
   type: string
@@ -755,6 +760,13 @@ function formatServerUptime(onlineSince: string | null) {
   if (days > 0) return `${days}d ${hours}h`
   if (hours > 0) return `${hours}h ${minutes}m`
   return `${minutes}m`
+}
+
+function formatPlaytime(totalSeconds: number) {
+  const totalMinutes = Math.max(0, Math.floor(totalSeconds / 60))
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return `${hours}h ${minutes.toString().padStart(2, "0")}m`
 }
 
 function threadLastActivity(thread: Thread) {
@@ -1852,6 +1864,7 @@ function CategoryView({
   onSelectCategory,
   onOpenReportStatus,
   onOpenFactionSubforum,
+  onOpenProfile,
 }: {
   category: Category
   threads: Thread[]
@@ -1863,6 +1876,7 @@ function CategoryView({
   onSelectCategory: (category: Category) => void
   onOpenReportStatus: (status: ThreadStatus) => void
   onOpenFactionSubforum: (subforum: ThreadSubforum) => void
+  onOpenProfile: (user: User) => void
 }) {
   const color = CATEGORY_COLORS[category]
   const [threadPage, setThreadPage] = useState(1)
@@ -2144,7 +2158,7 @@ function CategoryView({
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
                     <Avatar letter={lastAuthor?.avatar || author?.avatar || "?"} role={lastAuthor?.role || author?.role || "user"} size={24} imageUrl={lastAuthor?.avatarUrl || author?.avatarUrl} />
                     <div style={{ textAlign: "right", minWidth: 0 }}>
-                      <div style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lastAuthor?.username || author?.username || "Usuario"}</div>
+                      {lastAuthor ? <button type="button" onClick={(event) => { event.stopPropagation(); onOpenProfile(lastAuthor) }} style={{ border: "none", padding: 0, background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lastAuthor.username}</button> : <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Usuario</div>}
                       <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace" }}>{lastReply ? formatDate(lastReply.createdAt) : formatDate(thread.createdAt)}</div>
                     </div>
                   </div>
@@ -3013,21 +3027,24 @@ function MembersView({ users, onOpenProfile, onLoadMemberAvatars, onBack }: {
 function ServerView({ onBack }: { onBack: () => void }) {
   const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null)
   const [serverPlayers, setServerPlayers] = useState<ServerPlayer[]>([])
+  const [playerPlaytime, setPlayerPlaytime] = useState<PlayerPlaytime[]>([])
   const [serverActivity, setServerActivity] = useState<ServerActivityItem[]>([])
 
   useEffect(() => {
     let mounted = true
 
     async function loadServerPresence() {
-      const [{ data: status }, { data: players }, { data: activity }] = await Promise.all([
+      const [{ data: status }, { data: players }, { data: playtime }, { data: activity }] = await Promise.all([
         supabase.from("server_status").select("online, player_count, peak_player_count, online_since, checked_at").eq("id", "main").maybeSingle(),
         supabase.from("server_players").select("username").order("username", { ascending: true }),
+        supabase.from("player_playtime").select("username, total_seconds").order("total_seconds", { ascending: false }).limit(10),
         supabase.from("server_activity").select("id, type, title, message, username, metadata, created_at").order("created_at", { ascending: false }).limit(8),
       ])
 
       if (!mounted) return
       setServerStatus((status as ServerStatus | null) || null)
       setServerPlayers((players as ServerPlayer[] | null) || [])
+      setPlayerPlaytime((playtime as PlayerPlaytime[] | null) || [])
       setServerActivity((activity as ServerActivityItem[] | null) || [])
     }
 
@@ -3040,7 +3057,7 @@ function ServerView({ onBack }: { onBack: () => void }) {
   }, [])
 
   return (
-    <main className="members-view" style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 20px 50px" }}>
+    <main className="members-view server-view" style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 20px 50px" }}>
       <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
         ← Volver al foro
       </button>
@@ -3078,6 +3095,28 @@ function ServerView({ onBack }: { onBack: () => void }) {
           </div>
         ) : <div className="members-empty">No hay jugadores conectados.</div>}
       </section>
+      <section className="server-roster" aria-label="Top histórico de tiempo de juego" style={{ marginTop: 28 }}>
+        <div className="server-roster-heading">
+          <div>
+            <span className="server-kicker">ACTIVIDAD ACUMULADA</span>
+            <h2 className="server-ranking-title">Top histórico</h2>
+          </div>
+          <small>TOP {playerPlaytime.length}</small>
+        </div>
+        {playerPlaytime.length > 0 ? (
+          <div className="server-ranking-list" style={{ display: "grid", gap: 8 }}>
+            {playerPlaytime.map((player, index) => (
+              <div className={`server-ranking-row ${index === 0 ? "is-first" : ""}`} key={player.username} style={{ display: "grid", gridTemplateColumns: "32px minmax(0, 1fr) auto", alignItems: "center", gap: 10, padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 8, background: index === 0 ? "rgba(230,162,60,0.1)" : "rgba(10,14,23,0.45)" }}>
+                <strong style={{ color: index === 0 ? "#f3d38a" : "var(--text-muted)", fontFamily: "JetBrains Mono, monospace" }}>#{index + 1}</strong>
+                <span style={{ color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{player.username}</span>
+                <strong style={{ color: "#f3d38a", fontFamily: "JetBrains Mono, monospace", fontSize: 12 }}>{formatPlaytime(player.total_seconds)}</strong>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="members-empty">Todavía no hay tiempo de juego registrado.</div>
+        )}
+      </section>
       <section className="server-roster" aria-label="Actividad reciente del servidor" style={{ marginTop: 28 }}>
         <div className="server-roster-heading">
           <div>
@@ -3087,15 +3126,14 @@ function ServerView({ onBack }: { onBack: () => void }) {
           <small>{serverActivity.length} REGISTROS</small>
         </div>
         {serverActivity.length > 0 ? (
-          <div style={{ display: "grid", gap: 10 }}>
+          <div className="server-activity-list" style={{ display: "grid", gap: 10 }}>
             {serverActivity.map((activity) => (
-              <div key={activity.id} style={{ border: "1px solid var(--border)", borderRadius: 14, background: "rgba(10, 14, 23, 0.7)", padding: "14px 16px" }}>
+              <div className="server-activity-item" key={activity.id} style={{ border: "1px solid var(--border)", borderRadius: 14, background: "rgba(10, 14, 23, 0.7)", padding: "14px 16px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                   <strong style={{ color: "#f3d38a", fontSize: 13 }}>{activity.title}</strong>
                   <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{formatDate(activity.created_at)}</span>
                 </div>
                 <p style={{ margin: "8px 0 0", color: "var(--text)", fontSize: 13, lineHeight: 1.5 }}>{activity.message}</p>
-                {activity.username && <small style={{ display: "block", marginTop: 8, color: "var(--text-muted)" }}>Usuario: {activity.username}</small>}
               </div>
             ))}
           </div>
@@ -3467,6 +3505,7 @@ function ThreadView({
   onMoveFactionThread,
   onAddFactionRolePoints,
   onClaimFactionRolePoints,
+  onOpenProfile,
   goBack,
 }: {
   threadId: string
@@ -3487,6 +3526,7 @@ function ThreadView({
   onMoveFactionThread: (threadId: string, targetSubforum: ThreadSubforum) => void
   onAddFactionRolePoints: (threadId: string, amount: number) => void
   onClaimFactionRolePoints: (threadId: string) => void
+  onOpenProfile: (user: User) => void
   goBack: () => void
 }) {
   const thread = threads.find((t) => t.id === threadId)
@@ -3717,7 +3757,7 @@ function ThreadView({
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <Avatar letter={author?.avatar || "?"} role={author?.role || "user"} size={28} imageUrl={author?.avatarUrl} />
               <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                <strong style={{ color: "var(--text)" }}>{author?.username}{author && <RoleMark role={author.role} />}</strong> · {formatDate(thread.createdAt)}
+                {author ? <button type="button" onClick={() => onOpenProfile(author)} style={{ border: "none", padding: 0, background: "transparent", color: "var(--text)", cursor: "pointer", fontWeight: 700 }}>{author.username}<RoleMark role={author.role} /></button> : "Usuario"} · {formatDate(thread.createdAt)}
                 {thread.editedAt && <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}> · EDITADO</span>}
               </div>
             </div>
@@ -3952,9 +3992,7 @@ function ThreadView({
                     <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                     <Avatar letter={replyAuthor?.avatar || "?"} role={replyAuthor?.role || "user"} size={26} imageUrl={replyAuthor?.avatarUrl} />
                     <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                      <strong style={{ color: reply.isStaff ? "#3498db" : "var(--text)" }}>
-                        {replyAuthor?.username}<RoleMark role={replyAuthor?.role || "user"} />
-                      </strong>
+                      {replyAuthor ? <button type="button" onClick={() => onOpenProfile(replyAuthor)} style={{ border: "none", padding: 0, background: "transparent", color: reply.isStaff ? "#3498db" : "var(--text)", cursor: "pointer", fontWeight: 700 }}>{replyAuthor.username}<RoleMark role={replyAuthor.role} /></button> : "Usuario"}
                       {reply.isStaff && (
                         <span style={{ marginLeft: 6, fontSize: 10, color: "#3498db", fontFamily: "JetBrains Mono, monospace" }}>
                           [STAFF]
@@ -5380,6 +5418,7 @@ export default function App() {
           onSelectCategory={handleOpenCategory}
           onOpenReportStatus={handleOpenReportStatus}
           onOpenFactionSubforum={handleOpenFactionSubforum}
+          onOpenProfile={handleOpenProfile}
         />
       )}
       {view === "report_status" && (
@@ -5422,6 +5461,7 @@ export default function App() {
           onMoveFactionThread={handleMoveFactionThread}
           onAddFactionRolePoints={handleAddFactionRolePoints}
           onClaimFactionRolePoints={handleClaimFactionRolePoints}
+          onOpenProfile={handleOpenProfile}
           goBack={handleGoBack}
         />
       )}

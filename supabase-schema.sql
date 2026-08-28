@@ -156,6 +156,13 @@ create table public.server_players (
   last_seen timestamptz not null default timezone('utc', now())
 );
 
+create table public.player_playtime (
+  username text primary key,
+  total_seconds bigint not null default 0 check (total_seconds >= 0),
+  last_seen timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
 create table public.server_activity (
   id uuid primary key default gen_random_uuid(),
   type text not null default 'system',
@@ -185,6 +192,7 @@ create index if not exists notifications_user_created_idx on public.notification
 create index if not exists thread_attachments_thread_idx on public.thread_attachments(thread_id);
 create index if not exists reply_attachments_reply_idx on public.reply_attachments(reply_id);
 create index if not exists server_activity_created_idx on public.server_activity(created_at desc);
+create index if not exists player_playtime_total_seconds_idx on public.player_playtime(total_seconds desc);
 
 create or replace function public.get_thread_view_counts(requested_thread_ids uuid[])
 returns table(thread_id uuid, visitor_count bigint)
@@ -272,6 +280,7 @@ alter table public.notifications enable row level security;
 alter table public.thread_views enable row level security;
 alter table public.server_status enable row level security;
 alter table public.server_players enable row level security;
+alter table public.player_playtime enable row level security;
 
 create policy "Server status is publicly readable"
 on public.server_status for select
@@ -279,6 +288,10 @@ using (true);
 
 create policy "Server players are publicly readable"
 on public.server_players for select
+using (true);
+
+create policy "Player playtime is publicly readable"
+on public.player_playtime for select
 using (true);
 
 create policy "Forum attachments are publicly readable"

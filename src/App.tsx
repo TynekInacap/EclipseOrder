@@ -110,6 +110,16 @@ interface ServerPlayer {
   username: string
 }
 
+interface ServerActivityItem {
+  id: string
+  type: string
+  title: string
+  message: string
+  username?: string | null
+  metadata?: Record<string, unknown>
+  created_at: string
+}
+
 function MarkdownText({ content, inline = false }: { content: string; inline?: boolean }) {
   const normalizedContent = content.replace(/:::\s*(left|center|right)\s*\n([\s\S]*?)\n:::/g, '<div class="markdown-align-$1">\n$2\n</div>')
   const html = DOMPurify.sanitize(marked.parse(normalizedContent, { async: false, breaks: true, gfm: true }) as string)
@@ -2463,6 +2473,227 @@ function ForumView({
   )
 }
 
+function PlayerLinkCard({ userId }: { userId: string }) {
+  type PlayerLink = {
+    id: string
+    forum_user_id: string | null
+    steam_id: string
+    character_name: string
+    server_name: string
+    verified: boolean
+    last_seen: string
+  }
+
+  const [steamId, setSteamId] = useState("")
+  const [link, setLink] = useState<PlayerLink | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState("")
+  const [matchStatus, setMatchStatus] = useState<"idle" | "linked" | "sync-needed" | "not-found">("idle")
+  const [matchedPlayer, setMatchedPlayer] = useState<PlayerLink | null>(null)
+
+  const loadLink = useCallback(async () => {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from("player_links")
+      .select("*")
+      .eq("forum_user_id", userId)
+      .maybeSingle()
+
+    if (!error && data) {
+      setLink(data as PlayerLink)
+      setSteamId(data.steam_id ?? "")
+    } else {
+      setLink(null)
+    }
+
+    setLoading(false)
+  }, [userId])
+
+  useEffect(() => {
+    void loadLink()
+  }, [loadLink])
+
+  const checkSteamId = useCallback(async (value: string) => {
+    const normalized = value.trim()
+    if (!normalized) {
+      setMatchStatus("idle")
+      setMatchedPlayer(null)
+      return
+    }
+
+    const { data, error } = await supabase
+      .from("player_links")
+      .select("*")
+      .eq("steam_id", normalized)
+      .maybeSingle()
+
+    if (error || !data) {
+      setMatchStatus("not-found")
+      setMatchedPlayer(null)
+      return
+    }
+
+    if (data.forum_user_id && data.forum_user_id !== userId) {
+      setMatchStatus("sync-needed")
+      setMatchedPlayer(data as PlayerLink)
+      return
+    }
+
+    if (data.forum_user_id === userId) {
+      setMatchStatus("linked")
+      setMatchedPlayer(data as PlayerLink)
+      return
+    }
+
+    setMatchStatus("sync-needed")
+    setMatchedPlayer(data as PlayerLink)
+  }, [userId])
+
+  useEffect(() => {
+    if (!steamId.trim()) {
+      setMatchStatus("idle")
+      setMatchedPlayer(null)
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      void checkSteamId(steamId)
+    }, 250)
+
+    return () => window.clearTimeout(timeout)
+  }, [steamId, checkSteamId])
+
+  const handleLink = async (event: React.FormEvent) => {
+    event.preventDefault()
+    const normalized = steamId.trim()
+
+    if (!normalized) {
+      setMessage("Ingresá tu Steam ID.")
+      return
+    }
+
+    if (!matchedPlayer || matchedPlayer.steam_id !== normalized) {
+      setMessage("Sincronizá primero ese Steam ID con el servidor.")
+      return
+    }
+
+    setSaving(true)
+    setMessage("")
+
+    const { error } = await supabase
+      .from("player_links")
+      .update({
+        forum_user_id: userId,
+        verified: true,
+        last_seen: new Date().toISOString(),
+      })
+      .eq("steam_id", normalized)
+
+    if (error) {
+      setMessage("No se pudo vincular la cuenta.")
+      setSaving(false)
+      return
+    }
+
+    setMessage("Vinculado correctamente.")
+    setMatchStatus("linked")
+    await loadLink()
+    setSaving(false)
+  }
+
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-neutral-700 bg-neutral-900/80 p-4 text-sm text-neutral-300">
+        Cargando vinculación de personaje...
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-xl border border-neutral-700 bg-neutral-900/80 p-4" style={{ marginBottom: 18 }}>
+      <div className="mb-3 flex items-center justify-between" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <h3 className="text-lg font-semibold text-white" style={{ margin: 0, color: "#fff", fontSize: 18, fontWeight: 700 }}>
+          Vínculo con Project Zomboid
+        </h3>
+        {link ? (
+          <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-xs font-medium text-emerald-300" style={{ borderRadius: 999, background: "rgba(16,185,129,0.12)", color: "#6ee7b7", fontSize: 11, padding: "4px 8px" }}>
+            Verificado
+          </span>
+        ) : (
+          <span className="rounded-full bg-amber-500/15 px-2 py-1 text-xs font-medium text-amber-300" style={{ borderRadius: 999, background: "rgba(245,158,11,0.12)", color: "#fbbf24", fontSize: 11, padding: "4px 8px" }}>
+            Pendiente
+          </span>
+        )}
+      </div>
+
+      {link ? (
+        <div className="space-y-2 text-sm text-neutral-200" style={{ display: "grid", gap: 8, color: "#e5e7eb", fontSize: 13 }}>
+          <div><span style={{ color: "#9ca3af" }}>Personaje:</span> {link.character_name}</div>
+          <div><span style={{ color: "#9ca3af" }}>Steam ID:</span> {link.steam_id}</div>
+          <div><span style={{ color: "#9ca3af" }}>Servidor:</span> {link.server_name}</div>
+          <div><span style={{ color: "#9ca3af" }}>Última conexión:</span> {new Date(link.last_seen).toLocaleString()}</div>
+        </div>
+      ) : (
+        <form onSubmit={handleLink} className="space-y-3" style={{ display: "grid", gap: 12 }}>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span style={{ fontSize: 13, color: "#d1d5db" }}>Steam ID</span>
+            <input
+              value={steamId}
+              onChange={(event) => setSteamId(event.target.value)}
+              placeholder="76561198000000000"
+              style={{
+                width: "100%",
+                borderRadius: 10,
+                border: "1px solid var(--border)",
+                background: "rgba(2,6,23,0.6)",
+                color: "#fff",
+                padding: "10px 12px",
+                outline: "none",
+              }}
+            />
+          </label>
+
+          {matchStatus === "linked" && matchedPlayer && (
+            <p style={{ margin: 0, fontSize: 13, color: "#6ee7b7" }}>Vinculado correctamente.</p>
+          )}
+
+          {matchStatus === "sync-needed" && matchedPlayer && (
+            <p style={{ margin: 0, fontSize: 13, color: "#fbbf24" }}>
+              Sincronizar primero: {matchedPlayer.steam_id} existe en el servidor.
+            </p>
+          )}
+
+          {matchStatus === "not-found" && steamId.trim() && (
+            <p style={{ margin: 0, fontSize: 13, color: "#fca5a5" }}>
+              Ese Steam ID no está sincronizado con el servidor todavía.
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={saving || matchStatus !== "sync-needed" || !matchedPlayer}
+            style={{
+              width: "auto",
+              borderRadius: 10,
+              background: saving || matchStatus !== "sync-needed" || !matchedPlayer ? "rgba(22,163,74,0.4)" : "#16a34a",
+              border: "none",
+              color: "#fff",
+              padding: "10px 14px",
+              cursor: saving || matchStatus !== "sync-needed" || !matchedPlayer ? "not-allowed" : "pointer",
+              fontWeight: 600,
+            }}
+          >
+            {saving ? "Vinculando..." : "Vincular cuenta"}
+          </button>
+        </form>
+      )}
+
+      {message ? <p style={{ marginTop: 12, color: "#e5e7eb", fontSize: 13 }}>{message}</p> : null}
+    </div>
+  )
+}
+
 // ─── Profile View ─────────────────────────────────────────────────────────────
 
 function ProfileView({
@@ -2782,19 +3013,22 @@ function MembersView({ users, onOpenProfile, onLoadMemberAvatars, onBack }: {
 function ServerView({ onBack }: { onBack: () => void }) {
   const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null)
   const [serverPlayers, setServerPlayers] = useState<ServerPlayer[]>([])
+  const [serverActivity, setServerActivity] = useState<ServerActivityItem[]>([])
 
   useEffect(() => {
     let mounted = true
 
     async function loadServerPresence() {
-      const [{ data: status }, { data: players }] = await Promise.all([
+      const [{ data: status }, { data: players }, { data: activity }] = await Promise.all([
         supabase.from("server_status").select("online, player_count, peak_player_count, online_since, checked_at").eq("id", "main").maybeSingle(),
         supabase.from("server_players").select("username").order("username", { ascending: true }),
+        supabase.from("server_activity").select("id, type, title, message, username, metadata, created_at").order("created_at", { ascending: false }).limit(8),
       ])
 
       if (!mounted) return
       setServerStatus((status as ServerStatus | null) || null)
       setServerPlayers((players as ServerPlayer[] | null) || [])
+      setServerActivity((activity as ServerActivityItem[] | null) || [])
     }
 
     void loadServerPresence()
@@ -2843,6 +3077,31 @@ function ServerView({ onBack }: { onBack: () => void }) {
             {serverPlayers.map((player) => <span className="server-player-chip" key={player.username}><i aria-hidden="true" />{player.username}</span>)}
           </div>
         ) : <div className="members-empty">No hay jugadores conectados.</div>}
+      </section>
+      <section className="server-roster" aria-label="Actividad reciente del servidor" style={{ marginTop: 28 }}>
+        <div className="server-roster-heading">
+          <div>
+            <span className="server-kicker">REGISTRO DE ACTIVIDAD</span>
+            <h2>Eventos del servidor</h2>
+          </div>
+          <small>{serverActivity.length} REGISTROS</small>
+        </div>
+        {serverActivity.length > 0 ? (
+          <div style={{ display: "grid", gap: 10 }}>
+            {serverActivity.map((activity) => (
+              <div key={activity.id} style={{ border: "1px solid var(--border)", borderRadius: 14, background: "rgba(10, 14, 23, 0.7)", padding: "14px 16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <strong style={{ color: "#f3d38a", fontSize: 13 }}>{activity.title}</strong>
+                  <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{formatDate(activity.created_at)}</span>
+                </div>
+                <p style={{ margin: "8px 0 0", color: "var(--text)", fontSize: 13, lineHeight: 1.5 }}>{activity.message}</p>
+                {activity.username && <small style={{ display: "block", marginTop: 8, color: "var(--text-muted)" }}>Usuario: {activity.username}</small>}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="members-empty">Todavía no hay eventos registrados en el servidor.</div>
+        )}
       </section>
     </main>
   )

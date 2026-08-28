@@ -156,6 +156,16 @@ create table public.server_players (
   last_seen timestamptz not null default timezone('utc', now())
 );
 
+create table public.server_activity (
+  id uuid primary key default gen_random_uuid(),
+  type text not null default 'system',
+  title text not null,
+  message text not null default '',
+  username text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
 insert into public.server_status (id)
 values ('main')
 on conflict (id) do nothing;
@@ -174,6 +184,7 @@ create index if not exists replies_author_idx on public.replies(author_id);
 create index if not exists notifications_user_created_idx on public.notifications(user_id, created_at desc);
 create index if not exists thread_attachments_thread_idx on public.thread_attachments(thread_id);
 create index if not exists reply_attachments_reply_idx on public.reply_attachments(reply_id);
+create index if not exists server_activity_created_idx on public.server_activity(created_at desc);
 
 create or replace function public.get_thread_view_counts(requested_thread_ids uuid[])
 returns table(thread_id uuid, visitor_count bigint)

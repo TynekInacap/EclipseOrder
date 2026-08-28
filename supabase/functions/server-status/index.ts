@@ -112,6 +112,24 @@ Deno.serve(async (request) => {
     })
     if (statusError) throw statusError
 
+    const activityEvents: Array<{ type: string; title: string; message: string; username?: string; metadata: Record<string, unknown> }> = []
+    const previousPlayerCount = previousStatus?.player_count ?? 0
+    if (!previousStatus?.online) {
+      activityEvents.push({
+        type: "server",
+        title: "Servidor activo",
+        message: `El servidor volvió a estar online con ${players.length} jugadores conectados.`,
+        metadata: { player_count: players.length },
+      })
+    } else if (players.length !== previousPlayerCount) {
+      activityEvents.push({
+        type: "presence",
+        title: "Cambio de presencia",
+        message: `La presencia del servidor cambió de ${previousPlayerCount} a ${players.length} jugadores.`,
+        metadata: { previous_player_count: previousPlayerCount, player_count: players.length },
+      })
+    }
+
     const { error: deleteError } = await supabase.from("server_players").delete().neq("username", "")
     if (deleteError) throw deleteError
     if (players.length > 0) {
@@ -121,16 +139,38 @@ Deno.serve(async (request) => {
       if (playersError) throw playersError
     }
 
+    if (activityEvents.length > 0) {
+      const { error: activityError } = await supabase.from("server_activity").insert(
+        activityEvents.map((event) => ({
+          type: event.type,
+          title: event.title,
+          message: event.message,
+          username: event.username ?? null,
+          metadata: event.metadata,
+          created_at: now,
+        })),
+      )
+      if (activityError) throw activityError
+    }
+
     return Response.json({ online: true, playerCount: players.length })
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : JSON.stringify(error)
     console.error("server-status failed:", errorMessage)
+    const offlineNow = new Date().toISOString()
     await supabase.from("server_status").upsert({
       id: "main",
       online: false,
       player_count: 0,
       online_since: null,
-      checked_at: new Date().toISOString(),
+      checked_at: offlineNow,
+    })
+    await supabase.from("server_activity").insert({
+      type: "server",
+      title: "Servidor fuera de línea",
+      message: "El chequeo del servidor falló. Se registró una desconexión o error de conexión.",
+      metadata: { error: errorMessage },
+      created_at: offlineNow,
     })
     return Response.json({ error: errorMessage || "No se pudo consultar RCON" }, { status: 502 })
   }

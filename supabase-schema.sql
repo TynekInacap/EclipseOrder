@@ -130,6 +130,42 @@ create table public.notifications (
   created_at timestamptz not null default timezone('utc', now())
 );
 
+create table if not exists public.store_redemptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  username text not null,
+  product_id text not null,
+  product_title text not null,
+  price integer not null check (price > 0),
+  quantity integer not null default 1 check (quantity > 0),
+  status text not null default 'pending' check (status in ('pending', 'delivered')),
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+alter table public.store_redemptions enable row level security;
+
+drop policy if exists "Users can read their store redemptions" on public.store_redemptions;
+drop policy if exists "Users can create their store redemptions" on public.store_redemptions;
+drop policy if exists "Admins can read all store redemptions" on public.store_redemptions;
+drop policy if exists "Admins can update store redemptions" on public.store_redemptions;
+
+create policy "Users can read their store redemptions"
+on public.store_redemptions for select
+using (auth.uid() = user_id);
+
+create policy "Users can create their store redemptions"
+on public.store_redemptions for insert
+with check (auth.uid() = user_id);
+
+create policy "Admins can read all store redemptions"
+on public.store_redemptions for select
+using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
+
+create policy "Admins can update store redemptions"
+on public.store_redemptions for update
+using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'))
+with check (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
+
 create table public.thread_views (
   thread_id uuid not null references public.threads(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,

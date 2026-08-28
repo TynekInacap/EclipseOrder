@@ -58,6 +58,8 @@ interface StoreRedemption {
   productId: string
   productTitle: string
   price: number
+  quantity: number
+  status?: "pending" | "delivered"
   createdAt: string
 }
 
@@ -287,6 +289,9 @@ function routeFromLocation(): RouteState {
   if (segments[0] === "foro" && segments[1] === "reportes" && segments[2]) {
     return { view: "report_status", category: "reportes", reportStatus: segments[2] as ThreadStatus }
   }
+  if (segments[0] === "foro" && segments[1] === "bugs" && segments[2]) {
+    return { view: "report_status", category: "bugs", reportStatus: segments[2] as ThreadStatus }
+  }
   if (segments[0] === "foro" && segments[1] === "facciones" && segments[2]) {
     return { view: "faction_subforum", category: "facciones", factionSubforum: segments[2] as ThreadSubforum }
   }
@@ -308,7 +313,7 @@ function pathFromState(view: View, profileId: string, threadId: string, category
   if (view === "thread" && threadId) return `/hilo/${encodeURIComponent(threadId)}`
   if (view === "new_thread") return `/foro/${category}/nuevo`
   if (view === "category") return `/foro/${category}`
-  if (view === "report_status") return `/foro/reportes/${reportStatus}`
+  if (view === "report_status") return `/foro/${category}/${reportStatus}`
   if (view === "faction_subforum") return `/foro/facciones/${factionSubforum}`
   return "/"
 }
@@ -1423,7 +1428,7 @@ function StoreView({
   products: StoreProduct[]
   redemptions: StoreRedemption[]
   onCreateProduct: (product: StoreProduct) => void
-  onRedeemProduct: (product: StoreProduct) => void | Promise<void>
+  onRedeemProduct: (product: StoreProduct, quantity: number) => Promise<boolean>
   onBack: () => void
 }) {
   const [title, setTitle] = useState("")
@@ -1432,7 +1437,8 @@ function StoreView({
   const [imageUrl, setImageUrl] = useState("")
   const [productKind, setProductKind] = useState<"personal" | "faccion">("personal")
   const [error, setError] = useState("")
-  const ownedProductIds = redemptions.filter((redemption) => redemption.userId === currentUser.id).map((redemption) => redemption.productId)
+  const [quantities, setQuantities] = useState<Record<string, number>>({})
+  const [purchaseMessage, setPurchaseMessage] = useState("")
   const balance = Math.max(0, (currentUser.rolePoints || 0) - (currentUser.redeemedRolePoints || 0))
   const factionBalance = threads
     .filter((thread) => thread.category === "facciones" && thread.authorId === currentUser.id && !thread.factionRolePointsClaimed)
@@ -1477,6 +1483,7 @@ function StoreView({
       </div>
 
       <div className="store-layout">
+        {purchaseMessage && <div style={{ gridColumn: "1 / -1", padding: "12px 16px", border: "1px solid rgba(16,185,129,0.45)", borderRadius: 8, background: "rgba(16,185,129,0.12)", color: "#6ee7b7", fontSize: 13 }}>{purchaseMessage}</div>}
         <div className="store-catalog-departments">
         <section className="store-catalog store-department store-user-department">
           <div className="store-section-title"><span className="store-catalog-title">Recompensas personales</span><small>{products.filter((product) => (product.kind || "personal") === "personal").length} PRODUCTOS</small></div>
@@ -1485,19 +1492,23 @@ function StoreView({
           ) : (
             <div className="store-products">
               {products.filter((product) => (product.kind || "personal") === "personal").map((product) => {
-                const owned = ownedProductIds.includes(product.id)
-                const canAfford = balance >= product.price
+                const quantity = quantities[product.id] || 1
+                const canAfford = balance >= product.price * quantity
                 return (
                   <article className="store-product" key={product.id}>
                     <div className="store-product-image">
                       {product.imageUrl ? <img src={product.imageUrl} alt="" /> : <span>✦</span>}
                     </div>
                     <div className="store-product-body">
-                      <div className="store-product-price">{product.price} PDR</div>
+                      <div className="store-product-price">{product.price * quantity} PDR total</div>
                       <h2>{product.title}</h2>
                       <p>{product.description}</p>
-                      <button onClick={() => onRedeemProduct(product)} disabled={owned || !canAfford} className="store-redeem">
-                        {owned ? "CANJEADO" : canAfford ? "CANJEAR PRODUCTO" : "PUNTOS INSUFICIENTES"}
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, color: "var(--text-muted)", fontSize: 12 }}>
+                        Cantidad
+                        <input type="number" min="1" max="99" value={quantity} onChange={(event) => setQuantities((previous) => ({ ...previous, [product.id]: Math.max(1, Math.min(99, Number(event.target.value) || 1)) }))} style={{ ...inputStyle, width: 70, padding: "7px 8px" }} />
+                      </label>
+                      <button onClick={async () => { const purchased = await onRedeemProduct(product, quantity); if (purchased) { setPurchaseMessage("Muchas gracias por tu compra. Pronto un administrador te entregará la recompensa."); window.setTimeout(() => setPurchaseMessage(""), 5000) } }} disabled={!canAfford} className="store-redeem">
+                        {canAfford ? "COMPRAR" : "PUNTOS INSUFICIENTES"}
                       </button>
                     </div>
                   </article>
@@ -1908,7 +1919,7 @@ function CategoryView({
   setSelectedThread: (id: string) => void
   onSound: (type: "click" | "select" | "success" | "notification") => void
   onSelectCategory: (category: Category) => void
-  onOpenReportStatus: (status: ThreadStatus) => void
+  onOpenReportStatus: (status: ThreadStatus, category?: Category) => void
   onOpenFactionSubforum: (subforum: ThreadSubforum) => void
   onOpenProfile: (user: User) => void
 }) {
@@ -1951,10 +1962,15 @@ function CategoryView({
   const reportSections = [
     { status: "abierto" as ThreadStatus, label: "Activos", description: "Reportes abiertos pendientes de una resolución.", color: "#f59e0b" },
     { status: "cerrado" as ThreadStatus, label: "Aceptados", description: "Todos los reportes aceptados y resueltos.", color: "#60a5fa" },
-    { status: "en_revision" as ThreadStatus, label: "Rechazados", description: "Reportes revisados que no requieren más acciones.", color: "#ef4444" },
+    { status: "en_revision" as ThreadStatus, label: "En revisión", description: "Reportes que están siendo analizados.", color: "#facc15" },
   ]
   const reportThreads = tabThreads.filter((thread) => thread.id !== "t-rules-reportes")
   const reportRulesThread = tabThreads.find((thread) => thread.id === "t-rules-reportes")
+  const bugSections = [
+    { status: "abierto" as ThreadStatus, label: "Activos", description: "Bugs abiertos pendientes de resolución.", color: "#22c55e" },
+    { status: "en_revision" as ThreadStatus, label: "En revisión", description: "Bugs que están siendo analizados.", color: "#facc15" },
+    { status: "cerrado" as ThreadStatus, label: "Cerrados", description: "Bugs resueltos o cerrados.", color: "#ef4444" },
+  ]
 
   return (
     <div style={{ maxWidth: 1360, margin: "0 auto", padding: "18px 14px 40px" }}>
@@ -2138,7 +2154,26 @@ function CategoryView({
           </div>
         )}
 
-        <div style={{ display: category === "reportes" ? "none" : "flex", flexDirection: "column" }}>
+        {category === "bugs" && (
+          <div className="report-directory" style={{ marginBottom: 18 }}>
+            <div className="report-directory-head"><span>Foro</span><span>Temas</span><span>Mensajes</span><span>Visitas</span><span>Último mensaje</span></div>
+            {bugSections.map((section) => {
+              const sectionThreads = tabThreads.filter((thread) => thread.status === section.status)
+              const latestThread = sectionThreads[0]
+              const latestAuthor = latestThread ? users.find((user) => user.id === latestThread.authorId) : undefined
+              return (
+                <button key={section.status} className="report-directory-row" onClick={() => { onOpenReportStatus(section.status, "bugs"); onSound("select") }} style={{ "--report-color": section.color } as React.CSSProperties}>
+                  <span className="report-directory-icon">●</span>
+                  <span className="report-directory-copy"><strong>{section.label}</strong><small>{section.description}</small></span>
+                  <span>{sectionThreads.length}</span><span>{sectionThreads.reduce((total, thread) => total + threadReplyCount(thread), 0)}</span><span>{sectionThreads.reduce((total, thread) => total + (thread.visitorCount || 0), 0)}</span>
+                  <span className="report-directory-last">{latestThread ? <><strong>{latestAuthor?.username || "Usuario"}</strong><small>{formatDate(latestThread.createdAt)}</small></> : <small>Sin actividad</small>}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        <div style={{ display: category === "reportes" || category === "bugs" ? "none" : "flex", flexDirection: "column" }}>
           {visibleThreads.length > 0 && (
             <div className="category-thread-head" style={{ gridTemplateColumns: showThreadStatus ? undefined : "minmax(0, 4.3fr) 0.7fr 0.7fr 1.1fr" }}>
               <span>Foro</span>
@@ -2223,27 +2258,51 @@ function CategoryView({
 
 function ReportStatusView({
   status,
+  category = "reportes",
   threads,
   users,
   setView,
   setSelectedThread,
+  onOpenStatus,
   onSound,
 }: {
   status: ThreadStatus
+  category?: Category
   threads: Thread[]
   users: User[]
   setView: (view: View) => void
   setSelectedThread: (id: string) => void
+  onOpenStatus: (status: ThreadStatus) => void
   onSound: (type: "click" | "select" | "success" | "notification") => void
 }) {
-  const section = {
+  const statusSections = category === "bugs" ? {
+    cerrado: { label: "Cerrados", description: "Bugs resueltos o cerrados.", color: "#60a5fa" },
+    en_revision: { label: "En revisión", description: "Bugs que están siendo analizados.", color: "#facc15" },
+    abierto: { label: "Activos", description: "Bugs abiertos pendientes de resolución.", color: "#f59e0b" },
+  }[status] : {
     cerrado: { label: "Aceptados", description: "Reportes aceptados y resueltos.", color: "#60a5fa" },
-    en_revision: { label: "Rechazados", description: "Reportes revisados que no requieren más acciones.", color: "#ef4444" },
+    en_revision: { label: "En revisión", description: "Reportes que están siendo analizados.", color: "#facc15" },
     abierto: { label: "Activos", description: "Reportes abiertos pendientes de resolución.", color: "#f59e0b" },
   }[status]
+  const directorySections = category === "bugs"
+    ? [
+      { status: "abierto" as ThreadStatus, label: "Activos", color: "#22c55e" },
+      { status: "en_revision" as ThreadStatus, label: "En revisión", color: "#facc15" },
+      { status: "cerrado" as ThreadStatus, label: "Cerrados", color: "#ef4444" },
+    ]
+    : [
+      { status: "abierto" as ThreadStatus, label: "Activos", color: "#22c55e" },
+      { status: "en_revision" as ThreadStatus, label: "En revisión", color: "#facc15" },
+      { status: "cerrado" as ThreadStatus, label: "Cerrados", color: "#ef4444" },
+    ]
   const statusThreads = threads
-    .filter((thread) => thread.category === "reportes" && thread.id !== "t-rules-reportes" && thread.status === status)
+    .filter((thread) => thread.category === category && thread.id !== "t-rules-reportes" && thread.status === status)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  const [page, setPage] = useState(1)
+  const pageSize = 10
+  const pageCount = Math.max(1, Math.ceil(statusThreads.length / pageSize))
+  const visibleThreads = statusThreads.slice((page - 1) * pageSize, page * pageSize)
+  useEffect(() => setPage(1), [status, category])
 
   return (
     <div style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
@@ -2254,7 +2313,7 @@ function ReportStatusView({
         }}
         style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}
       >
-        ← Volver a reportes
+        ← Volver a {category === "bugs" ? "bugs" : "reportes"}
       </button>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
         <div style={{ width: 5, height: 26, background: section.color, borderRadius: 999, boxShadow: `0 0 18px ${section.color}` }} />
@@ -2262,6 +2321,14 @@ function ReportStatusView({
           <h2 style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, letterSpacing: "0.08em", color: "var(--text)", margin: 0 }}>{section.label.toUpperCase()}</h2>
           <div style={{ color: "var(--text-dim)", fontSize: 13 }}>{section.description}</div>
         </div>
+      </div>
+      <div className="report-directory" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", marginBottom: 18, border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+        {directorySections.map((directorySection) => (
+          <button key={directorySection.status} type="button" onClick={() => onOpenStatus(directorySection.status)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", border: 0, borderRight: "1px solid var(--border)", background: directorySection.status === status ? "rgba(230,162,60,0.14)" : "rgba(15,23,42,0.5)", color: directorySection.status === status ? "var(--text)" : "var(--text-dim)", cursor: "pointer", textAlign: "left" }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: directorySection.color, boxShadow: `0 0 10px ${directorySection.color}` }} />
+            <strong style={{ fontSize: 12 }}>{directorySection.label}</strong>
+          </button>
+        ))}
       </div>
       <div className="report-directory" style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
         <div className="report-directory-head">
@@ -2272,9 +2339,9 @@ function ReportStatusView({
           <span>Último mensaje</span>
         </div>
         {statusThreads.length === 0 ? (
-          <div style={{ padding: "28px 20px", textAlign: "center", color: "var(--text-dim)" }}>No hay reportes en este estado.</div>
+          <div style={{ padding: "28px 20px", textAlign: "center", color: "var(--text-dim)" }}>No hay {category === "bugs" ? "bugs" : "reportes"} en este estado.</div>
         ) : (
-          statusThreads.map((thread) => {
+          visibleThreads.map((thread) => {
             const author = users.find((user) => user.id === thread.authorId)
             const lastReply = thread.replies[thread.replies.length - 1]
             const lastAuthor = lastReply ? users.find((user) => user.id === lastReply.authorId) : author
@@ -2306,6 +2373,13 @@ function ReportStatusView({
           })
         )}
       </div>
+      {pageCount > 1 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 18 }}>
+          <button type="button" onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))} disabled={page === 1} style={{ ...primaryBtn, width: "auto", padding: "6px 10px", fontSize: 10, opacity: page === 1 ? 0.45 : 1 }}>← Anterior</button>
+          <span style={{ color: "var(--text-muted)", fontSize: 11 }}>Página {page} de {pageCount}</span>
+          <button type="button" onClick={() => setPage((currentPage) => Math.min(pageCount, currentPage + 1))} disabled={page === pageCount} style={{ ...primaryBtn, width: "auto", padding: "6px 10px", fontSize: 10, opacity: page === pageCount ? 0.45 : 1 }}>Siguiente →</button>
+        </div>
+      )}
     </div>
   )
 }
@@ -4919,12 +4993,13 @@ function AdminView({
               Todavía no hay productos canjeados.
             </div>
           ) : [...redemptions].reverse().map((redemption) => (
-            <div key={redemption.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto", alignItems: "center", gap: 18, padding: "15px 18px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+            <div key={redemption.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto auto", alignItems: "center", gap: 18, padding: "15px 18px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ color: "var(--text)", fontFamily: "Oswald, sans-serif", fontSize: 16, letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{redemption.productTitle}</div>
-                <div style={{ color: "var(--text-dim)", fontSize: 12, marginTop: 3 }}>Canjeado por <strong style={{ color: "var(--highlight)" }}>{redemption.username}</strong></div>
+                <div style={{ color: "var(--text-dim)", fontSize: 12, marginTop: 3 }}>Comprado por <strong style={{ color: "var(--highlight)" }}>{redemption.username}</strong> · Cantidad: {redemption.quantity || 1}</div>
               </div>
               <div style={{ color: "#ffe7a3", fontFamily: "JetBrains Mono, monospace", fontSize: 12, whiteSpace: "nowrap" }}>{redemption.price} PDR</div>
+              <div style={{ color: redemption.status === "delivered" ? "#6ee7b7" : "#fbbf24", fontFamily: "JetBrains Mono, monospace", fontSize: 10, whiteSpace: "nowrap" }}>{redemption.status === "delivered" ? "ENTREGADO" : "PENDIENTE"}</div>
               <div style={{ color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", fontSize: 10, textAlign: "right", whiteSpace: "nowrap" }}>{formatDate(redemption.createdAt)}</div>
             </div>
           ))}
@@ -5199,6 +5274,28 @@ export default function App() {
     setThreads(forum.threads)
   }
 
+  async function refreshStoreRedemptions() {
+    const { data, error } = await supabase
+      .from("store_redemptions")
+      .select("id, user_id, username, product_id, product_title, price, quantity, status, created_at")
+      .order("created_at", { ascending: false })
+    if (error) {
+      console.error("Could not load store redemptions", error)
+      return
+    }
+    setRedemptions((data || []).map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      username: row.username,
+      productId: row.product_id,
+      productTitle: row.product_title,
+      price: row.price,
+      quantity: row.quantity,
+      status: row.status,
+      createdAt: row.created_at,
+    })))
+  }
+
   async function refreshCurrentUserNotifications() {
     const userId = currentUserRef.current?.id
     if (!userId) return
@@ -5318,6 +5415,7 @@ export default function App() {
     localStorage.removeItem(LOCAL_USERS_STORAGE_KEY)
     setStoreProducts(readStoreProducts())
     setRedemptions(readStoreRedemptions())
+    void refreshStoreRedemptions()
     let mounted = true
     const restoreSession = async () => {
       try {
@@ -5437,19 +5535,21 @@ export default function App() {
     localStorage.setItem(STORE_PRODUCTS_STORAGE_KEY, JSON.stringify(nextProducts))
   }
 
-  async function handleRedeemProduct(product: StoreProduct) {
-    if (!currentUser) return
+  async function handleRedeemProduct(product: StoreProduct, quantity: number) {
+    if (!currentUser) return false
     const balance = Math.max(0, (currentUser.rolePoints || 0) - (currentUser.redeemedRolePoints || 0))
-    if (balance < product.price || redemptions.some((redemption) => redemption.userId === currentUser.id && redemption.productId === product.id)) return
+    const safeQuantity = Math.max(1, Math.min(99, Math.floor(quantity)))
+    const totalPrice = product.price * safeQuantity
+    if (balance < totalPrice) return false
 
-    const updatedRedeemedPoints = (currentUser.redeemedRolePoints || 0) + product.price
+    const updatedRedeemedPoints = (currentUser.redeemedRolePoints || 0) + totalPrice
     const { error: profileError } = await supabase
       .from("profiles")
       .update({ redeemed_role_points: updatedRedeemedPoints })
       .eq("id", currentUser.id)
     if (profileError) {
       console.error("Could not redeem store product", profileError)
-      return
+      return false
     }
 
     const redemption: StoreRedemption = {
@@ -5458,9 +5558,28 @@ export default function App() {
       username: currentUser.username,
       productId: product.id,
       productTitle: product.title,
-      price: product.price,
+      price: totalPrice,
+      quantity: safeQuantity,
+      status: "pending",
       createdAt: new Date().toISOString(),
     }
+    const { data: savedRedemption, error: redemptionError } = await supabase.from("store_redemptions").insert({
+      user_id: currentUser.id,
+      username: currentUser.username,
+      product_id: product.id,
+      product_title: product.title,
+      price: totalPrice,
+      quantity: safeQuantity,
+      status: "pending",
+    }).select("id, user_id, username, product_id, product_title, price, quantity, status, created_at").single()
+    if (redemptionError) {
+      await supabase.from("profiles").update({ redeemed_role_points: currentUser.redeemedRolePoints || 0 }).eq("id", currentUser.id)
+      console.error("Could not persist store redemption", redemptionError)
+      return false
+    }
+    redemption.id = savedRedemption.id
+    redemption.status = savedRedemption.status
+    redemption.createdAt = savedRedemption.created_at
     const nextRedemptions = [...redemptions, redemption]
     try {
       localStorage.setItem(STORE_REDEMPTIONS_STORAGE_KEY, JSON.stringify(nextRedemptions))
@@ -5468,7 +5587,10 @@ export default function App() {
       console.error("Could not persist store redemption locally", storageError)
     }
     setRedemptions(nextRedemptions)
+    setCurrentUser((previousUser) => previousUser ? { ...previousUser, redeemedRolePoints: updatedRedeemedPoints } : previousUser)
+    setUsers((previousUsers) => previousUsers.map((user) => user.id === currentUser.id ? { ...user, redeemedRolePoints: updatedRedeemedPoints } : user))
     await refreshForumState()
+    return true
   }
 
   function handleToggleSuspend(userId: string) {
@@ -5787,8 +5909,9 @@ export default function App() {
     setView("category")
   }
 
-  function handleOpenReportStatus(status: ThreadStatus) {
+  function handleOpenReportStatus(status: ThreadStatus, category: Category = "reportes") {
     setSelectedReportStatus(status)
+    setSelectedCategory(category)
     setView("report_status")
   }
 
@@ -5955,10 +6078,12 @@ export default function App() {
       {view === "report_status" && (
         <ReportStatusView
           status={selectedReportStatus}
+          category={selectedCategory}
           threads={threads}
           users={users}
           setView={setView}
           setSelectedThread={setSelectedThread}
+          onOpenStatus={(nextStatus) => handleOpenReportStatus(nextStatus, selectedCategory)}
           onSound={playInteractionSound}
         />
       )}

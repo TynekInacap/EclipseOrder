@@ -633,7 +633,7 @@ const SEED_THREADS: Thread[] = [
     category: "historias",
     authorId: "u3",
     content:
-      "Día 47 desde el inicio del Eclipse.\n\nEncontré un diario abandonado en una farmacia de Muldraugh. Su dueño anterior se llamaba Carlos. No sé si sobrevivió.\n\nLlevo tres semanas sin ver a otro superviviente vivo. El silencio ya no me asusta, me preocupa más el ruido. Ayer escuché un motor al norte, cerca de la estación de policía, pero cuando llegué no había nadie. Solo sangre fresca y una mochila verde oliva con munición del 9mm.\n\nAlguien más sigue aquí fuera. Y no sé si eso es bueno o malo.",
+      "Día 47 desde el inicio del Eclipse.\n\nEncontré un diario abandonado en una farmacia de Muldraugh. Su dueño anterior se llamaba Carlos. No sé si sobrevivió.\n\nLlevo tres semanas sin ver a otra persona con vida. El silencio ya no me asusta, me preocupa más el ruido. Ayer escuché un motor al norte, cerca de la estación de policía, pero cuando llegué no había nadie. Solo sangre fresca y una mochila verde oliva con munición del 9mm.\n\nAlguien más sigue aquí fuera. Y no sé si eso es bueno o malo.",
     status: "abierto",
     createdAt: "2026-08-09T16:00:00Z",
     replies: [
@@ -680,7 +680,7 @@ const CATEGORY_ICONS: Record<Category, string> = {
 const CATEGORY_DESCRIPTIONS: Record<Category, string> = {
   bugs: "Reporta errores, glitches y problemas técnicos del servidor.",
   reportes: "Reporta jugadores que violen las reglas del servidor.",
-  historias: "Comparte la historia de tu personaje superviviente.",
+  historias: "Comparte la historia de tu personaje.",
   facciones: "Discute grupos, clanes y facciones del rol.",
   normativa: "Consulta y debate las normas del servidor.",
 }
@@ -879,7 +879,7 @@ function PostingOverlay() {
         backdropFilter: "blur(5px)",
       }}
     >
-      <div style={{ width: 42, height: 42, border: "3px solid rgba(148, 163, 184, 0.22)", borderTop: "3px solid #f97316", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+      <div className="posting-spinner" aria-hidden="true" />
       <div style={{ color: "var(--text)", fontSize: 13, fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>
         PUBLICANDO...
       </div>
@@ -1067,7 +1067,7 @@ function LoginView({
             <p>El mundo cambió. Las historias que quedan se escriben aquí.</p>
             <div className="login-brief-line">
               <span />
-              <small>COMUNIDAD DE SUPERVIVIENTES</small>
+              <small>COMUNIDAD DE USUARIOS</small>
             </div>
           </div>
 
@@ -1082,7 +1082,7 @@ function LoginView({
             }}
           >
             <div className="login-panel-heading">
-              <span className="login-eyebrow">ACCESO DE SUPERVIVIENTE</span>
+              <span className="login-eyebrow">ACCESO DE USUARIO</span>
               <h2>INICIAR SESIÓN</h2>
               <p className="login-subtitle">Vuelve a entrar en tu historia.</p>
             </div>
@@ -1239,7 +1239,7 @@ function RegisterView({
 
         <div className="login-layout">
           <div className="login-brief">
-            <span className="login-eyebrow">NUEVO SUPERVIVIENTE</span>
+            <span className="login-eyebrow">NUEVO USUARIO</span>
             <h1>
               ENCUENTRA.
               <br />
@@ -1263,7 +1263,7 @@ function RegisterView({
             }}
           >
             <div className="login-panel-heading">
-              <span className="login-eyebrow">REGISTRO DE SUPERVIVIENTE</span>
+              <span className="login-eyebrow">REGISTRO DE USUARIO</span>
               <h2>CREAR CUENTA</h2>
               <p className="login-subtitle">Prepara tu llegada al foro.</p>
             </div>
@@ -1336,6 +1336,26 @@ function LogoutModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel:
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+function WelcomePanel({ username, onClose }: { username: string; onClose: () => void }) {
+  return (
+    <div className="welcome-backdrop" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
+      <section className="welcome-panel">
+        <button className="welcome-close" type="button" onClick={onClose} aria-label="Cerrar bienvenida">×</button>
+        <div className="welcome-mark"><img src={siteLogoImg} alt="Eclipse Order" /></div>
+        <span className="welcome-kicker">CUENTA CREADA</span>
+        <h2 id="welcome-title">Bienvenido, {username}</h2>
+        <p className="welcome-lead">Tu acceso a Eclipse Order ya está listo.</p>
+        <div className="welcome-points">
+          <div><span>01</span><strong>Explora</strong><small>Conoce las secciones del foro</small></div>
+          <div><span>02</span><strong>Participa</strong><small>Comparte tus ideas e historias</small></div>
+          <div><span>03</span><strong>Personaliza</strong><small>Configura tu perfil de usuario</small></div>
+        </div>
+        <button className="welcome-action" type="button" onClick={onClose}>ENTRAR AL FORO <span>→</span></button>
+      </section>
     </div>
   )
 }
@@ -1467,7 +1487,7 @@ function StoreView({
               {error && <div className="store-error">{error}</div>}
               <label style={labelStyle}>Título<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Nombre de la recompensa" style={inputStyle} /></label>
               <label style={labelStyle}>Precio en puntos de rol<input type="number" min="1" step="1" value={price} onChange={(event) => setPrice(event.target.value)} placeholder="100" style={inputStyle} /></label>
-              <label style={labelStyle}>Descripción<textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Describe qué recibe el superviviente..." style={{ ...inputStyle, minHeight: 100, resize: "vertical" }} /></label>
+              <label style={labelStyle}>Descripción<textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Describe qué recibe el usuario..." style={{ ...inputStyle, minHeight: 100, resize: "vertical" }} /></label>
               <label style={labelStyle}>Tipo de recompensa<select value={productKind} onChange={(event) => setProductKind(event.target.value as "personal" | "faccion")} style={inputStyle}><option value="personal">PDR personal</option><option value="faccion">PDR faccionario</option></select></label>
               <label className="store-upload">{imageUrl ? <img src={imageUrl} alt="Vista previa" /> : <span>＋ Añadir imagen</span>}<input type="file" accept="image/*" onChange={handleImageChange} /></label>
               <button type="submit" className="store-create">PUBLICAR EN TIENDA</button>
@@ -1551,7 +1571,7 @@ function Header({
             <button
               className={`header-primary-link ${view === "forum" ? "is-active" : ""}`}
               onClick={() => setView("forum")}
-              style={{ ...navBtn, color: view === "forum" ? "#f8fafc" : "var(--text-dim)", background: view === "forum" ? "rgba(230, 162, 60, 0.16)" : "transparent", padding: "10px 22px" }}
+              style={{ ...navBtn, color: "var(--text-dim)", background: "transparent", padding: "10px 22px" }}
             >
               FORO
             </button>
@@ -1559,21 +1579,21 @@ function Header({
             <button
               className={`header-primary-link header-store-link ${view === "store" ? "is-active" : ""}`}
               onClick={() => setView("store")}
-              style={{ ...navBtn, color: view === "store" ? "#f8fafc" : "var(--text-dim)", background: view === "store" ? "rgba(114, 200, 191, 0.14)" : "transparent", padding: "10px 22px" }}
+              style={{ ...navBtn, color: "var(--text-dim)", background: "transparent", padding: "10px 22px" }}
             >
               TIENDA
             </button>
             <button
               className={`header-primary-link ${view === "members" ? "is-active" : ""}`}
               onClick={() => setView("members")}
-              style={{ ...navBtn, color: view === "members" ? "#f8fafc" : "var(--text-dim)", background: view === "members" ? "rgba(45, 212, 191, 0.14)" : "transparent", padding: "10px 22px" }}
+              style={{ ...navBtn, color: "var(--text-dim)", background: "transparent", padding: "10px 22px" }}
             >
               MIEMBROS
             </button>
             <button
               className={`header-primary-link ${view === "server" ? "is-active" : ""}`}
               onClick={() => setView("server")}
-              style={{ ...navBtn, color: view === "server" ? "#f8fafc" : "var(--text-dim)", background: view === "server" ? "rgba(101, 214, 167, 0.14)" : "transparent", padding: "10px 22px" }}
+              style={{ ...navBtn, color: "var(--text-dim)", background: "transparent", padding: "10px 22px" }}
             >
               SERVIDOR
             </button>
@@ -1619,6 +1639,12 @@ function Header({
 // ─── Forum View ───────────────────────────────────────────────────────────────
 
 const CATEGORIES_ORDER: Category[] = ["normativa", "bugs", "reportes", "historias", "facciones"]
+
+const FORUM_CATEGORY_GROUPS: { title: string; categories: Category[] }[] = [
+  { title: "General", categories: ["normativa", "bugs"] },
+  { title: "Comunidad", categories: ["historias", "facciones"] },
+  { title: "Apelaciones, Reportes y Sanciones", categories: ["reportes"] },
+]
 
 function ThreadRow({
   thread,
@@ -1852,6 +1878,7 @@ function CategoryView({
     })
 
   const tabThreads = sortThreads(threads.filter((t) => t.category === category), category)
+  const showThreadStatus = category !== "normativa" && category !== "historias"
   const factionSubforums: ThreadSubforum[] = ["no_oficial", "oficial"]
   const factionThreads = tabThreads.filter((t) => t.category === "facciones")
   const factionFormatThread = factionThreads.find((thread) => thread.id === "t-rules-facciones-formato")
@@ -2055,10 +2082,10 @@ function CategoryView({
 
         <div style={{ display: category === "reportes" ? "none" : "flex", flexDirection: "column" }}>
           {visibleThreads.length > 0 && (
-            <div className="category-thread-head">
+            <div className="category-thread-head" style={{ gridTemplateColumns: showThreadStatus ? undefined : "minmax(0, 4.3fr) 0.7fr 0.7fr 1.1fr" }}>
               <span>Foro</span>
               <span>Respuestas</span>
-              <span>Estado</span>
+              {showThreadStatus && <span>Estado</span>}
               <span>Visitas</span>
               <span>Último mensaje</span>
             </div>
@@ -2081,7 +2108,7 @@ function CategoryView({
                   onClick={() => { setSelectedThread(thread.id); setView("thread") }}
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "minmax(0, 3.5fr) 0.6fr 0.7fr 0.7fr 1.1fr",
+                    gridTemplateColumns: showThreadStatus ? "minmax(0, 3.5fr) 0.6fr 0.7fr 0.7fr 1.1fr" : "minmax(0, 4.3fr) 0.7fr 0.7fr 1.1fr",
                     gap: 16,
                     padding: "14px 18px",
                     borderBottom: "1px solid var(--border)",
@@ -2102,7 +2129,7 @@ function CategoryView({
                     </div>
                   </div>
                   <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", textAlign: "center" }}>{threadReplyCount(thread)}</div>
-                  <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", textAlign: "center" }}>{category === "reportes" ? (thread.status === "cerrado" ? "0" : "1") : thread.status}</div>
+                  {showThreadStatus && <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", textAlign: "center" }}>{category === "reportes" ? (thread.status === "cerrado" ? "0" : "1") : thread.status}</div>}
                   <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", textAlign: "center" }}>{thread.visitorCount || 0}</div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
                     <Avatar letter={lastAuthor?.avatar || author?.avatar || "?"} role={lastAuthor?.role || author?.role || "user"} size={24} imageUrl={lastAuthor?.avatarUrl || author?.avatarUrl} />
@@ -2353,71 +2380,84 @@ function ForumView({
           <span className="forum-hero-kicker">ECLIPSE ORDER</span>
           <p>Comparte información, historias y decisiones que mantienen viva la comunidad.</p>
         </div>
+        <div className="forum-hero-stats">
+          <div><strong>{threads.length}</strong><span>hilos</span></div>
+          <div><strong>{threads.reduce((total, thread) => total + threadReplyCount(thread), 0)}</strong><span>mensajes</span></div>
+          <div><strong>{users.length}</strong><span>miembros</span></div>
+        </div>
       </div>
-      <div className="forum-layout" style={{ display: "grid", gridTemplateColumns: "1fr", gap: 18 }}>
-        <aside
-          className="forum-sidebar"
-          style={{
-            background: "rgba(15,23,42,0.75)",
-            border: "1px solid var(--border)",
-            borderRadius: 18,
-            overflow: "hidden",
-            height: "fit-content",
-            position: "sticky",
-            top: 86,
-          }}
-        >
-          <div className="forum-sidebar-heading" style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.12em", textTransform: "uppercase" }}>
-            <span>General</span>
+      <div className="forum-layout">
+        <main className="forum-directory">
+          <div className="forum-directory-heading">
+            <div>
+              <h2>Explora el foro</h2>
+            </div>
           </div>
-          <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-            {CATEGORIES_ORDER.map((cat) => {
-              const isActive = cat === selectedCategory
-              const c = CATEGORY_COLORS[cat]
-              const categoryThreads = threads.filter((t) => t.category === cat)
-              const topicCount = categoryThreads.length
-              const messageCount = categoryThreads.reduce((total, thread) => total + threadReplyCount(thread), 0)
+          <div className="forum-groups">
+            {FORUM_CATEGORY_GROUPS.map((group) => (
+              <section key={group.title} className="forum-group">
+                <div className="forum-group-heading">
+                  <div>
+                    <h3>{group.title}</h3>
+                    <p>{group.title === "General" ? "Información esencial y soporte del servidor." : group.title === "Comunidad" ? "Historias, facciones y vida de los usuarios." : "Casos, reportes y seguimiento administrativo."}</p>
+                  </div>
+                </div>
+                <div className="forum-group-columns" aria-hidden="true">
+                  <span />
+                  <span>Temas</span>
+                  <span>Mensajes</span>
+                </div>
+                <div className="forum-group-categories">
+                  {group.categories.map((cat) => {
+                    const isActive = cat === selectedCategory
+                    const c = CATEGORY_COLORS[cat]
+                    const categoryThreads = threads.filter((t) => t.category === cat)
+                    const topicCount = categoryThreads.length
+                    const messageCount = categoryThreads.reduce((total, thread) => total + threadReplyCount(thread), 0)
 
-              return (
-                <button
-                  key={cat}
-                  className="forum-category-button"
-                  onClick={() => {
-                    onOpenCategory(cat)
-                    onSound("select")
-                  }}
-                  style={{
-                    background: isActive ? `linear-gradient(135deg, ${c}22, rgba(15, 23, 32, 0.9))` : "rgba(15, 23, 32, 0.35)",
-                    border: `1px solid ${isActive ? c : "var(--border)"}`,
-                    borderRadius: 12,
-                    padding: "12px 12px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 10,
-                    cursor: "pointer",
-                    color: isActive ? "var(--text)" : "var(--text-muted)",
-                    textAlign: "left",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                    <span style={{ fontSize: 16 }}>{CATEGORY_ICONS[cat]}</span>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 13, letterSpacing: "0.08em", whiteSpace: "nowrap" }}>
-                        {cat === "bugs" ? "BUGS" : cat === "reportes" ? "REPORTES" : cat === "historias" ? "HISTORIAS" : cat === "facciones" ? "FACCIONES" : "NORMATIVA"}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="forum-category-stats">
-                    <span><strong>{topicCount}</strong> <small>temas</small></span>
-                    <span><strong>{messageCount}</strong> <small>mensajes</small></span>
-                  </div>
-                </button>
-              )
-            })}
+                    return (
+                      <button
+                        key={cat}
+                        className="forum-category-button"
+                        onClick={() => {
+                          onOpenCategory(cat)
+                          onSound("select")
+                        }}
+                        style={{
+                          background: isActive ? `linear-gradient(135deg, ${c}22, rgba(15, 23, 32, 0.9))` : "rgba(15, 23, 32, 0.35)",
+                          border: `1px solid ${isActive ? c : "var(--border)"}`,
+                          borderRadius: 10,
+                          padding: "15px 16px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          cursor: "pointer",
+                          color: isActive ? "var(--text)" : "var(--text-muted)",
+                          textAlign: "left",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                          <span className="forum-category-icon" style={{ color: c }}>{CATEGORY_ICONS[cat]}</span>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 13, letterSpacing: "0.08em", whiteSpace: "nowrap" }}>
+                              {cat === "bugs" ? "BUGS" : cat === "reportes" ? "REPORTES" : cat === "historias" ? "HISTORIAS" : cat === "facciones" ? "FACCIONES" : "NORMATIVA"}
+                            </div>
+                            <small className="forum-category-description">{CATEGORY_DESCRIPTIONS[cat]}</small>
+                          </div>
+                        </div>
+                        <div className="forum-category-stats">
+                          <span><strong>{topicCount}</strong></span>
+                          <span><strong>{messageCount}</strong></span>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
           </div>
-        </aside>
-
+        </main>
       </div>
     </div>
   )
@@ -2520,7 +2560,7 @@ function ProfileView({
 
       <div className="profile-page-heading">
         <div>
-          <span>ARCHIVO DE SUPERVIVIENTE</span>
+          <span>ARCHIVO DE USUARIO</span>
           <h1>Perfil</h1>
           <p>Configura la identidad con la que te reconocerá la comunidad.</p>
         </div>
@@ -2649,7 +2689,7 @@ function ProfileView({
                   Bio
                 </div>
                 <div style={{ color: "var(--text-muted)", lineHeight: 1.8, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                  {selectedUser.bio || "Este superviviente aún no ha escrito una descripción."}
+                  {selectedUser.bio || "Este usuario aún no ha escrito una descripción."}
                 </div>
               </>
             )}
@@ -2698,7 +2738,7 @@ function MembersView({ users, onOpenProfile, onLoadMemberAvatars, onBack }: {
         <div>
           <span>COMUNIDAD ECLIPSE ORDER</span>
           <h1>Miembros</h1>
-          <p>Conoce a los supervivientes que forman parte de la comunidad.</p>
+          <p>Conoce a los usuarios que forman parte de la comunidad.</p>
         </div>
         <div className="profile-page-mark">{users.length} PERFILES</div>
       </div>
@@ -2713,7 +2753,7 @@ function MembersView({ users, onOpenProfile, onLoadMemberAvatars, onBack }: {
             <span className="member-card-copy">
               <strong>{user.username}<RoleMark role={user.role} /></strong>
               <small>{roleLabel(user.role)}</small>
-              <span>{user.bio || "Superviviente de Eclipse Order"}</span>
+              <span>{user.bio || "Usuario de Eclipse Order"}</span>
             </span>
             <span className="member-card-arrow">→</span>
           </button>
@@ -4224,11 +4264,13 @@ export default function App() {
   const [selectedReportStatus, setSelectedReportStatus] = useState<ThreadStatus>(initialRouteRef.current.reportStatus || "abierto")
   const [selectedFactionSubforum, setSelectedFactionSubforum] = useState<ThreadSubforum>(initialRouteRef.current.factionSubforum || "no_oficial")
   const [authReady, setAuthReady] = useState(false)
+  const [showWelcome, setShowWelcome] = useState(false)
     const [operationMessage, setOperationMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const currentUserRef = useRef<User | null>(null)
     const hydratingUserIdRef = useRef<string | null>(null)
   const notificationCountRef = useRef<{ userId: string; count: number } | null>(null)
+    const welcomePendingUsernameRef = useRef<string | null>(null)
   const navigationHistoryRef = useRef<NavigationSnapshot[]>([])
   const lastNavigationRef = useRef<NavigationSnapshot | null>(null)
   const restoringNavigationRef = useRef(false)
@@ -4360,6 +4402,10 @@ export default function App() {
       setUsers(forum.users)
       setThreads(forum.threads)
       setCurrentUser(profile)
+      if (welcomePendingUsernameRef.current === profile.username) {
+        welcomePendingUsernameRef.current = null
+        setShowWelcome(true)
+      }
       const initialRoute = initialRouteRef.current
       if (!currentUserRef.current && initialRoute.view === "profile" && initialRoute.profileId) {
         setSelectedProfileId(initialRoute.profileId)
@@ -4550,6 +4596,7 @@ export default function App() {
   }
 
   async function handleRegister(username: string, password: string) {
+    welcomePendingUsernameRef.current = username
     const { data: authData, error } = await supabase.auth.signUp({
       email: authEmailForCharacter(username),
       password,
@@ -4560,6 +4607,8 @@ export default function App() {
     if (authData.session?.user?.id) {
       setView("forum")
       await hydrateSession(authData.session.user.id)
+    } else {
+      setView("login")
     }
   }
 
@@ -5154,6 +5203,7 @@ export default function App() {
         />
       )}
       {operationMessage && <OperationOverlay message={operationMessage} />}
+      {showWelcome && <WelcomePanel username={currentUser.username} onClose={() => setShowWelcome(false)} />}
     </div>
   )
 }

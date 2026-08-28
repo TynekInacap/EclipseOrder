@@ -4764,6 +4764,7 @@ function AdminView({
   onContactUser,
   onToggleSuspend,
   onDeleteUser,
+  onMarkRedemptionDelivered,
   setView,
   setSelectedThread,
 }: {
@@ -4779,6 +4780,7 @@ function AdminView({
   onContactUser: (userId: string, message: string) => void
   onToggleSuspend: (userId: string) => void
   onDeleteUser: (userId: string) => void
+  onMarkRedemptionDelivered: (redemptionId: string) => Promise<void>
   setView: (v: View) => void
   setSelectedThread: (id: string) => void
 }) {
@@ -5052,7 +5054,7 @@ function AdminView({
                 onClick={() => {
                   if (redemption.status === "delivered") return
                   if (!window.confirm(`¿Marcar como completado el canje de ${redemption.username}?`)) return
-                  void handleMarkRedemptionDelivered(redemption.id)
+                  void onMarkRedemptionDelivered(redemption.id)
                 }}
                 disabled={redemption.status === "delivered"}
                 style={{
@@ -6261,6 +6263,7 @@ export default function App() {
           onContactUser={handleContactUser}
           onToggleSuspend={handleToggleSuspend}
           onDeleteUser={handleDeleteUser}
+          onMarkRedemptionDelivered={handleMarkRedemptionDelivered}
           setView={setView}
           setSelectedThread={setSelectedThread}
         />

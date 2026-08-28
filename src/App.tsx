@@ -1455,10 +1455,32 @@ function StoreView({
   const [error, setError] = useState("")
   const [quantities, setQuantities] = useState<Record<string, number>>({})
   const [purchaseMessage, setPurchaseMessage] = useState("")
+  const [isVerified, setIsVerified] = useState(false)
   const balance = Math.max(0, (currentUser.rolePoints || 0) - (currentUser.redeemedRolePoints || 0))
   const factionBalance = threads
     .filter((thread) => thread.category === "facciones" && thread.authorId === currentUser.id && !thread.factionRolePointsClaimed)
     .reduce((total, thread) => total + (thread.factionRolePoints || 0), 0)
+
+  useEffect(() => {
+    let isMounted = true
+    void supabase
+      .from("player_links")
+      .select("id")
+      .eq("forum_user_id", currentUser.id)
+      .eq("verified", true)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (isMounted) setIsVerified(Boolean(data))
+      })
+      .catch((verificationError) => {
+        console.error("Could not load verification status", verificationError)
+        if (isMounted) setIsVerified(false)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [currentUser.id])
 
   function handleImageChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -1510,6 +1532,7 @@ function StoreView({
               {products.filter((product) => (product.kind || "personal") === "personal").map((product) => {
                 const quantity = quantities[product.id] || 1
                 const canAfford = balance >= product.price * quantity
+                const canBuy = isVerified && canAfford
                 return (
                   <article className="store-product" key={product.id}>
                     <div className="store-product-image">
@@ -1523,8 +1546,22 @@ function StoreView({
                         Cantidad
                         <input type="number" min="1" max="99" value={quantity} onChange={(event) => setQuantities((previous) => ({ ...previous, [product.id]: Math.max(1, Math.min(99, Number(event.target.value) || 1)) }))} style={{ ...inputStyle, width: 70, padding: "7px 8px" }} />
                       </label>
-                      <button onClick={async () => { const purchased = await onRedeemProduct(product, quantity); if (purchased) { setPurchaseMessage("Muchas gracias por tu compra. Pronto un administrador te entregará la recompensa."); window.setTimeout(() => setPurchaseMessage(""), 5000) } }} disabled={!canAfford} className="store-redeem">
-                        {canAfford ? "COMPRAR" : "PUNTOS INSUFICIENTES"}
+                      <button onClick={async () => {
+                        if (!isVerified) {
+                          setPurchaseMessage("Debes estar verificado para comprar en la tienda.")
+                          window.setTimeout(() => setPurchaseMessage(""), 4000)
+                          return
+                        }
+                        const purchased = await onRedeemProduct(product, quantity)
+                        if (purchased) {
+                          setPurchaseMessage("Muchas gracias por tu compra. Pronto un administrador te entregará la recompensa.")
+                          window.setTimeout(() => setPurchaseMessage(""), 5000)
+                        } else {
+                          setPurchaseMessage("No puedes comprar este producto con tu saldo actual.")
+                          window.setTimeout(() => setPurchaseMessage(""), 4000)
+                        }
+                      }} disabled={!canBuy} className="store-redeem">
+                        {!isVerified ? "VERIFICACIÓN REQUERIDA" : canAfford ? "COMPRAR" : "PUNTOS INSUFICIENTES"}
                       </button>
                     </div>
                   </article>
@@ -5002,7 +5039,7 @@ function AdminView({
               Todavía no hay productos canjeados.
             </div>
           ) : [...redemptions].reverse().map((redemption) => (
-            <div key={redemption.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto auto", alignItems: "center", gap: 18, padding: "15px 18px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+            <div key={redemption.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto auto auto", alignItems: "center", gap: 18, padding: "15px 18px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ color: "var(--text)", fontFamily: "Oswald, sans-serif", fontSize: 16, letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{redemption.productTitle}</div>
                 <div style={{ color: "var(--text-dim)", fontSize: 12, marginTop: 3 }}>Comprado por <strong style={{ color: "var(--highlight)" }}>{redemption.username}</strong> · Cantidad: {redemption.quantity || 1}</div>
@@ -5010,6 +5047,29 @@ function AdminView({
               <div style={{ color: "#ffe7a3", fontFamily: "JetBrains Mono, monospace", fontSize: 12, whiteSpace: "nowrap" }}>{redemption.price} PDR</div>
               <div style={{ color: redemption.status === "delivered" ? "#6ee7b7" : "#fbbf24", fontFamily: "JetBrains Mono, monospace", fontSize: 10, whiteSpace: "nowrap" }}>{redemption.status === "delivered" ? "ENTREGADO" : "PENDIENTE"}</div>
               <div style={{ color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", fontSize: 10, textAlign: "right", whiteSpace: "nowrap" }}>{formatDate(redemption.createdAt)}</div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (redemption.status === "delivered") return
+                  if (!window.confirm(`¿Marcar como completado el canje de ${redemption.username}?`)) return
+                  void handleMarkRedemptionDelivered(redemption.id)
+                }}
+                disabled={redemption.status === "delivered"}
+                style={{
+                  border: redemption.status === "delivered" ? "1px solid rgba(110, 231, 183, 0.45)" : "1px solid rgba(245, 158, 11, 0.45)",
+                  background: redemption.status === "delivered" ? "rgba(16, 185, 129, 0.14)" : "rgba(245, 158, 11, 0.12)",
+                  color: redemption.status === "delivered" ? "#6ee7b7" : "#fbbf24",
+                  borderRadius: 8,
+                  padding: "7px 10px",
+                  fontSize: 10,
+                  fontFamily: "Oswald, sans-serif",
+                  letterSpacing: "0.08em",
+                  cursor: redemption.status === "delivered" ? "default" : "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {redemption.status === "delivered" ? "COMPLETADO" : "COMPLETAR"}
+              </button>
             </div>
           ))}
         </div>
@@ -5305,6 +5365,32 @@ export default function App() {
     })))
   }
 
+  async function handleMarkRedemptionDelivered(redemptionId: string) {
+    if (currentUser?.role !== "admin") return
+    const { error } = await supabase
+      .from("store_redemptions")
+      .update({ status: "delivered" })
+      .eq("id", redemptionId)
+
+    if (error) {
+      console.error("Could not mark redemption as delivered", error)
+      return
+    }
+
+    setRedemptions((previousRedemptions) => previousRedemptions.map((redemption) => (
+      redemption.id === redemptionId ? { ...redemption, status: "delivered" } : redemption
+    )))
+
+    try {
+      const nextRedemptions = redemptions.map((redemption) => (
+        redemption.id === redemptionId ? { ...redemption, status: "delivered" } : redemption
+      ))
+      localStorage.setItem(STORE_REDEMPTIONS_STORAGE_KEY, JSON.stringify(nextRedemptions))
+    } catch (storageError) {
+      console.error("Could not persist delivered redemption locally", storageError)
+    }
+  }
+
   async function refreshCurrentUserNotifications() {
     const userId = currentUserRef.current?.id
     if (!userId) return
@@ -5546,6 +5632,19 @@ export default function App() {
 
   async function handleRedeemProduct(product: StoreProduct, quantity: number) {
     if (!currentUser) return false
+    const { data: verifiedLink, error: verificationError } = await supabase
+      .from("player_links")
+      .select("id")
+      .eq("forum_user_id", currentUser.id)
+      .eq("verified", true)
+      .maybeSingle()
+
+    if (verificationError) {
+      console.error("Could not verify user account", verificationError)
+      return false
+    }
+    if (!verifiedLink) return false
+
     const balance = Math.max(0, (currentUser.rolePoints || 0) - (currentUser.redeemedRolePoints || 0))
     const safeQuantity = Math.max(1, Math.min(99, Math.floor(quantity)))
     const totalPrice = product.price * safeQuantity

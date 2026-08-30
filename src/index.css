@@ -1844,16 +1844,18 @@ select:hover,
   top: -6px;
   right: -6px;
   display: grid;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
   place-items: center;
   border: 2px solid var(--bg);
   border-radius: 999px;
   background: #ef4444;
   color: #fff;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
+  animation: badgePulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
 }
 
 .header-account-dropdown {
@@ -1952,6 +1954,8 @@ select:hover,
   padding: 9px 8px 4px;
   border-top: 1px solid var(--border2);
   border-bottom: 1px solid var(--border2);
+  max-height: 380px;
+  overflow-y: auto;
 }
 
 .header-account-section-title button {
@@ -1964,8 +1968,7 @@ select:hover,
   font-size: 9px;
 }
 
-.header-account-empty,
-.header-account-notification {
+.header-account-empty {
   margin-top: 7px;
   padding: 8px;
   border-radius: 6px;
@@ -1976,7 +1979,58 @@ select:hover,
 }
 
 .header-account-notification {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.58);
+  border-left: 3px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.header-account-notification:hover {
+  background: rgba(20, 35, 42, 0.78);
+  border-left-color: var(--accent);
+}
+
+.header-account-notification.unread {
+  background: rgba(45, 212, 191, 0.1);
+  border-left-color: var(--accent);
+  animation: notificationPulse 2s ease-in-out infinite;
+}
+
+.notification-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.notification-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.notification-time {
+  font-size: 10px;
+  color: var(--text-dimmer);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.notification-text {
   color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+@keyframes notificationPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(45, 212, 191, 0.2);
+  }
 }
 
 .header-account-logout {
@@ -2948,6 +3002,113 @@ body {
   background: #2dd4bf;
   box-shadow: 0 0 18px 4px rgba(45, 212, 191, 0.4);
   animation-delay: -1.5s;
+}
+
+/* ─── Toast Notifications ───────────────────────────────────────────────── */
+
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 9999;
+  max-width: 420px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid;
+  backdrop-filter: blur(10px);
+  background: rgba(10, 23, 27, 0.95);
+  border-color: rgba(135, 211, 204, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  animation: slideInRight 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: auto;
+}
+
+.toast-info {
+  border-color: rgba(45, 212, 191, 0.4);
+}
+
+.toast-success {
+  border-color: rgba(34, 197, 94, 0.4);
+  background: rgba(20, 60, 30, 0.85);
+}
+
+.toast-warning {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(60, 45, 20, 0.85);
+}
+
+.toast-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.toast-icon {
+  font-size: 18px;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.toast-info .toast-icon {
+  color: #2dd4bf;
+}
+
+.toast-success .toast-icon {
+  color: #22c55e;
+}
+
+.toast-warning .toast-icon {
+  color: #f59e0b;
+}
+
+.toast-message {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+  word-wrap: break-word;
+  flex: 1;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(400px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes notificationPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(45, 212, 191, 0.2);
+  }
+}
+
+@keyframes badgePulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
+  }
+  50% {
+    transform: scale(1.1);
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.8);
+  }
 }
 
 @media (max-width: 520px) {

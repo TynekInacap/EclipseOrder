@@ -24,6 +24,13 @@ interface NotificationItem {
   read?: boolean
 }
 
+interface Toast {
+  id: string
+  message: string
+  type: "success" | "info" | "warning"
+  duration?: number
+}
+
 interface User {
   id: string
   username: string
@@ -149,6 +156,54 @@ interface ServerActivityItem {
   username?: string | null
   metadata?: Record<string, unknown>
   created_at: string
+}
+
+const THREAD_DRAFT_STORAGE_PREFIX = "eclipse-order-thread-draft"
+const REPLY_DRAFT_STORAGE_PREFIX = "eclipse-order-reply-draft"
+
+type ThreadDraft = {
+  title: string
+  category: Category
+  content: string
+  contentText: string
+  mentionedUserIds: string[]
+  updatedAt: string
+}
+
+type ReplyDraft = {
+  content: string
+  contentText: string
+  mentionedUserIds: string[]
+  updatedAt: string
+}
+
+function getThreadDraftKey(userId: string, category: Category) {
+  return `${THREAD_DRAFT_STORAGE_PREFIX}:${userId}:${category}`
+}
+
+function getReplyDraftKey(userId: string, threadId: string) {
+  return `${REPLY_DRAFT_STORAGE_PREFIX}:${userId}:${threadId}`
+}
+
+function readDraft<T>(key: string): T | null {
+  try {
+    const rawValue = window.localStorage.getItem(key)
+    return rawValue ? (JSON.parse(rawValue) as T) : null
+  } catch {
+    return null
+  }
+}
+
+function persistDraft<T>(key: string, value: T | null) {
+  try {
+    if (!value) {
+      window.localStorage.removeItem(key)
+      return
+    }
+    window.localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // Ignore storage quota issues in the browser.
+  }
 }
 
 function MarkdownText({ content, inline = false }: { content: string; inline?: boolean }) {
@@ -1733,7 +1788,31 @@ function Header({
                 <button className="header-account-item" onClick={onOpenControl}><span>▦</span> Panel de control</button>
                 <div className="header-account-notifications">
                   <div className="header-account-section-title"><span>Notificaciones</span>{notifications.length > 0 && <button onClick={onClearNotifications}>Limpiar</button>}</div>
-                  {notifications.length === 0 ? <div className="header-account-empty">No tienes notificaciones.</div> : notifications.slice(0, 4).map((item) => <div key={item.id} className="header-account-notification">{item.text}</div>)}
+                  {notifications.length === 0 ? <div className="header-account-empty">No tienes notificaciones.</div> : notifications.slice(0, 5).map((item) => {
+                    const timeAgo = new Date().getTime() - new Date(item.createdAt).getTime()
+                    const minutes = Math.floor(timeAgo / 60000)
+                    const hours = Math.floor(timeAgo / 3600000)
+                    const days = Math.floor(timeAgo / 86400000)
+                    let timeStr = "hace poco"
+                    if (days > 0) timeStr = `hace ${days}d`
+                    else if (hours > 0) timeStr = `hace ${hours}h`
+                    else if (minutes > 0) timeStr = `hace ${minutes}m`
+                    
+                    let icon = "🔔"
+                    if (item.text.includes("respondió")) icon = "💬"
+                    else if (item.text.includes("mencionó")) icon = "@"
+                    else if (item.text.includes("siguiendo")) icon = "👁"
+                    
+                    return (
+                      <div key={item.id} className={`header-account-notification ${!item.read ? "unread" : ""}`}>
+                        <div className="notification-header">
+                          <span className="notification-icon">{icon}</span>
+                          <span className="notification-time">{timeStr}</span>
+                        </div>
+                        <div className="notification-text">{item.text}</div>
+                      </div>
+                    )
+                  })}
                 </div>
                 <button className="header-account-logout" onClick={() => setShowLogoutModal(true)}><span>↪</span> Cerrar sesión</button>
               </div>
@@ -1837,12 +1916,14 @@ function CategorySection({
   users,
   setView,
   setSelectedThread,
+  currentUser,
 }: {
   category: Category
   threads: Thread[]
   users: User[]
   setView: (v: View) => void
   setSelectedThread: (id: string) => void
+  currentUser?: User
 }) {
   const color = CATEGORY_COLORS[category]
   const sorted = [...threads].sort((a, b) => {
@@ -1979,10 +2060,27 @@ function CategoryView({
   const color = CATEGORY_COLORS[category]
   const [threadPage, setThreadPage] = useState(1)
   const shouldPaginateThreads = category === "historias" || category === "facciones"
+  const [followedThreadIds, setFollowedThreadIds] = useState<string[]>(() => {
+    try {
+      return JSON.parse(window.localStorage.getItem(`forum-followed-threads-${currentUser.id}`) || "[]") as string[]
+    } catch {
+      return []
+    }
+  })
 
   useEffect(() => {
     setThreadPage(1)
   }, [category])
+
+  useEffect(() => {
+    window.localStorage.setItem(`forum-followed-threads-${currentUser.id}`, JSON.stringify(followedThreadIds))
+  }, [currentUser.id, followedThreadIds])
+
+  const toggleFollowThread = useCallback((threadId: string) => {
+    setFollowedThreadIds((previous) => previous.includes(threadId)
+      ? previous.filter((id) => id !== threadId)
+      : [...previous, threadId])
+  }, [])
 
   const sortThreads = (list: Thread[], cat: Category) =>
     [...list].sort((a, b) => {
@@ -2247,6 +2345,8 @@ function CategoryView({
               const author = users.find((u) => u.id === thread.authorId)
               const lastReply = thread.replies[thread.replies.length - 1]
               const lastAuthor = lastReply ? users.find((u) => u.id === lastReply.authorId) : author
+              const isOwnThread = thread.authorId === currentUser.id
+              const isFollowingThread = followedThreadIds.includes(thread.id)
 
               return (
                 <div
@@ -2267,6 +2367,42 @@ function CategoryView({
                     <div style={{ minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         {thread.pinned && <span style={{ color: "#fbbf24", fontSize: 10 }}>📌</span>}
+                        {(isOwnThread || isFollowingThread) && (
+                          <span
+                            style={{
+                              padding: "3px 7px",
+                              borderRadius: 999,
+                              background: isOwnThread ? "rgba(251,191,36,0.12)" : "rgba(52,211,153,0.12)",
+                              color: isOwnThread ? "#fbbf24" : "#6ee7b7",
+                              fontSize: 9,
+                              fontFamily: "JetBrains Mono, monospace",
+                              letterSpacing: "0.06em",
+                              border: `1px solid ${isOwnThread ? "rgba(251,191,36,0.45)" : "rgba(52,211,153,0.45)"}`,
+                            }}
+                          >
+                            {isOwnThread ? "TUYO" : "SIGUIENDO"}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleFollowThread(thread.id)
+                          }}
+                          style={{
+                            border: "1px solid var(--border)",
+                            borderRadius: 999,
+                            background: isFollowingThread ? "rgba(52,211,153,0.12)" : "transparent",
+                            color: isFollowingThread ? "#6ee7b7" : "var(--text-dim)",
+                            padding: "3px 7px",
+                            fontSize: 9,
+                            cursor: "pointer",
+                            fontFamily: "JetBrains Mono, monospace",
+                            letterSpacing: "0.04em",
+                          }}
+                        >
+                          {isFollowingThread ? "NO SEGUIR" : "SEGUIR"}
+                        </button>
                         <span style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", letterSpacing: "0.02em" }}><MarkdownText content={thread.title} inline /></span>
                       </div>
                       <div style={{ marginTop: 4, fontSize: 11, color: "var(--text-dim)" }}>
@@ -3626,8 +3762,11 @@ function NewThreadView({
   goBack: () => void
   initialCategory?: Category
 }) {
-  const [title, setTitle] = useState("")
   const [category, setCategory] = useState<Category>(initialCategory || "reportes")
+  const [title, setTitle] = useState(() => {
+    const savedDraft = readDraft<ThreadDraft>(getThreadDraftKey(currentUser.id, initialCategory || "reportes"))
+    return savedDraft?.title || ""
+  })
   const [content, setContent] = useState("")
   const [contentText, setContentText] = useState("")
   const isReportMode = initialCategory === "reportes" || category === "reportes"
@@ -3658,6 +3797,40 @@ function NewThreadView({
   const [mentionQuery, setMentionQuery] = useState("")
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([])
   const contentRef = useRef<HTMLDivElement>(null)
+  const hasRestoredThreadDraftRef = useRef(false)
+  const draftKey = getThreadDraftKey(currentUser.id, category)
+
+  useEffect(() => {
+    const savedDraft = readDraft<ThreadDraft>(draftKey)
+    if (savedDraft) {
+      setTitle(savedDraft.title)
+      setContent(savedDraft.content)
+      setContentText(savedDraft.contentText)
+      setMentionedUserIds(savedDraft.mentionedUserIds || [])
+      if (contentRef.current && savedDraft.content && contentRef.current.innerHTML === "") {
+        contentRef.current.innerHTML = savedDraft.content
+      }
+    } else {
+      setTitle("")
+      setContent("")
+      setContentText("")
+      setMentionedUserIds([])
+      if (contentRef.current) contentRef.current.innerHTML = ""
+    }
+    hasRestoredThreadDraftRef.current = true
+  }, [draftKey])
+
+  useEffect(() => {
+    if (!hasRestoredThreadDraftRef.current) return
+    persistDraft(draftKey, {
+      title,
+      category,
+      content,
+      contentText,
+      mentionedUserIds,
+      updatedAt: new Date().toISOString(),
+    })
+  }, [category, content, contentText, draftKey, mentionedUserIds, title])
 
   const mentionList = users.filter((user) =>
     user.id !== currentUser.id &&
@@ -3700,6 +3873,7 @@ function NewThreadView({
       replies: [],
       subforum: category === "facciones" ? "no_oficial" : undefined,
     }
+    persistDraft(draftKey, null)
     setIsSubmitting(true)
     setError("")
     try {
@@ -3897,6 +4071,7 @@ function ThreadView({
   const thread = threads.find((t) => t.id === threadId)
   const [replyContent, setReplyContent] = useState("")
   const replyContentRef = useRef<HTMLDivElement>(null)
+  const hasRestoredReplyDraftRef = useRef(false)
   const [error, setError] = useState("")
   const [lightbox, setLightbox] = useState<Attachment | null>(null)
   const [mentionQuery, setMentionQuery] = useState("")
@@ -3913,6 +4088,33 @@ function ThreadView({
   const [isLoadingReplies, setIsLoadingReplies] = useState(false)
   const [hasMoreReplies, setHasMoreReplies] = useState(false)
   const [isLoadingThread, setIsLoadingThread] = useState(false)
+  const replyDraftKey = getReplyDraftKey(currentUser.id, threadId)
+
+  useEffect(() => {
+    const savedDraft = readDraft<ReplyDraft>(replyDraftKey)
+    if (savedDraft) {
+      setReplyContent(savedDraft.content)
+      setMentionedUserIds(savedDraft.mentionedUserIds || [])
+      if (replyContentRef.current && savedDraft.content && replyContentRef.current.innerHTML === "") {
+        replyContentRef.current.innerHTML = savedDraft.content
+      }
+    } else {
+      setReplyContent("")
+      setMentionedUserIds([])
+      if (replyContentRef.current) replyContentRef.current.innerHTML = ""
+    }
+    hasRestoredReplyDraftRef.current = true
+  }, [replyDraftKey, threadId])
+
+  useEffect(() => {
+    if (!hasRestoredReplyDraftRef.current) return
+    persistDraft(replyDraftKey, {
+      content: replyContent,
+      contentText: replyContent.replace(/<[^>]*>/g, "").trim(),
+      mentionedUserIds,
+      updatedAt: new Date().toISOString(),
+    })
+  }, [mentionedUserIds, replyContent, replyDraftKey])
 
   useEffect(() => {
     if (!thread) return
@@ -4037,6 +4239,7 @@ function ThreadView({
       .join(" ")
 
     const finalContent = [replyContent.trim(), mentionText].filter(Boolean).join("\n\n")
+    persistDraft(replyDraftKey, null)
     setIsSubmitting(true)
     try {
       await onReply(thread!.id, finalContent, [], mentionedUserIds)
@@ -5149,6 +5352,7 @@ export default function App() {
   const [redemptions, setRedemptions] = useState<StoreRedemption[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [view, setView] = useState<View>(initialRouteRef.current.view === "forum" ? "login" : initialRouteRef.current.view)
+  const [toasts, setToasts] = useState<Toast[]>([])
   const [selectedThread, setSelectedThread] = useState<string>(initialRouteRef.current.threadId || "")
   const [selectedProfileId, setSelectedProfileId] = useState<string>(initialRouteRef.current.profileId || "")
   const [selectedCategory, setSelectedCategory] = useState<Category>(initialRouteRef.current.category || "reportes")
@@ -5210,6 +5414,41 @@ export default function App() {
     lastNavigationRef.current = currentNavigation
   }, [authReady, view, selectedProfileId, selectedThread, selectedCategory, selectedReportStatus, selectedFactionSubforum])
 
+  const playNotificationSound = useCallback(() => {
+    try {
+      const audio = new Audio("/sounds/notification.mp3")
+      audio.volume = 0.5
+      audio.play().catch(() => {
+        // Fallback to synthesized bell if file fails
+        const AudioCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+        if (!AudioCtor) return
+        const audioCtx = new AudioCtor()
+        const bellDuration = 0.95
+        const bellPartials = [
+          { frequency: 660, volume: 0.028 },
+          { frequency: 1320, volume: 0.018 },
+          { frequency: 1980, volume: 0.009 },
+        ]
+        bellPartials.forEach(({ frequency, volume }) => {
+          const bellOscillator = audioCtx.createOscillator()
+          const bellGain = audioCtx.createGain()
+          bellOscillator.type = "sine"
+          bellOscillator.frequency.value = frequency
+          bellGain.gain.setValueAtTime(0.0001, audioCtx.currentTime)
+          bellGain.gain.linearRampToValueAtTime(volume, audioCtx.currentTime + 0.012)
+          bellGain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + bellDuration)
+          bellOscillator.connect(bellGain)
+          bellGain.connect(audioCtx.destination)
+          bellOscillator.start()
+          bellOscillator.stop(audioCtx.currentTime + bellDuration)
+        })
+        setTimeout(() => void audioCtx.close(), bellDuration * 1000 + 40)
+      })
+    } catch (e) {
+      // Silent fail
+    }
+  }, [])
+
   const playInteractionSound = useCallback((type: "click" | "select" | "success" | "notification") => {
     const AudioCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
     if (!AudioCtor) return
@@ -5217,26 +5456,7 @@ export default function App() {
     const audioCtx = new AudioCtor()
 
     if (type === "notification") {
-      const bellDuration = 0.95
-      const bellPartials = [
-        { frequency: 660, volume: 0.028 },
-        { frequency: 1320, volume: 0.018 },
-        { frequency: 1980, volume: 0.009 },
-      ]
-      bellPartials.forEach(({ frequency, volume }) => {
-        const bellOscillator = audioCtx.createOscillator()
-        const bellGain = audioCtx.createGain()
-        bellOscillator.type = "sine"
-        bellOscillator.frequency.value = frequency
-        bellGain.gain.setValueAtTime(0.0001, audioCtx.currentTime)
-        bellGain.gain.linearRampToValueAtTime(volume, audioCtx.currentTime + 0.012)
-        bellGain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + bellDuration)
-        bellOscillator.connect(bellGain)
-        bellGain.connect(audioCtx.destination)
-        bellOscillator.start()
-        bellOscillator.stop(audioCtx.currentTime + bellDuration)
-      })
-      setTimeout(() => void audioCtx.close(), bellDuration * 1000 + 40)
+      playNotificationSound()
       return
     }
 
@@ -5329,9 +5549,13 @@ export default function App() {
         setShowWelcome(true)
       }
       if (!currentUserRef.current) {
-        setSelectedProfileId(profile.id)
-        setSelectedThread("")
-        setView("forum")
+        const route = initialRouteRef.current
+        setSelectedProfileId(route.profileId || profile.id)
+        setSelectedThread(route.threadId || "")
+        if (route.category) setSelectedCategory(route.category)
+        if (route.reportStatus) setSelectedReportStatus(route.reportStatus)
+        if (route.factionSubforum) setSelectedFactionSubforum(route.factionSubforum)
+        setView(route.view === "forum" ? "forum" : route.view)
       }
     } finally {
       if (hydratingUserIdRef.current === userId) hydratingUserIdRef.current = null
@@ -5413,11 +5637,30 @@ export default function App() {
       createdAt: row.created_at,
     }))
     const hasNewUnreadNotification = notifications.some((notification) => !notification.read && !notificationIdsRef.current.has(notification.id))
-    if (notificationIdsRef.current.size > 0 && hasNewUnreadNotification) playInteractionSound("notification")
+    if (notificationIdsRef.current.size > 0 && hasNewUnreadNotification) {
+      playInteractionSound("notification")
+      const newNotification = notifications.find((n) => !n.read && !notificationIdsRef.current.has(n.id))
+      if (newNotification) {
+        const notificationText = newNotification.text.substring(0, 80) + (newNotification.text.length > 80 ? "..." : "")
+        showNotificationToast(notificationText, "info")
+      }
+    }
     notificationIdsRef.current = new Set(notifications.map((notification) => notification.id))
     setCurrentUser((previousUser) => previousUser ? { ...previousUser, notifications } : previousUser)
     setUsers((previousUsers) => previousUsers.map((user) => user.id === userId ? { ...user, notifications } : user))
   }
+
+  const showNotificationToast = useCallback((message: string, type: "success" | "info" | "warning" = "info") => {
+    const id = Math.random().toString(36).substr(2, 9)
+    const toast: Toast = { id, message, type, duration: 5000 }
+    setToasts((prev) => [...prev, toast])
+    if (type !== "warning") {
+      playNotificationSound()
+    }
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id))
+    }, toast.duration)
+  }, [playNotificationSound])
 
   const handleLoadThread = useCallback((threadId: string) => {
     const existingRequest = threadLoadPromisesRef.current.get(threadId)
@@ -5760,7 +6003,7 @@ export default function App() {
     await Promise.all([...new Set(userIds)].map((userId) => createNotification(userId, text)))
   }
 
-  async function handleNewThread(thread: Thread, _mentionedUserIds: string[] = []) {
+  async function handleNewThread(thread: Thread, mentionedUserIds: string[] = []) {
     if (!currentUser) return
     if (thread.category === "normativa" && currentUser.role !== "admin") return
     if (thread.category === "facciones") {
@@ -5785,12 +6028,25 @@ export default function App() {
       console.error("Could not create thread", error)
       throw new Error(error?.message || "No se pudo crear el hilo.")
     }
+
+    const draftKey = getThreadDraftKey(currentUser.id, thread.category)
+    persistDraft(draftKey, null)
+
+    const recipients = [...new Set(mentionedUserIds.filter((userId) => userId !== currentUser.id))]
+    if (recipients.length > 0) {
+      await createNotifications(
+        recipients,
+        `${currentUser.username} te ha mencionado en el hilo: ${thread.title}`,
+      )
+    }
+
     if (thread.category === "reportes") {
       await createNotifications(
         users.filter((user) => user.role !== "user").map((user) => user.id),
         `${currentUser.username} ha enviado un nuevo reporte: ${thread.title}`,
       )
     }
+
     await refreshForumState()
     if (thread.category === "reportes") {
       setSelectedThread(createdThread.id)
@@ -5827,7 +6083,7 @@ export default function App() {
     } : thread))
   }
 
-  async function handleReply(threadId: string, content: string, _attachments: Attachment[], _mentionedUserIds: string[] = []) {
+  async function handleReply(threadId: string, content: string, _attachments: Attachment[], mentionedUserIds: string[] = []) {
     if (!currentUser) return
     const targetThread = threads.find((thread) => thread.id === threadId)
     if (!targetThread || targetThread.adminOnly || targetThread.category === "normativa") return
@@ -5849,22 +6105,44 @@ export default function App() {
       replyCount: threadReplyCount(thread) + 1,
       repliesLoaded: true,
     } : thread))
-    const notificationRecipients = [targetThread.authorId]
-    if (targetThread.category === "reportes") {
-      notificationRecipients.push(...users.filter((user) => user.role !== "user").map((user) => user.id))
-    }
+
+    const notificationRecipients = [...new Set([
+      targetThread.authorId,
+      ...mentionedUserIds.filter((userId) => userId !== currentUser.id),
+      ...(targetThread.category === "reportes" ? users.filter((user) => user.role !== "user").map((user) => user.id) : []),
+    ])]
+
+    const replyText = targetThread.category === "reportes"
+      ? `${currentUser.username} ha respondido al reporte: ${targetThread.title}`
+      : `${currentUser.username} ha respondido a tu publicación: ${targetThread.title}`
+
     await createNotifications(
       notificationRecipients,
-      targetThread.category === "reportes"
-        ? `${currentUser.username} ha respondido al reporte: ${targetThread.title}`
-        : `${currentUser.username} ha respondido a tu publicación: ${targetThread.title}`,
+      replyText,
     )
+
+    if (mentionedUserIds.length > 0) {
+      await createNotifications(
+        mentionedUserIds.filter((userId) => userId !== currentUser.id),
+        `${currentUser.username} te ha mencionado en la respuesta de "${targetThread.title}".`,
+      )
+    }
+
+    const replyDraftKey = getReplyDraftKey(currentUser.id, threadId)
+    persistDraft(replyDraftKey, null)
   }
 
   async function handleStatusChange(threadId: string, status: ThreadStatus) {
+    const thread = threads.find((item) => item.id === threadId)
+    if (!thread) return
     const { error } = await supabase.from("threads").update({ status }).eq("id", threadId)
     if (error) console.error("Could not update thread status", error)
-    else await refreshForumState()
+    else {
+      if (thread.authorId !== currentUser?.id) {
+        await createNotifications([thread.authorId], `${currentUser?.username || "Staff"} cambió el estado de tu hilo "${thread.title}" a ${STATUS_LABELS[status]}.`)
+      }
+      await refreshForumState()
+    }
   }
 
   async function handleMoveFactionThread(threadId: string, targetSubforum: ThreadSubforum) {
@@ -5872,7 +6150,12 @@ export default function App() {
     if (!thread || thread.category !== "facciones") return
     const { error } = await supabase.from("threads").update({ subforum: targetSubforum }).eq("id", threadId)
     if (error) console.error("Could not move faction thread", error)
-    else await refreshForumState()
+    else {
+      if (thread.authorId !== currentUser?.id) {
+        await createNotifications([thread.authorId], `${currentUser?.username || "Staff"} movió tu hilo "${thread.title}" a ${FACTION_SUBFORUM_LABELS[targetSubforum]}.`)
+      }
+      await refreshForumState()
+    }
   }
 
   async function handleAddFactionRolePoints(threadId: string, amount: number) {
@@ -5898,7 +6181,12 @@ export default function App() {
     if (!thread) return
     const { error } = await supabase.from("threads").update({ pinned: !thread.pinned }).eq("id", threadId)
     if (error) console.error("Could not pin thread", error)
-    else await refreshForumState()
+    else {
+      if (thread.authorId !== currentUser?.id) {
+        await createNotifications([thread.authorId], `${currentUser?.username || "Staff"} ${thread.pinned ? "quitó" : "marcó"} como destacado tu hilo "${thread.title}".`)
+      }
+      await refreshForumState()
+    }
   }
 
   async function handleDeleteThread(threadId: string) {
@@ -6128,6 +6416,19 @@ export default function App() {
         onOpenAdmin={() => setView("admin")}
         onOpenControl={() => setView("control")}
       />
+
+      <div className="toast-container">
+        {toasts.map((toast) => (
+          <div key={toast.id} className={`toast toast-${toast.type}`}>
+            <div className="toast-content">
+              {toast.type === "success" && <span className="toast-icon">✓</span>}
+              {toast.type === "info" && <span className="toast-icon">🔔</span>}
+              {toast.type === "warning" && <span className="toast-icon">⚠</span>}
+              <span className="toast-message">{toast.message}</span>
+            </div>
+          </div>
+        ))}
+      </div>
 
       {view === "store" && (
         <StoreView

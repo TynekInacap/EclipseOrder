@@ -31,6 +31,16 @@ interface Toast {
   duration?: number
 }
 
+type BadgeType = "most-active" | "most-active-2" | "most-active-3" | "highest-pdr" | "verified"
+
+interface Badge {
+  type: BadgeType
+  label: string
+  title: string
+  icon: string
+  color: string
+}
+
 interface User {
   id: string
   username: string
@@ -46,6 +56,7 @@ interface User {
   redeemedRolePoints?: number
   ownedProductIds?: string[]
   suspended?: boolean
+  badges?: BadgeType[]
 }
 
 interface StoreProduct {
@@ -146,6 +157,14 @@ interface PlayerLinkRequest {
 interface PlayerPlaytime {
   username: string
   total_seconds: number
+}
+
+let globalPlaytimeLeaderboard: PlayerPlaytime[] = []
+let globalVerifiedPlayerLinks: PlayerLink[] = []
+
+function syncServerBadgeData(leaderboard: PlayerPlaytime[], verifiedLinks: PlayerLink[]) {
+  globalPlaytimeLeaderboard = leaderboard
+  globalVerifiedPlayerLinks = verifiedLinks
 }
 
 interface ServerActivityItem {
@@ -819,6 +838,44 @@ const CATEGORY_THREAD_ACTIONS: Record<Category, string> = {
   normativa: "PROPONER NORMATIVA",
 }
 
+const BADGES: Record<BadgeType, Badge> = {
+  "most-active": {
+    type: "most-active",
+    label: "TOP HISTÓRICO",
+    title: "Top 1 histórico de actividad",
+    icon: "🏆",
+    color: "#ff6b6b",
+  },
+  "most-active-2": {
+    type: "most-active-2",
+    label: "TOP 2",
+    title: "Segundo puesto histórico de actividad",
+    icon: "🥈",
+    color: "#cbd5e1",
+  },
+  "most-active-3": {
+    type: "most-active-3",
+    label: "TOP 3",
+    title: "Tercer puesto histórico de actividad",
+    icon: "★",
+    color: "#cd7c32",
+  },
+  "highest-pdr": {
+    type: "highest-pdr",
+    label: "MAYOR PDR",
+    title: "Mayor cantidad de Puntos de Rol",
+    icon: "⭐",
+    color: "#ffd93d",
+  },
+  verified: {
+    type: "verified",
+    label: "VERIFICADO",
+    title: "Cuenta verificada con el servidor",
+    icon: "✓",
+    color: "#16a34a",
+  },
+}
+
 const FACTION_SUBFORUM_LABELS: Record<ThreadSubforum, string> = {
   formato: "FORMATO",
   no_oficial: "NO OFICIAL",
@@ -897,13 +954,328 @@ function roleLabel(role: Role) {
 function RoleMark({ role }: { role: Role }) {
   if (role === "user") return null
   const isAdmin = role === "admin"
+
   return (
     <span
-      title={isAdmin ? "Administrador del foro" : "Moderador del foro"}
-      style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 6, padding: "2px 6px", border: `1px solid ${isAdmin ? "rgba(255,107,95,0.55)" : "rgba(77,216,223,0.5)"}`, borderRadius: 999, background: isAdmin ? "rgba(255,107,95,0.14)" : "rgba(77,216,223,0.12)", color: isAdmin ? "#ff9b91" : "#8cecf0", fontFamily: "JetBrains Mono, monospace", fontSize: 8, letterSpacing: "0.08em", lineHeight: 1.2, verticalAlign: "middle", boxShadow: `0 0 12px ${isAdmin ? "rgba(255,107,95,0.2)" : "rgba(77,216,223,0.18)"}` }}
+      style={{
+        position: "relative",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        marginLeft: 6,
+        width: 18,
+        height: 18,
+        borderRadius: 6,
+        border: `1px solid ${isAdmin ? "rgba(255,204,102,0.72)" : "rgba(77,216,223,0.55)"}`,
+        background: isAdmin ? "linear-gradient(135deg, rgba(255,214,102,0.18), rgba(255,153,51,0.12))" : "rgba(77,216,223,0.12)",
+        boxShadow: `0 0 10px ${isAdmin ? "rgba(255,194,83,0.18)" : "rgba(77,216,223,0.16)"}`,
+        verticalAlign: "middle",
+        overflow: "visible",
+        cursor: "default",
+      }}
+      onMouseEnter={(e) => {
+        const label = e.currentTarget.querySelector('[data-role-label="true"]') as HTMLElement | null
+        if (label) {
+          label.style.opacity = "1"
+          label.style.transform = "translateX(-50%) translateY(0)"
+        }
+      }}
+      onMouseLeave={(e) => {
+        const label = e.currentTarget.querySelector('[data-role-label="true"]') as HTMLElement | null
+        if (label) {
+          label.style.opacity = "0"
+          label.style.transform = "translateX(-50%) translateY(4px)"
+        }
+      }}
     >
-      {isAdmin ? "★ ADMIN" : "◆ MOD"}
+      <span
+        aria-label={isAdmin ? "Administrador" : "Moderador"}
+        style={{
+          position: "relative",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 12,
+          height: 12,
+        }}
+      >
+        {isAdmin ? (
+          <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}>
+            <defs>
+              <linearGradient id="admin-shield-gradient" x1="5" y1="2.5" x2="19" y2="21.5" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#fff9d6" />
+                <stop offset="28%" stopColor="#f9d76b" />
+                <stop offset="70%" stopColor="#f0b843" />
+                <stop offset="100%" stopColor="#a96b10" />
+              </linearGradient>
+            </defs>
+            <path d="M12 2.7 17.8 4.7V11c0 4.7-2.7 8.3-5.8 10.1C9 19.3 6.2 15.7 6.2 11V4.7L12 2.7Z" fill="url(#admin-shield-gradient)" stroke="rgba(255,243,182,0.9)" strokeWidth="0.8" strokeLinejoin="round" />
+            <path d="M9.2 7.3h5.7M9.2 11.6h4.2M9.2 15.8h5.6" stroke="#fff5d2" strokeWidth="1.2" strokeLinecap="round" />
+            <path d="M10.2 5.2 12 3.9l1.8 1.3v1.1h-3.6V5.2Z" fill="#fff0b3" opacity="0.95" />
+          </svg>
+        ) : (
+          <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}>
+            <path d="M12 2.1 15 8.5h6.5l-5.2 3.8 2 6.1L12 0l-6.3 18.4 2-6.1L2.5 8.5H9L12 2.1Z" fill="rgba(125,211,252,0.06)" stroke="rgba(124,225,255,0.9)" strokeWidth="0.8" strokeLinejoin="round" />
+          </svg>
+        )}
+      </span>
+
+      <span
+        data-role-label="true"
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "calc(100% + 8px)",
+          transform: "translateX(-50%) translateY(4px)",
+          opacity: 0,
+          pointerEvents: "none",
+          padding: "4px 7px",
+          borderRadius: 999,
+          background: isAdmin ? "rgba(255,214,102,0.14)" : "rgba(77,216,223,0.12)",
+          border: `1px solid ${isAdmin ? "rgba(255,214,102,0.55)" : "rgba(77,216,223,0.5)"}`,
+          color: isAdmin ? "#ffd869" : "#8cecf0",
+          fontFamily: "JetBrains Mono, monospace",
+          fontSize: 8,
+          letterSpacing: "0.08em",
+          lineHeight: 1,
+          whiteSpace: "nowrap",
+          boxShadow: "0 0 12px rgba(0,0,0,0.25)",
+          transition: "opacity 0.16s ease, transform 0.16s ease",
+          zIndex: 10,
+        }}
+      >
+        {isAdmin ? "ADMIN" : "MOD"}
+      </span>
     </span>
+  )
+}
+
+function calculateUserBadges(user: User, threads: Thread[], users: User[], isVerified: boolean): BadgeType[] {
+  const badges: BadgeType[] = []
+
+  if (isVerified) {
+    badges.push("verified")
+  }
+
+  const verifiedLink = globalVerifiedPlayerLinks.find((link) => link.forum_user_id === user.id && link.verified)
+  const linkedPzUsername = verifiedLink?.pz_username?.trim()
+  if (linkedPzUsername && globalPlaytimeLeaderboard.length > 0) {
+    const normalizedUsername = linkedPzUsername.toLowerCase()
+    const linkedRankIndex = globalPlaytimeLeaderboard.findIndex((entry) => entry.username.trim().toLowerCase() === normalizedUsername)
+
+    if (linkedRankIndex === 0) badges.push("most-active")
+    if (linkedRankIndex === 1) badges.push("most-active-2")
+    if (linkedRankIndex === 2) badges.push("most-active-3")
+
+    if (linkedRankIndex >= 0) {
+      const linkedAccounts = globalVerifiedPlayerLinks.filter(
+        (link) => link.verified && link.pz_username?.trim().toLowerCase() === normalizedUsername,
+      )
+      const sharedTopRank = linkedAccounts.some((link) => {
+        const rankIndex = globalPlaytimeLeaderboard.findIndex((entry) => entry.username.trim().toLowerCase() === link.pz_username!.trim().toLowerCase())
+        return rankIndex === 0
+      })
+      if (sharedTopRank && !badges.includes("most-active")) {
+        badges.push("most-active")
+      }
+    }
+  }
+
+  const userRolePoints = user.rolePoints || 0
+  const maxRolePoints = Math.max(...users.map((u) => u.rolePoints || 0), 0)
+  const usersWithMaxPDR = users.filter((u) => (u.rolePoints || 0) === maxRolePoints && maxRolePoints > 0).length
+
+  if (userRolePoints === maxRolePoints && maxRolePoints > 0 && usersWithMaxPDR === 1) {
+    badges.push("highest-pdr")
+  }
+
+  return badges
+}
+
+
+function UserBadges({ badges, glowTopRank = false }: { badges: BadgeType[]; glowTopRank?: boolean }) {
+  if (!badges || badges.length === 0) return null
+
+  return (
+    <>
+      {glowTopRank && (
+        <style>{`
+          @keyframes topRankGlow {
+            0% { filter: drop-shadow(0 0 0 rgba(255,208,92,0)); transform: scale(1) translateY(1px); }
+            20% { filter: drop-shadow(0 0 6px rgba(255,224,130,0.85)) drop-shadow(0 0 12px rgba(251,191,36,0.55)); transform: scale(1.04) translateY(1px); }
+            50% { filter: drop-shadow(0 0 10px rgba(255,255,255,0.9)) drop-shadow(0 0 22px rgba(251,191,36,0.7)); transform: scale(1.06) translateY(1px); }
+            100% { filter: drop-shadow(0 0 0 rgba(255,208,92,0)); transform: scale(1) translateY(1px); }
+          }
+          @keyframes goldTextShift {
+            0% { background-position: 0% 50%; filter: brightness(1); }
+            50% { background-position: 100% 50%; filter: brightness(1.25); }
+            100% { background-position: 0% 50%; filter: brightness(1); }
+          }
+        `}</style>
+      )}
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, marginLeft: 8, verticalAlign: "middle" }}>
+        {badges.map((badgeType) => {
+          const gradientId = `${badgeType}-gradient`
+          const badgeTitle = BADGES[badgeType]?.title || "Insignia"
+          const isTopRankBadge = badgeType === "most-active" && glowTopRank
+
+          const badgeContent = (() => {
+            if (badgeType === "most-active") {
+              return (
+                <svg viewBox="0 0 24 24" style={{ width: "100%", height: "100%", display: "block" }}>
+                  <defs>
+                    <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#ff5a5f" />
+                      <stop offset="100%" stopColor="#ffb000" />
+                    </linearGradient>
+                  </defs>
+                  <path d="M12 2L14.8 7L20.5 8L16.5 12L17.5 18L12 15.2L6.5 18L7.5 12L3.5 8L9.2 7L12 2Z" fill={`url(#${gradientId})`} />
+                </svg>
+              )
+            }
+
+            if (badgeType === "most-active-2") {
+              return (
+                <svg viewBox="0 0 24 24" style={{ width: "100%", height: "100%", display: "block" }}>
+                  <defs>
+                    <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#dfe7f3" />
+                      <stop offset="100%" stopColor="#9aa9bd" />
+                    </linearGradient>
+                  </defs>
+                  <path d="M12 2L14.8 7L20.5 8L16.5 12L17.5 18L12 15.2L6.5 18L7.5 12L3.5 8L9.2 7L12 2Z" fill={`url(#${gradientId})`} />
+                </svg>
+              )
+            }
+
+            if (badgeType === "most-active-3") {
+              return (
+                <svg viewBox="0 0 24 24" style={{ width: "100%", height: "100%", display: "block" }}>
+                  <defs>
+                    <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#d3914f" />
+                      <stop offset="100%" stopColor="#8b4f1d" />
+                    </linearGradient>
+                  </defs>
+                  <path d="M12 1.8L14.8 8.2L21.7 8.8L16.8 13.2L18.4 20L12 16.7L5.6 20L7.2 13.2L2.3 8.8L9.2 8.2L12 1.8Z" fill={`url(#${gradientId})`} />
+                </svg>
+              )
+            }
+
+            if (badgeType === "highest-pdr") {
+              return (
+                <svg viewBox="0 0 100 100" style={{ width: "100%", height: "100%", display: "block" }}>
+                  <defs>
+                    <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#ffd93d" />
+                      <stop offset="50%" stopColor="#ffb700" />
+                      <stop offset="100%" stopColor="#ff9500" />
+                    </linearGradient>
+                    <filter id="shadow-pdr">
+                      <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.4" />
+                    </filter>
+                  </defs>
+                  {/* Base de la corona */}
+                  <path d="M 15 70 L 20 35 L 35 25 L 50 15 L 65 25 L 80 35 L 85 70 Z" fill={`url(#${gradientId})`} stroke="#d4a000" strokeWidth="2" filter="url(#shadow-pdr)" />
+                  {/* Puntas decorativas */}
+                  <circle cx="20" cy="38" r="4" fill="#ffeb99" />
+                  <circle cx="35" cy="28" r="4" fill="#ffeb99" />
+                  <circle cx="50" cy="18" r="5" fill="#ffeb99" />
+                  <circle cx="65" cy="28" r="4" fill="#ffeb99" />
+                  <circle cx="80" cy="38" r="4" fill="#ffeb99" />
+                  {/* Base de la corona (parte inferior) */}
+                  <rect x="15" y="68" width="70" height="6" fill={`url(#${gradientId})`} stroke="#d4a000" strokeWidth="1.5" />
+                  {/* Letras PDR */}
+                  <text x="50" y="65" fontSize="28" fontWeight="bold" textAnchor="middle" fill="#2d1810" fontFamily="Arial, sans-serif" letterSpacing="2">
+                    PDR
+                  </text>
+                </svg>
+              )
+            }
+
+            if (badgeType === "verified") {
+              return (
+                <svg viewBox="0 0 24 24" style={{ width: "100%", height: "100%", display: "block" }}>
+                  <defs>
+                    <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#16a34a" />
+                      <stop offset="100%" stopColor="#15803d" />
+                    </linearGradient>
+                  </defs>
+                  <path d="M12 1.7L19.2 4.4V10.5C19.2 15.8 15.8 19.9 12 22C8.2 19.9 4.8 15.8 4.8 10.5V4.4L12 1.7Z" fill={`url(#${gradientId})`} />
+                  <path d="M10.3 14.2L7.7 11.7L6.5 12.9L10.3 16.7L17.5 9.5L16.3 8.3L10.3 14.2Z" fill="#ffffff" />
+                </svg>
+              )
+            }
+
+            return null
+          })()
+
+          if (!badgeContent) return null
+
+          return (
+            <span
+              key={badgeType}
+              style={{
+                position: "relative",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 18,
+                height: 18,
+                verticalAlign: "middle",
+                transform: "translateY(1px)",
+                animation: isTopRankBadge ? "topRankGlow 1.8s ease-in-out infinite" : undefined,
+                pointerEvents: "auto",
+                zIndex: isTopRankBadge ? 100 : "auto",
+              }}
+              onMouseEnter={(e) => {
+                const label = e.currentTarget.querySelector('[data-badge-label="true"]') as HTMLElement | null
+                if (label) {
+                  label.style.opacity = "1"
+                  label.style.transform = "translateX(-50%) translateY(0)"
+                }
+              }}
+              onMouseLeave={(e) => {
+                const label = e.currentTarget.querySelector('[data-badge-label="true"]') as HTMLElement | null
+                if (label) {
+                  label.style.opacity = "0"
+                  label.style.transform = "translateX(-50%) translateY(4px)"
+                }
+              }}
+            >
+              {badgeContent}
+              <span
+                data-badge-label="true"
+                style={{
+                  position: "absolute",
+                  left: "50%",
+                  top: "calc(100% + 8px)",
+                  transform: "translateX(-50%) translateY(4px)",
+                  opacity: 0,
+                  pointerEvents: "none",
+                  padding: "4px 7px",
+                  borderRadius: 999,
+                  background: "rgba(15, 23, 42, 0.92)",
+                  border: "1px solid rgba(148, 163, 184, 0.5)",
+                  color: "#e2e8f0",
+                  fontFamily: "JetBrains Mono, monospace",
+                  fontSize: 8,
+                  letterSpacing: "0.08em",
+                  lineHeight: 1,
+                  whiteSpace: "nowrap",
+                  boxShadow: "0 0 12px rgba(0,0,0,0.25)",
+                  transition: "opacity 0.16s ease, transform 0.16s ease",
+                  zIndex: 9999,
+                }}
+              >
+                {badgeTitle.toUpperCase()}
+              </span>
+            </span>
+          )
+        })}
+      </span>
+    </>
   )
 }
 
@@ -1848,14 +2220,17 @@ const FORUM_CATEGORY_GROUPS: { title: string; categories: Category[] }[] = [
 function ThreadRow({
   thread,
   users,
+  threads,
   onClick,
 }: {
   thread: Thread
   users: User[]
+  threads?: Thread[]
   onClick: () => void
 }) {
   const author = users.find((u) => u.id === thread.authorId)
   const [hovered, setHovered] = useState(false)
+  const authorBadges = author && threads ? calculateUserBadges(author, threads, users, false) : []
 
   return (
     <div
@@ -1894,7 +2269,7 @@ function ThreadRow({
             <MarkdownText content={thread.title} inline />
           </div>
           <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-            <span style={{ color: "var(--text-muted)" }}>{author?.username}{author && <RoleMark role={author.role} />}</span> · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes
+            <span style={{ color: "var(--text-muted)" }}>{author?.username}{author && <RoleMark role={author.role} />}{authorBadges.length > 0 && <UserBadges badges={authorBadges} />}</span> · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes
           </div>
         </div>
       </div>
@@ -2023,6 +2398,7 @@ function CategorySection({
               key={thread.id}
               thread={thread}
               users={users}
+              threads={threads}
               onClick={() => { setSelectedThread(thread.id); setView("thread") }}
             />
           ))}
@@ -3034,12 +3410,14 @@ function PlayerLinkCard({ userId }: { userId: string }) {
 function ProfileView({
   currentUser,
   users,
+  threads,
   selectedUserId,
   onSaveProfile,
   onBack,
 }: {
   currentUser: User
   users: User[]
+  threads: Thread[]
   selectedUserId: string
   onSaveProfile: (userId: string, updates: ProfileUpdates) => Promise<void>
   onBack: () => void
@@ -3054,6 +3432,7 @@ function ProfileView({
   const [profileSaveMessage, setProfileSaveMessage] = useState("")
   const [copyMessage, setCopyMessage] = useState("")
   const [isVerified, setIsVerified] = useState(false)
+  const [userBadges, setUserBadges] = useState<BadgeType[]>([])
   const avatarFileRef = useRef<File | null>(null)
   const bannerFileRef = useRef<File | null>(null)
 
@@ -3074,10 +3453,15 @@ function ProfileView({
       .eq("verified", true)
       .maybeSingle()
       .then(({ data }) => {
-        if (mounted) setIsVerified(Boolean(data))
+        if (mounted) {
+          const isVerifiedNow = Boolean(data)
+          setIsVerified(isVerifiedNow)
+          const badges = calculateUserBadges(selectedUser, threads, users, isVerifiedNow)
+          setUserBadges(badges)
+        }
       })
     return () => { mounted = false }
-  }, [selectedUser.id])
+  }, [selectedUser.id, selectedUser, threads, users])
 
   const bannerBackground = bannerUrl && bannerUrl !== DEFAULT_BANNER_URL
     ? `url(${bannerUrl}) center/cover no-repeat`
@@ -3092,6 +3476,7 @@ function ProfileView({
   const rolePoints = selectedUser.rolePoints || 0
   const redeemedRolePoints = selectedUser.redeemedRolePoints || 0
   const canSeeRolePointDetails = isOwnProfile || currentUser.role === "admin"
+  const isTop1Profile = userBadges.includes("most-active")
 
   async function handleCopyProfileLink() {
     try {
@@ -3167,9 +3552,26 @@ function ProfileView({
             <div className="profile-identity" style={{ position: "absolute", left: 24, bottom: -28, display: "flex", alignItems: "center", gap: 16 }}>
               <Avatar letter={profileUser.avatar} role={profileUser.role} size={72} imageUrl={profileUser.avatarUrl} />
               <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "Oswald, sans-serif", fontSize: 26, letterSpacing: "0.06em", color: "#fff" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    fontFamily: "Oswald, sans-serif",
+                    fontSize: 26,
+                    letterSpacing: "0.06em",
+                    color: isTop1Profile ? "transparent" : "#fff",
+                    background: isTop1Profile ? "linear-gradient(90deg, #fff5b0 0%, #f4d35e 15%, #fffef0 32%, #f7ca54 52%, #fef7d9 68%, #d7a82d 84%, #fff0a8 100%)" : undefined,
+                    backgroundSize: isTop1Profile ? "220% 100%" : undefined,
+                    WebkitBackgroundClip: isTop1Profile ? "text" : undefined,
+                    backgroundClip: isTop1Profile ? "text" : undefined,
+                    WebkitTextFillColor: isTop1Profile ? "transparent" : undefined,
+                    animation: isTop1Profile ? "goldTextShift 2.4s ease-in-out infinite" : undefined,
+                    textShadow: isTop1Profile ? "0 0 16px rgba(255,214,102,0.45)" : undefined,
+                  }}
+                >
                   {profileUser.username}<RoleMark role={profileUser.role} />
-                  {isVerified && <span title="Esta cuenta esta verificada" aria-label="Esta cuenta esta verificada" style={{ display: "inline-grid", placeItems: "center", width: 19, height: 19, borderRadius: "50%", background: "#16a34a", color: "#fff", fontFamily: "Arial, sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: 0, cursor: "help" }}>✓</span>}
+                  <UserBadges badges={userBadges} glowTopRank={isTop1Profile} />
                 </div>
                 <div style={{ fontSize: 11, color: "rgba(255,255,255,0.8)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>{roleLabel(profileUser.role)}</div>
               </div>
@@ -3194,6 +3596,7 @@ function ProfileView({
                 </div>
               </div>
             </div>
+
             {isOwnProfile ? (
               <>
                 <div className="profile-section-heading">
@@ -4138,6 +4541,7 @@ function ThreadView({
   if (!thread) return null
 
   const author = users.find((u) => u.id === thread.authorId)
+  const authorBadges = author ? calculateUserBadges(author, threads, users, false) : []
   const isStaff = currentUser.role !== "user"
   const canEditThread = thread.category === "historias" && currentUser.id === thread.authorId
   const canDeleteThread = currentUser.id === thread.authorId || currentUser.role === "admin"
@@ -4325,7 +4729,7 @@ function ThreadView({
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <Avatar letter={author?.avatar || "?"} role={author?.role || "user"} size={28} imageUrl={author?.avatarUrl} />
               <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                {author ? <button type="button" onClick={() => onOpenProfile(author)} style={{ border: "none", padding: 0, background: "transparent", color: "var(--text)", cursor: "pointer", fontWeight: 700 }}>{author.username}<RoleMark role={author.role} /></button> : "Usuario"} · {formatDate(thread.createdAt)}
+                {author ? <button type="button" onClick={() => onOpenProfile(author)} style={{ border: "none", padding: 0, background: "transparent", color: "var(--text)", cursor: "pointer", fontWeight: 700 }}>{author.username}<RoleMark role={author.role} />{authorBadges.length > 0 && <UserBadges badges={authorBadges} />}</button> : "Usuario"} · {formatDate(thread.createdAt)}
                 {thread.editedAt && <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}> · EDITADO</span>}
               </div>
             </div>
@@ -4545,6 +4949,7 @@ function ThreadView({
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {thread.replies.map((reply) => {
               const replyAuthor = users.find((u) => u.id === reply.authorId)
+              const replyAuthorBadges = replyAuthor ? calculateUserBadges(replyAuthor, threads, users, false) : []
               return (
                 <div
                   key={reply.id}
@@ -4560,7 +4965,7 @@ function ThreadView({
                     <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                     <Avatar letter={replyAuthor?.avatar || "?"} role={replyAuthor?.role || "user"} size={26} imageUrl={replyAuthor?.avatarUrl} />
                     <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                      {replyAuthor ? <button type="button" onClick={() => onOpenProfile(replyAuthor)} style={{ border: "none", padding: 0, background: "transparent", color: reply.isStaff ? "#3498db" : "var(--text)", cursor: "pointer", fontWeight: 700 }}>{replyAuthor.username}<RoleMark role={replyAuthor.role} /></button> : "Usuario"}
+                      {replyAuthor ? <button type="button" onClick={() => onOpenProfile(replyAuthor)} style={{ border: "none", padding: 0, background: "transparent", color: reply.isStaff ? "#3498db" : "var(--text)", cursor: "pointer", fontWeight: 700 }}>{replyAuthor.username}<RoleMark role={replyAuthor.role} />{replyAuthorBadges.length > 0 && <UserBadges badges={replyAuthorBadges} />}</button> : "Usuario"}
                       {reply.isStaff && (
                         <span style={{ marginLeft: 6, fontSize: 10, color: "#3498db", fontFamily: "JetBrains Mono, monospace" }}>
                           [STAFF]
@@ -5385,6 +5790,27 @@ export default function App() {
 
     window.addEventListener("popstate", handlePopState)
     return () => window.removeEventListener("popstate", handlePopState)
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+
+    async function loadServerPlaytimeData() {
+      const [{ data: playtime }, { data: links }] = await Promise.all([
+        supabase.from("player_playtime").select("username, total_seconds").order("total_seconds", { ascending: false }).limit(10),
+        supabase.from("player_links").select("id, forum_user_id, pz_username, verified").eq("verified", true),
+      ])
+
+      if (!mounted) return
+      syncServerBadgeData((playtime as PlayerPlaytime[] | null) || [], (links as PlayerLink[] | null) || [])
+    }
+
+    void loadServerPlaytimeData()
+    const refreshTimer = window.setInterval(() => { void loadServerPlaytimeData() }, 30_000)
+    return () => {
+      mounted = false
+      window.clearInterval(refreshTimer)
+    }
   }, [])
 
   useEffect(() => {
@@ -6545,6 +6971,7 @@ export default function App() {
         <ProfileView
           currentUser={currentUser}
           users={users}
+          threads={threads}
           selectedUserId={selectedProfileId || currentUser.id}
           onSaveProfile={handleSaveProfile}
           onBack={handleGoBack}

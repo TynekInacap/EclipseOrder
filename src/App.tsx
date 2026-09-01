@@ -1113,11 +1113,7 @@ function UserBadges({ badges, glowTopRank = false }: { badges: BadgeType[]; glow
           }
         `}</style>
       )}
-<<<<<<< HEAD
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, marginLeft: 8, verticalAlign: "middle" }}>
-=======
       <span style={{ display: "inline-flex", alignItems: "center", gap: 7, marginLeft: 8, verticalAlign: "middle" }}>
->>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
         {badges.map((badgeType) => {
           const gradientId = `${badgeType}-gradient`
           const badgeTitle = BADGES[badgeType]?.title || "Insignia"
@@ -1126,16 +1122,6 @@ function UserBadges({ badges, glowTopRank = false }: { badges: BadgeType[]; glow
           const badgeContent = (() => {
             if (badgeType === "most-active") {
               return (
-<<<<<<< HEAD
-                <svg viewBox="0 0 24 24" style={{ width: "100%", height: "100%", display: "block" }}>
-                  <defs>
-                    <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="#ff5a5f" />
-                      <stop offset="100%" stopColor="#ffb000" />
-                    </linearGradient>
-                  </defs>
-                  <path d="M12 2L14.8 7L20.5 8L16.5 12L17.5 18L12 15.2L6.5 18L7.5 12L3.5 8L9.2 7L12 2Z" fill={`url(#${gradientId})`} />
-=======
                 <svg viewBox="0 0 260 260" style={{ width: "100%", height: "100%", display: "block" }}>
                   <defs>
                     <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
@@ -1171,23 +1157,12 @@ function UserBadges({ badges, glowTopRank = false }: { badges: BadgeType[]; glow
                       <text x="130" y="226" fontFamily="Georgia, serif" fontWeight="700" fontSize="16" fill="#4d2b08" textAnchor="middle" letterSpacing="1">MÁS HORAS JUGADAS</text>
                     </g>
                   </g>
->>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
                 </svg>
               )
             }
 
             if (badgeType === "most-active-2") {
               return (
-<<<<<<< HEAD
-                <svg viewBox="0 0 24 24" style={{ width: "100%", height: "100%", display: "block" }}>
-                  <defs>
-                    <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="#dfe7f3" />
-                      <stop offset="100%" stopColor="#9aa9bd" />
-                    </linearGradient>
-                  </defs>
-                  <path d="M12 2L14.8 7L20.5 8L16.5 12L17.5 18L12 15.2L6.5 18L7.5 12L3.5 8L9.2 7L12 2Z" fill={`url(#${gradientId})`} />
-=======
                 <svg viewBox="0 0 260 260" style={{ width: "100%", height: "100%", display: "block" }}>
                   <defs>
                     <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
@@ -1223,23 +1198,12 @@ function UserBadges({ badges, glowTopRank = false }: { badges: BadgeType[]; glow
                       <text x="130" y="226" fontFamily="Georgia, serif" fontWeight="700" fontSize="16" fill="#2f3a43" textAnchor="middle" letterSpacing="1">MÁS HORAS JUGADAS</text>
                     </g>
                   </g>
->>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
                 </svg>
               )
             }
 
             if (badgeType === "most-active-3") {
               return (
-<<<<<<< HEAD
-                <svg viewBox="0 0 24 24" style={{ width: "100%", height: "100%", display: "block" }}>
-                  <defs>
-                    <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="#d3914f" />
-                      <stop offset="100%" stopColor="#8b4f1d" />
-                    </linearGradient>
-                  </defs>
-                  <path d="M12 1.8L14.8 8.2L21.7 8.8L16.8 13.2L18.4 20L12 16.7L5.6 20L7.2 13.2L2.3 8.8L9.2 8.2L12 1.8Z" fill={`url(#${gradientId})`} />
-=======
                 <svg viewBox="0 0 260 260" style={{ width: "100%", height: "100%", display: "block" }}>
                   <defs>
                     <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
@@ -1275,7 +1239,6 @@ function UserBadges({ badges, glowTopRank = false }: { badges: BadgeType[]; glow
                       <text x="130" y="226" fontFamily="Georgia, serif" fontWeight="700" fontSize="16" fill="#4c2307" textAnchor="middle" letterSpacing="1">MÁS HORAS JUGADAS</text>
                     </g>
                   </g>
->>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
                 </svg>
               )
             }
@@ -1293,17 +1256,13 @@ function UserBadges({ badges, glowTopRank = false }: { badges: BadgeType[]; glow
                       <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.4" />
                     </filter>
                   </defs>
-                  {/* Base de la corona */}
                   <path d="M 15 70 L 20 35 L 35 25 L 50 15 L 65 25 L 80 35 L 85 70 Z" fill={`url(#${gradientId})`} stroke="#d4a000" strokeWidth="2" filter="url(#shadow-pdr)" />
-                  {/* Puntas decorativas */}
                   <circle cx="20" cy="38" r="4" fill="#ffeb99" />
                   <circle cx="35" cy="28" r="4" fill="#ffeb99" />
                   <circle cx="50" cy="18" r="5" fill="#ffeb99" />
                   <circle cx="65" cy="28" r="4" fill="#ffeb99" />
                   <circle cx="80" cy="38" r="4" fill="#ffeb99" />
-                  {/* Base de la corona (parte inferior) */}
                   <rect x="15" y="68" width="70" height="6" fill={`url(#${gradientId})`} stroke="#d4a000" strokeWidth="1.5" />
-                  {/* Letras PDR */}
                   <text x="50" y="65" fontSize="28" fontWeight="bold" textAnchor="middle" fill="#2d1810" fontFamily="Arial, sans-serif" letterSpacing="2">
                     PDR
                   </text>
@@ -1334,82 +1293,27 @@ function UserBadges({ badges, glowTopRank = false }: { badges: BadgeType[]; glow
           return (
             <span
               key={badgeType}
-<<<<<<< HEAD
-=======
               className="user-badge"
               title={badgeTitle}
               aria-label={badgeTitle}
               data-badge-label="true"
->>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
               style={{
                 position: "relative",
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
-<<<<<<< HEAD
-                width: 18,
-                height: 18,
-                verticalAlign: "middle",
-                transform: "translateY(1px)",
-=======
                 width: badgeType === "most-active" || badgeType === "most-active-2" || badgeType === "most-active-3" ? 26 : 18,
                 height: badgeType === "most-active" || badgeType === "most-active-2" || badgeType === "most-active-3" ? 26 : 18,
                 verticalAlign: "middle",
                 transform: "translateY(1px)",
                 overflow: "visible",
                 cursor: "help",
->>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
                 animation: isTopRankBadge ? "topRankGlow 1.8s ease-in-out infinite" : undefined,
                 pointerEvents: "auto",
                 zIndex: isTopRankBadge ? 100 : "auto",
               }}
-<<<<<<< HEAD
-              onMouseEnter={(e) => {
-                const label = e.currentTarget.querySelector('[data-badge-label="true"]') as HTMLElement | null
-                if (label) {
-                  label.style.opacity = "1"
-                  label.style.transform = "translateX(-50%) translateY(0)"
-                }
-              }}
-              onMouseLeave={(e) => {
-                const label = e.currentTarget.querySelector('[data-badge-label="true"]') as HTMLElement | null
-                if (label) {
-                  label.style.opacity = "0"
-                  label.style.transform = "translateX(-50%) translateY(4px)"
-                }
-              }}
             >
               {badgeContent}
-              <span
-                data-badge-label="true"
-                style={{
-                  position: "absolute",
-                  left: "50%",
-                  top: "calc(100% + 8px)",
-                  transform: "translateX(-50%) translateY(4px)",
-                  opacity: 0,
-                  pointerEvents: "none",
-                  padding: "4px 7px",
-                  borderRadius: 999,
-                  background: "rgba(15, 23, 42, 0.92)",
-                  border: "1px solid rgba(148, 163, 184, 0.5)",
-                  color: "#e2e8f0",
-                  fontFamily: "JetBrains Mono, monospace",
-                  fontSize: 8,
-                  letterSpacing: "0.08em",
-                  lineHeight: 1,
-                  whiteSpace: "nowrap",
-                  boxShadow: "0 0 12px rgba(0,0,0,0.25)",
-                  transition: "opacity 0.16s ease, transform 0.16s ease",
-                  zIndex: 9999,
-                }}
-              >
-                {badgeTitle.toUpperCase()}
-              </span>
-=======
-            >
-              {badgeContent}
->>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
             </span>
           )
         })}
@@ -2408,9 +2312,6 @@ function ThreadRow({
             <MarkdownText content={thread.title} inline />
           </div>
           <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-<<<<<<< HEAD
-            <span style={{ color: "var(--text-muted)" }}>{author?.username}{author && <RoleMark role={author.role} />}{authorBadges.length > 0 && <UserBadges badges={authorBadges} />}</span> · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes
-=======
             <span style={{ color: "var(--text-muted)" }}>
               <span style={{
                 color: authorBadges.includes("most-active") ? "transparent" : "var(--text-muted)",
@@ -2427,7 +2328,6 @@ function ThreadRow({
               {author && <RoleMark role={author.role} />}
               {authorBadges.length > 0 && <UserBadges badges={authorBadges} glowTopRank={authorBadges.includes("most-active")} />}
             </span> · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes
->>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
           </div>
         </div>
       </div>
@@ -3698,11 +3598,7 @@ function ProfileView({
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 18 }}>
-<<<<<<< HEAD
-        <section className="profile-main" style={{ background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden" }}>
-=======
         <section className="profile-main" style={{ background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", borderRadius: 18, overflow: "visible" }}>
->>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
           <div
             style={{
               height: 120,
@@ -4891,9 +4787,6 @@ function ThreadView({
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <Avatar letter={author?.avatar || "?"} role={author?.role || "user"} size={28} imageUrl={author?.avatarUrl} />
               <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-<<<<<<< HEAD
-                {author ? <button type="button" onClick={() => onOpenProfile(author)} style={{ border: "none", padding: 0, background: "transparent", color: "var(--text)", cursor: "pointer", fontWeight: 700 }}>{author.username}<RoleMark role={author.role} />{authorBadges.length > 0 && <UserBadges badges={authorBadges} />}</button> : "Usuario"} · {formatDate(thread.createdAt)}
-=======
                 {author ? <button type="button" onClick={() => onOpenProfile(author)} style={{ border: "none", padding: 0, background: "transparent", color: "var(--text)", cursor: "pointer", fontWeight: 700 }}>
                   <span style={{
                     color: authorBadges.includes("most-active") ? "transparent" : "var(--text)",
@@ -4910,7 +4803,6 @@ function ThreadView({
                   <RoleMark role={author.role} />
                   {authorBadges.length > 0 && <UserBadges badges={authorBadges} glowTopRank={authorBadges.includes("most-active")} />}
                 </button> : "Usuario"} · {formatDate(thread.createdAt)}
->>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
                 {thread.editedAt && <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}> · EDITADO</span>}
               </div>
             </div>
@@ -5146,9 +5038,6 @@ function ThreadView({
                     <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                     <Avatar letter={replyAuthor?.avatar || "?"} role={replyAuthor?.role || "user"} size={26} imageUrl={replyAuthor?.avatarUrl} />
                     <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-<<<<<<< HEAD
-                      {replyAuthor ? <button type="button" onClick={() => onOpenProfile(replyAuthor)} style={{ border: "none", padding: 0, background: "transparent", color: reply.isStaff ? "#3498db" : "var(--text)", cursor: "pointer", fontWeight: 700 }}>{replyAuthor.username}<RoleMark role={replyAuthor.role} />{replyAuthorBadges.length > 0 && <UserBadges badges={replyAuthorBadges} />}</button> : "Usuario"}
-=======
                       {replyAuthor ? <button type="button" onClick={() => onOpenProfile(replyAuthor)} style={{ border: "none", padding: 0, background: "transparent", color: reply.isStaff ? "#3498db" : "var(--text)", cursor: "pointer", fontWeight: 700 }}>
                         <span style={{
                           color: replyAuthorBadges.includes("most-active") ? "transparent" : reply.isStaff ? "#3498db" : "var(--text)",
@@ -5165,7 +5054,6 @@ function ThreadView({
                         <RoleMark role={replyAuthor.role} />
                         {replyAuthorBadges.length > 0 && <UserBadges badges={replyAuthorBadges} glowTopRank={replyAuthorBadges.includes("most-active")} />}
                       </button> : "Usuario"}
->>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
                       {reply.isStaff && (
                         <span style={{ marginLeft: 6, fontSize: 10, color: "#3498db", fontFamily: "JetBrains Mono, monospace" }}>
                           [STAFF]

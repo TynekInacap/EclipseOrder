@@ -1113,7 +1113,11 @@ function UserBadges({ badges, glowTopRank = false }: { badges: BadgeType[]; glow
           }
         `}</style>
       )}
+<<<<<<< HEAD
       <span style={{ display: "inline-flex", alignItems: "center", gap: 5, marginLeft: 8, verticalAlign: "middle" }}>
+=======
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 7, marginLeft: 8, verticalAlign: "middle" }}>
+>>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
         {badges.map((badgeType) => {
           const gradientId = `${badgeType}-gradient`
           const badgeTitle = BADGES[badgeType]?.title || "Insignia"
@@ -1122,6 +1126,7 @@ function UserBadges({ badges, glowTopRank = false }: { badges: BadgeType[]; glow
           const badgeContent = (() => {
             if (badgeType === "most-active") {
               return (
+<<<<<<< HEAD
                 <svg viewBox="0 0 24 24" style={{ width: "100%", height: "100%", display: "block" }}>
                   <defs>
                     <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
@@ -1130,12 +1135,50 @@ function UserBadges({ badges, glowTopRank = false }: { badges: BadgeType[]; glow
                     </linearGradient>
                   </defs>
                   <path d="M12 2L14.8 7L20.5 8L16.5 12L17.5 18L12 15.2L6.5 18L7.5 12L3.5 8L9.2 7L12 2Z" fill={`url(#${gradientId})`} />
+=======
+                <svg viewBox="0 0 260 260" style={{ width: "100%", height: "100%", display: "block" }}>
+                  <defs>
+                    <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#ffe49a" />
+                      <stop offset="18%" stopColor="#f8d86a" />
+                      <stop offset="50%" stopColor="#d98d00" />
+                      <stop offset="100%" stopColor="#fff2bf" />
+                    </linearGradient>
+                    <linearGradient id={`${gradientId}-shield`} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#1b1d1f" />
+                      <stop offset="100%" stopColor="#3b2d1a" />
+                    </linearGradient>
+                    <linearGradient id={`${gradientId}-banner`} x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#f9d77f" />
+                      <stop offset="100%" stopColor="#c98c17" />
+                    </linearGradient>
+                  </defs>
+                  <g>
+                    <path d="M130 18 L167 44 L190 35 L212 56 L240 68 L220 102 L228 130 L206 162 L190 184 L210 223 L174 239 L130 254 L86 239 L50 223 L70 184 L54 162 L32 130 L40 102 L20 68 L48 56 L70 35 L93 44 Z" fill="url(#${gradientId})" stroke="#a86400" strokeWidth="6" strokeLinejoin="round" />
+                    <path d="M128 32 L156 66 L181 62 L202 85 L176 106 L188 132 L166 155 L184 185 L152 205 L128 228 L104 205 L72 185 L90 155 L68 132 L80 106 L54 85 L75 62 L100 66 Z" fill="url(#${gradientId}-shield)" stroke="#e9bf5a" strokeWidth="6" strokeLinejoin="round" />
+                    <path d="M60 92 C86 64, 102 54, 130 54 C158 54, 174 64, 200 92 L178 78 L162 62 L130 42 L98 62 L82 78 Z" fill="url(#${gradientId})" stroke="#ffeb9f" strokeWidth="5" strokeLinejoin="round" />
+                    <circle cx="130" cy="122" r="46" fill="#0d1014" stroke="#f7d15f" strokeWidth="6" />
+                    <circle cx="130" cy="122" r="38" fill="none" stroke="#7a4c06" strokeWidth="3" />
+                    <path d="M130 122 L130 92 M130 122 L152 136 M130 122 L112 140" stroke="#f5d67b" strokeWidth="4" strokeLinecap="round" />
+                    <circle cx="130" cy="122" r="5" fill="#f4c449" />
+                    <path d="M73 182 C90 198, 110 210, 130 216 C150 210, 170 198, 187 182 L202 224 C174 242, 150 250, 130 252 C110 250, 86 242, 58 224 Z" fill="url(#${gradientId})" stroke="#8e5e00" strokeWidth="5" strokeLinejoin="round" />
+                    <path d="M84 182 C100 166, 113 158, 130 154 C147 158, 160 166, 176 182" fill="none" stroke="#fbe7a6" strokeWidth="6" strokeLinecap="round" />
+                    <g fontFamily="Impact, Arial Black, sans-serif" fontWeight="900" textAnchor="middle">
+                      <text x="130" y="112" fontSize="44" fill="#f7d977" letterSpacing="2">TOP 1</text>
+                    </g>
+                    <g>
+                      <path d="M72 214 L188 214 L176 232 L82 232 Z" fill="url(#${gradientId}-banner)" stroke="#8a5a04" strokeWidth="4" strokeLinejoin="round" />
+                      <text x="130" y="226" fontFamily="Georgia, serif" fontWeight="700" fontSize="16" fill="#4d2b08" textAnchor="middle" letterSpacing="1">MÁS HORAS JUGADAS</text>
+                    </g>
+                  </g>
+>>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
                 </svg>
               )
             }
 
             if (badgeType === "most-active-2") {
               return (
+<<<<<<< HEAD
                 <svg viewBox="0 0 24 24" style={{ width: "100%", height: "100%", display: "block" }}>
                   <defs>
                     <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
@@ -1144,12 +1187,50 @@ function UserBadges({ badges, glowTopRank = false }: { badges: BadgeType[]; glow
                     </linearGradient>
                   </defs>
                   <path d="M12 2L14.8 7L20.5 8L16.5 12L17.5 18L12 15.2L6.5 18L7.5 12L3.5 8L9.2 7L12 2Z" fill={`url(#${gradientId})`} />
+=======
+                <svg viewBox="0 0 260 260" style={{ width: "100%", height: "100%", display: "block" }}>
+                  <defs>
+                    <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#edf1f7" />
+                      <stop offset="25%" stopColor="#dfeaf9" />
+                      <stop offset="50%" stopColor="#95a5b8" />
+                      <stop offset="100%" stopColor="#f2f4f8" />
+                    </linearGradient>
+                    <linearGradient id={`${gradientId}-shield`} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#2b3138" />
+                      <stop offset="100%" stopColor="#5c6978" />
+                    </linearGradient>
+                    <linearGradient id={`${gradientId}-banner`} x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#edf2f8" />
+                      <stop offset="100%" stopColor="#a7b3c3" />
+                    </linearGradient>
+                  </defs>
+                  <g>
+                    <path d="M130 18 L167 44 L190 35 L212 56 L240 68 L220 102 L228 130 L206 162 L190 184 L210 223 L174 239 L130 254 L86 239 L50 223 L70 184 L54 162 L32 130 L40 102 L20 68 L48 56 L70 35 L93 44 Z" fill="url(#${gradientId})" stroke="#6d7e8e" strokeWidth="6" strokeLinejoin="round" />
+                    <path d="M128 32 L156 66 L181 62 L202 85 L176 106 L188 132 L166 155 L184 185 L152 205 L128 228 L104 205 L72 185 L90 155 L68 132 L80 106 L54 85 L75 62 L100 66 Z" fill="url(#${gradientId}-shield)" stroke="#dfeaf9" strokeWidth="6" strokeLinejoin="round" />
+                    <path d="M60 92 C86 64, 102 54, 130 54 C158 54, 174 64, 200 92 L178 78 L162 62 L130 42 L98 62 L82 78 Z" fill="url(#${gradientId})" stroke="#f0f5fb" strokeWidth="5" strokeLinejoin="round" />
+                    <circle cx="130" cy="122" r="46" fill="#0d1014" stroke="#dfeaf9" strokeWidth="6" />
+                    <circle cx="130" cy="122" r="38" fill="none" stroke="#8593a8" strokeWidth="3" />
+                    <path d="M130 122 L130 92 M130 122 L152 136 M130 122 L112 140" stroke="#edf5ff" strokeWidth="4" strokeLinecap="round" />
+                    <circle cx="130" cy="122" r="5" fill="#dfeaf9" />
+                    <path d="M73 182 C90 198, 110 210, 130 216 C150 210, 170 198, 187 182 L202 224 C174 242, 150 250, 130 252 C110 250, 86 242, 58 224 Z" fill="url(#${gradientId})" stroke="#66788a" strokeWidth="5" strokeLinejoin="round" />
+                    <path d="M84 182 C100 166, 113 158, 130 154 C147 158, 160 166, 176 182" fill="none" stroke="#f4f8ff" strokeWidth="6" strokeLinecap="round" />
+                    <g fontFamily="Impact, Arial Black, sans-serif" fontWeight="900" textAnchor="middle">
+                      <text x="130" y="112" fontSize="44" fill="#edf5ff" letterSpacing="2">TOP 2</text>
+                    </g>
+                    <g>
+                      <path d="M72 214 L188 214 L176 232 L82 232 Z" fill="url(#${gradientId}-banner)" stroke="#6b7b88" strokeWidth="4" strokeLinejoin="round" />
+                      <text x="130" y="226" fontFamily="Georgia, serif" fontWeight="700" fontSize="16" fill="#2f3a43" textAnchor="middle" letterSpacing="1">MÁS HORAS JUGADAS</text>
+                    </g>
+                  </g>
+>>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
                 </svg>
               )
             }
 
             if (badgeType === "most-active-3") {
               return (
+<<<<<<< HEAD
                 <svg viewBox="0 0 24 24" style={{ width: "100%", height: "100%", display: "block" }}>
                   <defs>
                     <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
@@ -1158,6 +1239,43 @@ function UserBadges({ badges, glowTopRank = false }: { badges: BadgeType[]; glow
                     </linearGradient>
                   </defs>
                   <path d="M12 1.8L14.8 8.2L21.7 8.8L16.8 13.2L18.4 20L12 16.7L5.6 20L7.2 13.2L2.3 8.8L9.2 8.2L12 1.8Z" fill={`url(#${gradientId})`} />
+=======
+                <svg viewBox="0 0 260 260" style={{ width: "100%", height: "100%", display: "block" }}>
+                  <defs>
+                    <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#f7c69a" />
+                      <stop offset="25%" stopColor="#d37a3b" />
+                      <stop offset="50%" stopColor="#9a4f10" />
+                      <stop offset="100%" stopColor="#f8d8a9" />
+                    </linearGradient>
+                    <linearGradient id={`${gradientId}-shield`} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#211a17" />
+                      <stop offset="100%" stopColor="#6a3b1b" />
+                    </linearGradient>
+                    <linearGradient id={`${gradientId}-banner`} x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#f7d39d" />
+                      <stop offset="100%" stopColor="#c8782a" />
+                    </linearGradient>
+                  </defs>
+                  <g>
+                    <path d="M130 18 L167 44 L190 35 L212 56 L240 68 L220 102 L228 130 L206 162 L190 184 L210 223 L174 239 L130 254 L86 239 L50 223 L70 184 L54 162 L32 130 L40 102 L20 68 L48 56 L70 35 L93 44 Z" fill="url(#${gradientId})" stroke="#8a4a0a" strokeWidth="6" strokeLinejoin="round" />
+                    <path d="M128 32 L156 66 L181 62 L202 85 L176 106 L188 132 L166 155 L184 185 L152 205 L128 228 L104 205 L72 185 L90 155 L68 132 L80 106 L54 85 L75 62 L100 66 Z" fill="url(#${gradientId}-shield)" stroke="#f2c28c" strokeWidth="6" strokeLinejoin="round" />
+                    <path d="M60 92 C86 64, 102 54, 130 54 C158 54, 174 64, 200 92 L178 78 L162 62 L130 42 L98 62 L82 78 Z" fill="url(#${gradientId})" stroke="#fbe2b2" strokeWidth="5" strokeLinejoin="round" />
+                    <circle cx="130" cy="122" r="46" fill="#0d1014" stroke="#f2c389" strokeWidth="6" />
+                    <circle cx="130" cy="122" r="38" fill="none" stroke="#8d4d13" strokeWidth="3" />
+                    <path d="M130 122 L130 92 M130 122 L152 136 M130 122 L112 140" stroke="#f8d9a1" strokeWidth="4" strokeLinecap="round" />
+                    <circle cx="130" cy="122" r="5" fill="#f0be7a" />
+                    <path d="M73 182 C90 198, 110 210, 130 216 C150 210, 170 198, 187 182 L202 224 C174 242, 150 250, 130 252 C110 250, 86 242, 58 224 Z" fill="url(#${gradientId})" stroke="#7d4006" strokeWidth="5" strokeLinejoin="round" />
+                    <path d="M84 182 C100 166, 113 158, 130 154 C147 158, 160 166, 176 182" fill="none" stroke="#fbe7c9" strokeWidth="6" strokeLinecap="round" />
+                    <g fontFamily="Impact, Arial Black, sans-serif" fontWeight="900" textAnchor="middle">
+                      <text x="130" y="112" fontSize="44" fill="#ffdf9b" letterSpacing="2">TOP 3</text>
+                    </g>
+                    <g>
+                      <path d="M72 214 L188 214 L176 232 L82 232 Z" fill="url(#${gradientId}-banner)" stroke="#7a4107" strokeWidth="4" strokeLinejoin="round" />
+                      <text x="130" y="226" fontFamily="Georgia, serif" fontWeight="700" fontSize="16" fill="#4c2307" textAnchor="middle" letterSpacing="1">MÁS HORAS JUGADAS</text>
+                    </g>
+                  </g>
+>>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
                 </svg>
               )
             }
@@ -1216,19 +1334,36 @@ function UserBadges({ badges, glowTopRank = false }: { badges: BadgeType[]; glow
           return (
             <span
               key={badgeType}
+<<<<<<< HEAD
+=======
+              className="user-badge"
+              title={badgeTitle}
+              aria-label={badgeTitle}
+              data-badge-label="true"
+>>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
               style={{
                 position: "relative",
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
+<<<<<<< HEAD
                 width: 18,
                 height: 18,
                 verticalAlign: "middle",
                 transform: "translateY(1px)",
+=======
+                width: badgeType === "most-active" || badgeType === "most-active-2" || badgeType === "most-active-3" ? 26 : 18,
+                height: badgeType === "most-active" || badgeType === "most-active-2" || badgeType === "most-active-3" ? 26 : 18,
+                verticalAlign: "middle",
+                transform: "translateY(1px)",
+                overflow: "visible",
+                cursor: "help",
+>>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
                 animation: isTopRankBadge ? "topRankGlow 1.8s ease-in-out infinite" : undefined,
                 pointerEvents: "auto",
                 zIndex: isTopRankBadge ? 100 : "auto",
               }}
+<<<<<<< HEAD
               onMouseEnter={(e) => {
                 const label = e.currentTarget.querySelector('[data-badge-label="true"]') as HTMLElement | null
                 if (label) {
@@ -1271,6 +1406,10 @@ function UserBadges({ badges, glowTopRank = false }: { badges: BadgeType[]; glow
               >
                 {badgeTitle.toUpperCase()}
               </span>
+=======
+            >
+              {badgeContent}
+>>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
             </span>
           )
         })}
@@ -2269,7 +2408,26 @@ function ThreadRow({
             <MarkdownText content={thread.title} inline />
           </div>
           <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+<<<<<<< HEAD
             <span style={{ color: "var(--text-muted)" }}>{author?.username}{author && <RoleMark role={author.role} />}{authorBadges.length > 0 && <UserBadges badges={authorBadges} />}</span> · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes
+=======
+            <span style={{ color: "var(--text-muted)" }}>
+              <span style={{
+                color: authorBadges.includes("most-active") ? "transparent" : "var(--text-muted)",
+                background: authorBadges.includes("most-active") ? "linear-gradient(90deg, #fff5b0 0%, #f4d35e 15%, #fffef0 32%, #f7ca54 52%, #fef7d9 68%, #d7a82d 84%, #fff0a8 100%)" : undefined,
+                backgroundSize: authorBadges.includes("most-active") ? "220% 100%" : undefined,
+                WebkitBackgroundClip: authorBadges.includes("most-active") ? "text" : undefined,
+                backgroundClip: authorBadges.includes("most-active") ? "text" : undefined,
+                WebkitTextFillColor: authorBadges.includes("most-active") ? "transparent" : undefined,
+                animation: authorBadges.includes("most-active") ? "goldTextShift 2.4s ease-in-out infinite" : undefined,
+                textShadow: authorBadges.includes("most-active") ? "0 0 16px rgba(255,214,102,0.45)" : undefined,
+              }}>
+                {author?.username}
+              </span>
+              {author && <RoleMark role={author.role} />}
+              {authorBadges.length > 0 && <UserBadges badges={authorBadges} glowTopRank={authorBadges.includes("most-active")} />}
+            </span> · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes
+>>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
           </div>
         </div>
       </div>
@@ -3540,7 +3698,11 @@ function ProfileView({
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 18 }}>
+<<<<<<< HEAD
         <section className="profile-main" style={{ background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden" }}>
+=======
+        <section className="profile-main" style={{ background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", borderRadius: 18, overflow: "visible" }}>
+>>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
           <div
             style={{
               height: 120,
@@ -4729,7 +4891,26 @@ function ThreadView({
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <Avatar letter={author?.avatar || "?"} role={author?.role || "user"} size={28} imageUrl={author?.avatarUrl} />
               <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+<<<<<<< HEAD
                 {author ? <button type="button" onClick={() => onOpenProfile(author)} style={{ border: "none", padding: 0, background: "transparent", color: "var(--text)", cursor: "pointer", fontWeight: 700 }}>{author.username}<RoleMark role={author.role} />{authorBadges.length > 0 && <UserBadges badges={authorBadges} />}</button> : "Usuario"} · {formatDate(thread.createdAt)}
+=======
+                {author ? <button type="button" onClick={() => onOpenProfile(author)} style={{ border: "none", padding: 0, background: "transparent", color: "var(--text)", cursor: "pointer", fontWeight: 700 }}>
+                  <span style={{
+                    color: authorBadges.includes("most-active") ? "transparent" : "var(--text)",
+                    background: authorBadges.includes("most-active") ? "linear-gradient(90deg, #fff5b0 0%, #f4d35e 15%, #fffef0 32%, #f7ca54 52%, #fef7d9 68%, #d7a82d 84%, #fff0a8 100%)" : undefined,
+                    backgroundSize: authorBadges.includes("most-active") ? "220% 100%" : undefined,
+                    WebkitBackgroundClip: authorBadges.includes("most-active") ? "text" : undefined,
+                    backgroundClip: authorBadges.includes("most-active") ? "text" : undefined,
+                    WebkitTextFillColor: authorBadges.includes("most-active") ? "transparent" : undefined,
+                    animation: authorBadges.includes("most-active") ? "goldTextShift 2.4s ease-in-out infinite" : undefined,
+                    textShadow: authorBadges.includes("most-active") ? "0 0 16px rgba(255,214,102,0.45)" : undefined,
+                  }}>
+                    {author.username}
+                  </span>
+                  <RoleMark role={author.role} />
+                  {authorBadges.length > 0 && <UserBadges badges={authorBadges} glowTopRank={authorBadges.includes("most-active")} />}
+                </button> : "Usuario"} · {formatDate(thread.createdAt)}
+>>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
                 {thread.editedAt && <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}> · EDITADO</span>}
               </div>
             </div>
@@ -4965,7 +5146,26 @@ function ThreadView({
                     <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                     <Avatar letter={replyAuthor?.avatar || "?"} role={replyAuthor?.role || "user"} size={26} imageUrl={replyAuthor?.avatarUrl} />
                     <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+<<<<<<< HEAD
                       {replyAuthor ? <button type="button" onClick={() => onOpenProfile(replyAuthor)} style={{ border: "none", padding: 0, background: "transparent", color: reply.isStaff ? "#3498db" : "var(--text)", cursor: "pointer", fontWeight: 700 }}>{replyAuthor.username}<RoleMark role={replyAuthor.role} />{replyAuthorBadges.length > 0 && <UserBadges badges={replyAuthorBadges} />}</button> : "Usuario"}
+=======
+                      {replyAuthor ? <button type="button" onClick={() => onOpenProfile(replyAuthor)} style={{ border: "none", padding: 0, background: "transparent", color: reply.isStaff ? "#3498db" : "var(--text)", cursor: "pointer", fontWeight: 700 }}>
+                        <span style={{
+                          color: replyAuthorBadges.includes("most-active") ? "transparent" : reply.isStaff ? "#3498db" : "var(--text)",
+                          background: replyAuthorBadges.includes("most-active") ? "linear-gradient(90deg, #fff5b0 0%, #f4d35e 15%, #fffef0 32%, #f7ca54 52%, #fef7d9 68%, #d7a82d 84%, #fff0a8 100%)" : undefined,
+                          backgroundSize: replyAuthorBadges.includes("most-active") ? "220% 100%" : undefined,
+                          WebkitBackgroundClip: replyAuthorBadges.includes("most-active") ? "text" : undefined,
+                          backgroundClip: replyAuthorBadges.includes("most-active") ? "text" : undefined,
+                          WebkitTextFillColor: replyAuthorBadges.includes("most-active") ? "transparent" : undefined,
+                          animation: replyAuthorBadges.includes("most-active") ? "goldTextShift 2.4s ease-in-out infinite" : undefined,
+                          textShadow: replyAuthorBadges.includes("most-active") ? "0 0 16px rgba(255,214,102,0.45)" : undefined,
+                        }}>
+                          {replyAuthor.username}
+                        </span>
+                        <RoleMark role={replyAuthor.role} />
+                        {replyAuthorBadges.length > 0 && <UserBadges badges={replyAuthorBadges} glowTopRank={replyAuthorBadges.includes("most-active")} />}
+                      </button> : "Usuario"}
+>>>>>>> 97f0888 (Fix badge tooltips and profile badge styling)
                       {reply.isStaff && (
                         <span style={{ marginLeft: 6, fontSize: 10, color: "#3498db", fontFamily: "JetBrains Mono, monospace" }}>
                           [STAFF]

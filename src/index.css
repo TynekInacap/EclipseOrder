@@ -1121,6 +1121,7 @@ select:hover,
 
 .profile-directory,
 .profile-main {
+  overflow: visible !important;
   border-color: rgba(148, 163, 184, 0.2) !important;
   background: linear-gradient(180deg, rgba(11, 19, 29, 0.94), rgba(8, 14, 22, 0.9)) !important;
   box-shadow: 0 22px 46px rgba(2, 6, 23, 0.2);
@@ -1168,15 +1169,14 @@ select:hover,
 
 .profile-identity {
   left: 28px !important;
+  overflow: visible !important;
 }
 
 .profile-identity > div:last-child {
   width: fit-content;
   max-width: calc(100% - 88px);
   padding: 10px 16px;
-  border-left: 2px solid var(--accent);
-  background: rgba(4, 9, 15, 0.58);
-  backdrop-filter: blur(8px);
+  overflow: visible !important;
 }
 
 .profile-main-body {

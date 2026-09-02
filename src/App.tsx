@@ -6461,7 +6461,7 @@ export default function App() {
         setView("login")
       } else if (isLegacyAuthEmail(session.user.email) && _event !== "USER_UPDATED") {
         setView("link_email")
-      } else if (!currentUserRef.current || currentUserRef.current.id !== session.user.id) {
+      } else if (_event !== "USER_UPDATED" && (!currentUserRef.current || currentUserRef.current.id !== session.user.id)) {
         void hydrateSession(session.user.id).catch((sessionError) => {
           console.error("Could not load Supabase profile", sessionError)
         })

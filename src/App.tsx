@@ -6002,7 +6002,8 @@ export default function App() {
   const [storeProducts, setStoreProducts] = useState<StoreProduct[]>([])
   const [redemptions, setRedemptions] = useState<StoreRedemption[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
-  const [view, setView] = useState<View>(initialRouteRef.current.view === "forum" ? "login" : initialRouteRef.current.view)
+  const recoveryLinkOpen = window.location.hash.includes("type=recovery") || window.location.search.includes("reset-password=1")
+  const [view, setView] = useState<View>(recoveryLinkOpen ? "reset_password" : initialRouteRef.current.view === "forum" ? "login" : initialRouteRef.current.view)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [selectedThread, setSelectedThread] = useState<string>(initialRouteRef.current.threadId || "")
   const [selectedProfileId, setSelectedProfileId] = useState<string>(initialRouteRef.current.profileId || "")
@@ -6436,7 +6437,7 @@ export default function App() {
     const restoreSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
-        const isPasswordRecovery = window.location.hash.includes("type=recovery") || window.location.search.includes("reset-password=1")
+        const isPasswordRecovery = recoveryLinkOpen
         if (session && mounted) {
           if (isPasswordRecovery) {
             passwordRecoveryPendingRef.current = true
@@ -6462,7 +6463,7 @@ export default function App() {
         setView("reset_password")
         return
       }
-      if (window.location.hash.includes("type=recovery") || window.location.search.includes("reset-password=1")) {
+      if (recoveryLinkOpen) {
         passwordRecoveryPendingRef.current = true
         setView("reset_password")
         return
@@ -6610,7 +6611,8 @@ export default function App() {
   }
 
   async function handleForgotPassword(email: string) {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin })
+    const redirectTo = `${window.location.origin}/?reset-password=1`
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
     if (error) throw new Error(error.message)
   }
 
@@ -6618,6 +6620,7 @@ export default function App() {
     const { error } = await supabase.auth.updateUser({ password })
     if (error) throw new Error(error.message)
     passwordRecoveryPendingRef.current = false
+    window.history.replaceState({}, document.title, window.location.origin)
     await supabase.auth.signOut()
     setView("login")
   }

@@ -6556,6 +6556,10 @@ export default function App() {
       throw new Error(error.message)
     }
 
+    if (authData.user && authData.user.identities?.length === 0) {
+      throw new Error("Este Gmail ya está en uso. Inicia sesión o recupera tu contraseña.")
+    }
+
     if (authData.session?.user?.id) {
       pendingVerificationTypeRef.current = null
       setView("forum")

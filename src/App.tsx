@@ -6548,7 +6548,13 @@ export default function App() {
       password,
       options: { data: { username }, emailRedirectTo: window.location.origin },
     })
-    if (error) throw new Error(error.message)
+    if (error) {
+      const errorDetails = `${error.code || ""} ${error.message}`.toLowerCase()
+      if (errorDetails.includes("already registered") || errorDetails.includes("already exists") || errorDetails.includes("user_already_exists") || errorDetails.includes("email_exists")) {
+        throw new Error("Este Gmail ya está en uso. Inicia sesión o recupera tu contraseña.")
+      }
+      throw new Error(error.message)
+    }
 
     if (authData.session?.user?.id) {
       pendingVerificationTypeRef.current = null

@@ -59,6 +59,12 @@ interface User {
   badges?: BadgeType[]
 }
 
+interface ProfileVisit {
+  id: string
+  visitorId: string
+  visitedAt: string
+}
+
 interface StoreProduct {
   id: string
   title: string
@@ -1625,7 +1631,6 @@ function LoginView({
             <p>El mundo cambió. Las historias que quedan se escriben aquí.</p>
             <div className="login-brief-line">
               <span />
-              <small>COMUNIDAD DE USUARIOS</small>
             </div>
           </div>
 
@@ -1663,15 +1668,15 @@ function LoginView({
 
             <form onSubmit={handleSubmit}>
               <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>Correo electrónico</label>
+                <label style={labelStyle}>Correo electrónico o nombre de personaje</label>
                 <input
                   className="login-input"
                   style={inputStyle}
                   value={characterName}
                   onChange={(e) => setCharacterName(e.target.value)}
-                  type="email"
-                  placeholder="tu@gmail.com"
-                  autoComplete="email"
+                  type="text"
+                  placeholder="tu@gmail.com o Tynek"
+                  autoComplete="username"
                   autoFocus
                 />
               </div>
@@ -1715,6 +1720,14 @@ function LoginView({
                 Registrarse
               </button>
             </div>
+            <a
+              href="https://discord.gg/jFy8fkXymk"
+              target="_blank"
+              rel="noreferrer"
+              style={{ display: "block", marginTop: 18, color: "#7289da", fontSize: 12, textAlign: "center", textDecoration: "none", fontWeight: 600 }}
+            >
+              UNIRTE AL DISCORD
+            </a>
           </div>
         </div>
       </div>
@@ -2302,6 +2315,7 @@ function Header({
   onOpenControl: () => void
 }) {
   const [showLogoutModal, setShowLogoutModal] = useState(false)
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true)
   const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null)
   const isStaff = currentUser.role !== "user"
   const notifications = currentUser.notifications || []
@@ -2328,6 +2342,19 @@ function Header({
     return () => window.clearInterval(refreshTimer)
   }, [onRefreshNotifications])
 
+  useEffect(() => {
+    const handleScroll = (event?: Event) => {
+      const scrollTarget = event?.target instanceof HTMLElement ? event.target : null
+      const currentScrollY = scrollTarget?.scrollTop ?? Math.max(window.scrollY, document.documentElement.scrollTop)
+      const isAtPageTop = window.scrollY <= 8 && document.documentElement.scrollTop <= 8
+      setIsHeaderVisible(isAtPageTop || currentScrollY <= 8)
+    }
+
+    handleScroll()
+    window.addEventListener("scroll", handleScroll, { capture: true, passive: true })
+    return () => window.removeEventListener("scroll", handleScroll, true)
+  }, [])
+
   return (
     <>
       {showLogoutModal && (
@@ -2346,6 +2373,8 @@ function Header({
           top: 0,
           zIndex: 100,
           boxShadow: "0 14px 36px rgba(2, 6, 23, 0.22)",
+          transform: isHeaderVisible ? "translateY(0)" : "translateY(-110%)",
+          transition: "transform 0.24s ease",
         }}
       >
         <button onClick={() => setView("forum")} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center" }}>
@@ -3367,7 +3396,7 @@ function ForumView({
         <div className="forum-hero-stats">
           <div><strong>{threads.length}</strong><span>HILOS ABIERTOS</span></div>
           <div><strong>{totalMessages}</strong><span>MENSAJES</span></div>
-          <div><strong>{users.length}</strong><span>SUPERVIVIENTES</span></div>
+          <div><strong>{users.length}</strong><span>USUARIOS</span></div>
         </div>
       </section>
       <div className="forum-layout">
@@ -3713,6 +3742,7 @@ function ProfileView({
   threads,
   selectedUserId,
   onSaveProfile,
+  onOpenProfile,
   onBack,
 }: {
   currentUser: User
@@ -3720,6 +3750,7 @@ function ProfileView({
   threads: Thread[]
   selectedUserId: string
   onSaveProfile: (userId: string, updates: ProfileUpdates) => Promise<void>
+  onOpenProfile: (user: User) => void
   onBack: () => void
 }) {
   const selectedUser = users.find((u) => u.id === selectedUserId) || currentUser
@@ -3733,6 +3764,7 @@ function ProfileView({
   const [profileSaveMessage, setProfileSaveMessage] = useState("")
   const [isVerified, setIsVerified] = useState(false)
   const [userBadges, setUserBadges] = useState<BadgeType[]>([])
+  const [profileVisits, setProfileVisits] = useState<ProfileVisit[]>([])
   const avatarFileRef = useRef<File | null>(null)
   const bannerFileRef = useRef<File | null>(null)
 
@@ -3760,6 +3792,24 @@ function ProfileView({
     })
     return () => { mounted = false }
   }, [selectedUser.id, selectedUser, threads, users])
+
+  useEffect(() => {
+    let mounted = true
+
+    async function loadProfileVisits() {
+      if (!isOwnProfile) {
+        await supabase.from("profile_visits").upsert(
+          { profile_id: selectedUser.id, visitor_id: currentUser.id, visited_at: new Date().toISOString() },
+          { onConflict: "profile_id,visitor_id" },
+        )
+      }
+      const { data } = await supabase.from("profile_visits").select("id, visitor_id, visited_at").eq("profile_id", selectedUser.id).order("visited_at", { ascending: false }).limit(20)
+      if (mounted) setProfileVisits((data || []).map((visit) => ({ id: visit.id, visitorId: visit.visitor_id, visitedAt: visit.visited_at })))
+    }
+
+    void loadProfileVisits()
+    return () => { mounted = false }
+  }, [currentUser.id, isOwnProfile, selectedUser.id])
 
   const bannerBackground = bannerUrl && bannerUrl !== DEFAULT_BANNER_URL
     ? `url(${bannerUrl}) center/cover no-repeat`
@@ -3894,6 +3944,21 @@ function ProfileView({
             {canSeeRolePointDetails && redeemedRolePoints > 0 && <div className="profile-points-used"><span>Utilizados</span><strong>{redeemedRolePoints}</strong></div>}
           </aside>
         </div>
+        {
+          <section style={{ margin: "0 22px 18px", padding: "12px 14px", background: "rgba(2,6,23,0.28)", border: "1px solid var(--border)", borderRadius: 8 }}>
+            <div className="profile-section-heading" style={{ marginBottom: 6 }}><span>Últimos visitantes</span><small>{profileVisits.length}</small></div>
+            {profileVisits.length === 0 ? (
+              <div style={{ color: "var(--text-dim)", fontSize: 13 }}>Todavía no hay visitas a tu perfil.</div>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, overflowX: "auto", paddingBottom: 2 }}>
+                {profileVisits.map((visit) => {
+                  const visitor = users.find((user) => user.id === visit.visitorId)
+                  return <span key={visit.id} style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0, color: "var(--text-muted)", fontSize: 11 }}><button type="button" onClick={() => visitor && onOpenProfile(visitor)} style={{ padding: 0, border: 0, background: "transparent", color: visitor?.role === "admin" ? "#fbbf24" : "var(--text)", cursor: visitor ? "pointer" : "default", fontWeight: 700 }}>{visitor?.username || "Usuario"}</button><time style={{ color: "var(--text-dim)" }}>({new Date(visit.visitedAt).toLocaleString("es-AR")})</time></span>
+                })}
+              </div>
+            )}
+          </section>
+        }
       </section>
     </div>
   )
@@ -3906,12 +3971,34 @@ function MembersView({ users, onOpenProfile, onLoadMemberAvatars, onBack }: {
   onBack: () => void
 }) {
   const [search, setSearch] = useState("")
-  const [page, setPage] = useState(1)
+  const getPageFromUrl = () => {
+    const value = Number(new URLSearchParams(window.location.search).get("pagina"))
+    return Number.isInteger(value) && value > 0 ? value : 1
+  }
+  const [page, setPage] = useState(getPageFromUrl)
   const filteredUsers = users.filter((user) => user.username.toLowerCase().includes(search.toLowerCase()))
   const pageSize = 10
   const pageCount = Math.max(1, Math.ceil(filteredUsers.length / pageSize))
   const visibleUsers = filteredUsers.slice((page - 1) * pageSize, page * pageSize)
   const loadedAvatarIdsRef = useRef(new Set<string>())
+
+  useEffect(() => {
+    const nextPage = Math.min(page, pageCount)
+    if (nextPage !== page) {
+      setPage(nextPage)
+      return
+    }
+    const nextUrl = `/miembros${page > 1 ? `?pagina=${page}` : ""}`
+    if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
+      window.history.pushState({}, "", nextUrl)
+    }
+  }, [page, pageCount])
+
+  useEffect(() => {
+    const handlePopState = () => setPage(getPageFromUrl())
+    window.addEventListener("popstate", handlePopState)
+    return () => window.removeEventListener("popstate", handlePopState)
+  }, [])
 
   useEffect(() => {
     const usersWithoutAvatars = visibleUsers.filter((user) => !user.avatarUrl && !loadedAvatarIdsRef.current.has(user.id)).map((user) => user.id)
@@ -7339,6 +7426,7 @@ export default function App() {
           threads={threads}
           selectedUserId={selectedProfileId || currentUser.id}
           onSaveProfile={handleSaveProfile}
+          onOpenProfile={handleOpenProfile}
           onBack={handleGoBack}
         />
       )}

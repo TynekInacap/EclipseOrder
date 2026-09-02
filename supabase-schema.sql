@@ -130,6 +130,19 @@ create table public.notifications (
   created_at timestamptz not null default timezone('utc', now())
 );
 
+create table if not exists public.profile_visits (
+  id uuid primary key default gen_random_uuid(),
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  visitor_id uuid not null references public.profiles(id) on delete cascade,
+  visited_at timestamptz not null default timezone('utc', now())
+);
+
+create index if not exists profile_visits_profile_visited_idx
+  on public.profile_visits (profile_id, visited_at desc);
+
+create unique index if not exists profile_visits_profile_visitor_unique_idx
+  on public.profile_visits (profile_id, visitor_id);
+
 create table if not exists public.store_redemptions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
@@ -367,6 +380,7 @@ alter table public.thread_attachments enable row level security;
 alter table public.replies enable row level security;
 alter table public.reply_attachments enable row level security;
 alter table public.notifications enable row level security;
+alter table public.profile_visits enable row level security;
 alter table public.thread_views enable row level security;
 alter table public.server_status enable row level security;
 alter table public.server_players enable row level security;
@@ -452,6 +466,28 @@ with check (bucket_id = 'profile-media');
 create policy "Profiles are publicly readable"
 on public.profiles for select
 using (true);
+
+drop policy if exists "Users can read visits to their profile"
+on public.profile_visits;
+
+drop policy if exists "Everyone can read profile visits"
+on public.profile_visits;
+
+drop policy if exists "Users can update their profile visit"
+on public.profile_visits;
+
+create policy "Everyone can read profile visits"
+on public.profile_visits for select
+using (true);
+
+create policy "Users can update their profile visit"
+on public.profile_visits for update
+using (auth.uid() = visitor_id)
+with check (auth.uid() = visitor_id and profile_id <> visitor_id);
+
+create policy "Users can register profile visits"
+on public.profile_visits for insert
+with check (auth.uid() = visitor_id and profile_id <> visitor_id);
 
 create policy "Users can update their own profile"
 on public.profiles for update

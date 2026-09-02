@@ -1833,15 +1833,15 @@ function RegisterView({
                 </p>
               </div>
               <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>Contraseña</label>
-                <input className="login-input" style={inputStyle} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres" />
-              </div>
-              <div style={{ marginBottom: 16 }}>
                 <label style={labelStyle}>Gmail</label>
                 <input className="login-input" style={inputStyle} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@gmail.com" autoComplete="email" />
                 <p style={{ margin: "5px 0 0", fontSize: 11, color: "var(--text-dim)" }}>
                   Recibirás un código de 6 dígitos para verificar que el Gmail es tuyo.
                 </p>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Contraseña</label>
+                <input className="login-input" style={inputStyle} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres" />
               </div>
               <div style={{ marginBottom: 28 }}>
                 <label style={labelStyle}>Confirmar contraseña</label>

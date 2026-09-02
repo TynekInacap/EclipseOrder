@@ -22,7 +22,7 @@ async function uploadImage() {
     console.log(`Uploading ${fileName} to Supabase Storage...`);
 
     const { data, error } = await supabase.storage
-      .from("profile-media")
+      .from("publico")
       .upload(fileName, fileBuffer, {
         contentType: "image/png",
         upsert: true,
@@ -34,7 +34,7 @@ async function uploadImage() {
     }
 
     const { data: publicUrl } = supabase.storage
-      .from("profile-media")
+      .from("publico")
       .getPublicUrl(fileName);
 
     console.log("Upload successful!");

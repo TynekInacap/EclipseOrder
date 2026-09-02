@@ -4093,7 +4093,7 @@ function VerificationView({ currentUser, onBack }: { currentUser: User; onBack: 
         <div className="profile-page-mark">VERIFICACIÓN</div>
       </div>
       <figure style={{ margin: "0 0 18px", padding: 12, background: "rgba(15,23,32,0.7)", border: "1px solid var(--border)", borderRadius: 8 }}>
-        <img src="/server-guide.png" alt="Pantalla del servidor donde aparece resaltado el nombre de la cuenta" style={{ display: "block", width: "100%", height: "auto", borderRadius: 4 }} />
+        <img src="https://axdkcuqpwlzxltyfroxo.supabase.co/storage/v1/object/public/publico/server-guide.png" alt="Pantalla del servidor donde aparece resaltado el nombre de la cuenta" style={{ display: "block", width: "100%", height: "auto", borderRadius: 4 }} />
         <figcaption style={{ marginTop: 8, color: "var(--text-dim)", fontSize: 12 }}>Usá el nombre resaltado de tu cuenta, no el nombre del personaje.</figcaption>
       </figure>
       <PlayerLinkRequestCard userId={currentUser.id} />

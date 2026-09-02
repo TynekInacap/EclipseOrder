@@ -6013,6 +6013,7 @@ export default function App() {
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState("")
   const [pendingVerificationType, setPendingVerificationType] = useState<"signup" | "email_change">("signup")
   const pendingVerificationTypeRef = useRef<"signup" | "email_change" | null>(null)
+  const passwordRecoveryPendingRef = useRef(false)
   const [showWelcome, setShowWelcome] = useState(false)
     const [operationMessage, setOperationMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -6437,7 +6438,10 @@ export default function App() {
         const { data: { session } } = await supabase.auth.getSession()
         const isPasswordRecovery = window.location.hash.includes("type=recovery")
         if (session && mounted) {
-          if (isPasswordRecovery) setView("reset_password")
+          if (isPasswordRecovery) {
+            passwordRecoveryPendingRef.current = true
+            setView("reset_password")
+          }
           else if (isLegacyAuthEmail(session.user.email)) {
             await supabase.auth.signOut()
           }
@@ -6454,9 +6458,11 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!mounted) return
       if (_event === "PASSWORD_RECOVERY") {
+        passwordRecoveryPendingRef.current = true
         setView("reset_password")
         return
       }
+      if (passwordRecoveryPendingRef.current) return
       if (!session) {
         setCurrentUser(null)
         setUsers([])
@@ -6606,6 +6612,7 @@ export default function App() {
   async function handleResetPassword(password: string) {
     const { error } = await supabase.auth.updateUser({ password })
     if (error) throw new Error(error.message)
+    passwordRecoveryPendingRef.current = false
     await supabase.auth.signOut()
     setView("login")
   }

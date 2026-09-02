@@ -1655,13 +1655,15 @@ function LoginView({
 
             <form onSubmit={handleSubmit}>
               <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>Nombre de personaje, usuario o Gmail</label>
+                <label style={labelStyle}>Correo electrónico</label>
                 <input
                   className="login-input"
                   style={inputStyle}
                   value={characterName}
                   onChange={(e) => setCharacterName(e.target.value)}
-                  placeholder="Nombre de personaje, usuario o Gmail"
+                  type="email"
+                  placeholder="tu@gmail.com"
+                  autoComplete="email"
                   autoFocus
                 />
               </div>

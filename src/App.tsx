@@ -1880,8 +1880,8 @@ function VerifyEmailView({
     event.preventDefault()
     setError("")
     setMessage("")
-    if (!/^\d{6}$/.test(code)) {
-      setError("Introduce el código de 6 dígitos recibido en tu Gmail.")
+    if (!/^\d{8}$/.test(code)) {
+      setError("Introduce el código de 8 dígitos recibido en tu Gmail.")
       return
     }
     try {
@@ -1909,7 +1909,7 @@ function VerifyEmailView({
           <div className="login-panel-heading"><span className="login-eyebrow">VERIFICACIÓN DE CUENTA</span><h2>REVISA TU GMAIL</h2><p className="login-subtitle">Hemos enviado un código a {email}.</p></div>
           {(error || message) && <div style={{ background: error ? "#c0392b18" : "rgba(16,185,129,0.12)", border: `1px solid ${error ? "#c0392b55" : "rgba(16,185,129,0.5)"}`, borderRadius: 4, padding: "10px 14px", color: error ? "#e74c3c" : "#6ee7b7", fontSize: 13, marginBottom: 20 }}>{error || message}</div>}
           <form onSubmit={handleSubmit}>
-            <div style={{ marginBottom: 24 }}><label style={labelStyle}>Código de verificación</label><input className="login-input" style={{ ...inputStyle, letterSpacing: "0.3em", textAlign: "center" }} inputMode="numeric" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} placeholder="000000" autoFocus /></div>
+            <div style={{ marginBottom: 24 }}><label style={labelStyle}>Código de verificación</label><input className="login-input" style={{ ...inputStyle, letterSpacing: "0.3em", textAlign: "center" }} inputMode="numeric" maxLength={8} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} placeholder="00000000" autoFocus /></div>
             <button type="submit" className="login-submit" style={primaryBtn}>VERIFICAR CUENTA</button>
           </form>
           <button type="button" onClick={() => void handleResend()} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "block", fontSize: 12, margin: "22px auto 0", padding: 0, textDecoration: "underline" }}>Reenviar código</button>

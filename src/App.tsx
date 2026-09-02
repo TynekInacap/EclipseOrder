@@ -6503,6 +6503,7 @@ export default function App() {
   }, [currentUser])
 
   async function handleLogin(characterName: string, password: string) {
+    const loginInput = characterName.trim()
     let loginName = characterName
     const { data: forumProfile, error: profileLookupError } = await supabase
       .from("profiles")
@@ -6523,7 +6524,7 @@ export default function App() {
     }
 
     const { data: authData, error } = await supabase.auth.signInWithPassword({
-      email: authEmailForCharacter(loginName),
+      email: loginInput.includes("@") ? loginInput : authEmailForCharacter(loginName),
       password,
     })
     if (error) throw new Error(error.message)

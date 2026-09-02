@@ -6462,6 +6462,11 @@ export default function App() {
         setView("reset_password")
         return
       }
+      if (window.location.hash.includes("type=recovery") || window.location.search.includes("reset-password=1")) {
+        passwordRecoveryPendingRef.current = true
+        setView("reset_password")
+        return
+      }
       if (passwordRecoveryPendingRef.current) return
       if (!session) {
         setCurrentUser(null)

@@ -369,6 +369,10 @@ type NavigationSnapshot = RouteState & {
 function routeFromLocation(): RouteState {
   const segments = window.location.pathname.split("/").filter(Boolean).map((segment) => decodeURIComponent(segment))
 
+  if (segments[0] === "ingresar") return { view: "login" }
+  if (segments[0] === "registro") return { view: "register" }
+  if (segments[0] === "recuperar") return { view: "forgot_password" }
+  if (segments[0] === "restablecer") return { view: "reset_password" }
   if (segments[0] === "servidor") return { view: "server" }
   if (segments[0] === "miembros") return { view: "members" }
   if (segments[0] === "tienda") return { view: "store" }
@@ -397,6 +401,10 @@ function routeFromLocation(): RouteState {
 }
 
 function pathFromState(view: View, profileId: string, threadId: string, category: Category, reportStatus: ThreadStatus, factionSubforum: ThreadSubforum) {
+  if (view === "login") return "/ingresar"
+  if (view === "register") return "/registro"
+  if (view === "forgot_password") return "/recuperar"
+  if (view === "reset_password") return "/restablecer"
   if (view === "profile" && profileId) return `/perfil/${encodeURIComponent(profileId)}`
   if (view === "server") return "/servidor"
   if (view === "members") return "/miembros"

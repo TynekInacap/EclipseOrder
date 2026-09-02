@@ -233,7 +233,9 @@ function persistDraft<T>(key: string, value: T | null) {
 
 function MarkdownText({ content, inline = false }: { content: string; inline?: boolean }) {
   const normalizedContent = content.replace(/:::\s*(left|center|right)\s*\n([\s\S]*?)\n:::/g, '<div class="markdown-align-$1">\n$2\n</div>')
-  const html = DOMPurify.sanitize(marked.parse(normalizedContent, { async: false, breaks: true, gfm: true }) as string)
+  const html = DOMPurify.sanitize(marked.parse(normalizedContent, { async: false, breaks: true, gfm: true }) as string, {
+    ADD_DATA_URI_TAGS: ["img"],
+  })
 
   if (inline) {
     const inlineHtml = DOMPurify.sanitize(marked.parseInline(content, { async: false, breaks: true, gfm: true }) as string)
@@ -6344,7 +6346,8 @@ export default function App() {
         if (route.category) setSelectedCategory(route.category)
         if (route.reportStatus) setSelectedReportStatus(route.reportStatus)
         if (route.factionSubforum) setSelectedFactionSubforum(route.factionSubforum)
-        setView(route.view === "forum" ? "forum" : route.view)
+        const isAuthRoute = route.view === "login" || route.view === "register" || route.view === "forgot_password" || route.view === "reset_password" || route.view === "verify_email" || route.view === "link_email"
+        setView(isAuthRoute ? "forum" : route.view)
       }
     } finally {
       if (hydratingUserIdRef.current === userId) hydratingUserIdRef.current = null

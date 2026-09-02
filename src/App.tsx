@@ -1974,6 +1974,7 @@ function VerifyEmailView({
 
   async function handleResend() {
     setError("")
+    setMessage("")
     try {
       await onResend()
       setMessage("Hemos enviado un código nuevo a tu Gmail.")
@@ -6539,7 +6540,7 @@ export default function App() {
     const { data: authData, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { username } },
+      options: { data: { username }, emailRedirectTo: window.location.origin },
     })
     if (error) throw new Error(error.message)
 
@@ -6567,7 +6568,7 @@ export default function App() {
   }
 
   async function handleRequestLegacyEmail(email: string) {
-    const { error } = await supabase.auth.updateUser({ email })
+    const { error } = await supabase.auth.updateUser({ email }, { emailRedirectTo: window.location.origin })
     if (error) throw new Error(error.message)
     setPendingVerificationEmail(email)
     setPendingVerificationType("email_change")

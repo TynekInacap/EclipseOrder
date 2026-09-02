@@ -6610,8 +6610,7 @@ export default function App() {
   }
 
   async function handleForgotPassword(email: string) {
-    const redirectTo = `${window.location.origin}/?reset-password=1`
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin })
     if (error) throw new Error(error.message)
   }
 

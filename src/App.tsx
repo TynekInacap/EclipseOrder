@@ -6010,6 +6010,7 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false)
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState("")
   const [pendingVerificationType, setPendingVerificationType] = useState<"signup" | "email_change">("signup")
+  const pendingVerificationTypeRef = useRef<"signup" | "email_change" | null>(null)
   const [showWelcome, setShowWelcome] = useState(false)
     const [operationMessage, setOperationMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -6459,6 +6460,8 @@ export default function App() {
         setUsers([])
         setThreads([])
         setView("login")
+      } else if (pendingVerificationTypeRef.current === "email_change") {
+        return
       } else if (isLegacyAuthEmail(session.user.email) && _event !== "USER_UPDATED") {
         setView("link_email")
       } else if (_event !== "USER_UPDATED" && (!currentUserRef.current || currentUserRef.current.id !== session.user.id)) {
@@ -6545,9 +6548,11 @@ export default function App() {
     if (error) throw new Error(error.message)
 
     if (authData.session?.user?.id) {
+      pendingVerificationTypeRef.current = null
       setView("forum")
       await hydrateSession(authData.session.user.id)
     } else {
+      pendingVerificationTypeRef.current = "signup"
       setPendingVerificationEmail(email)
       setPendingVerificationType("signup")
       setView("verify_email")
@@ -6558,6 +6563,7 @@ export default function App() {
     const { data, error } = await supabase.auth.verifyOtp({ email: pendingVerificationEmail, token: code, type: pendingVerificationType })
     if (error) throw new Error(error.message)
     if (!data.user) throw new Error("No se pudo verificar la cuenta.")
+    pendingVerificationTypeRef.current = null
     setView("forum")
     await hydrateSession(data.user.id)
   }
@@ -6568,8 +6574,12 @@ export default function App() {
   }
 
   async function handleRequestLegacyEmail(email: string) {
+    pendingVerificationTypeRef.current = "email_change"
     const { error } = await supabase.auth.updateUser({ email }, { emailRedirectTo: window.location.origin })
-    if (error) throw new Error(error.message)
+    if (error) {
+      pendingVerificationTypeRef.current = null
+      throw new Error(error.message)
+    }
     setPendingVerificationEmail(email)
     setPendingVerificationType("email_change")
     setView("verify_email")

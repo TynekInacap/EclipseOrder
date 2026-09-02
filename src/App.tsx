@@ -336,6 +336,7 @@ type View =
   | "verify_email"
   | "forgot_password"
   | "reset_password"
+  | "link_email"
   | "forum"
   | "members"
   | "server"
@@ -948,6 +949,10 @@ function uid() {
 function authEmailForCharacter(name: string) {
   const slug = name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
   return `${slug || "personaje"}@eclipse-order.local`
+}
+
+function isLegacyAuthEmail(email: string | undefined) {
+  return Boolean(email?.toLowerCase().endsWith("@eclipse-order.local"))
 }
 
 function roleLabel(role: Role) {
@@ -1662,14 +1667,7 @@ function LoginView({
               </div>
               <div style={{ marginBottom: 24 }}>
                 <label style={labelStyle}>Contraseña</label>
-                <input
-                  className="login-input"
-                  style={inputStyle}
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                />
+                <input className="login-input" style={inputStyle} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" />
               </div>
               <button type="submit" className="login-submit" style={primaryBtn}>
                 ENTRAR AL FORO
@@ -1919,7 +1917,7 @@ function RegisterView({
                 <label style={labelStyle}>Gmail</label>
                 <input className="login-input" style={inputStyle} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@gmail.com" autoComplete="email" />
                 <p style={{ margin: "5px 0 0", fontSize: 11, color: "var(--text-dim)" }}>
-                  Recibirás un código de 6 dígitos para verificar que el Gmail es tuyo.
+                  Recibirás un código de 8 dígitos para verificar que el Gmail es tuyo.
                 </p>
               </div>
               <div style={{ marginBottom: 16 }}>
@@ -1996,6 +1994,41 @@ function VerifyEmailView({
             <button type="submit" className="login-submit" style={primaryBtn}>VERIFICAR CUENTA</button>
           </form>
           <button type="button" onClick={() => void handleResend()} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "block", fontSize: 12, margin: "22px auto 0", padding: 0, textDecoration: "underline" }}>Reenviar código</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LinkEmailView({ onRequest }: { onRequest: (email: string) => Promise<void> }) {
+  const [email, setEmail] = useState("")
+  const [error, setError] = useState("")
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    setError("")
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      setError("Indica un Gmail válido.")
+      return
+    }
+    try {
+      await onRequest(email.trim())
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "No se pudo enviar el código.")
+    }
+  }
+
+  return (
+    <div className="login-shell" style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 16px", backgroundImage: "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(192,57,43,0.12) 0%, transparent 60%)" }}>
+      <div className="login-content" style={{ width: "100%", maxWidth: 520 }}>
+        <div className="login-brand" style={{ textAlign: "center", marginBottom: 40 }}><Logo /><div className="login-brand-line"><span /><small>COMUNIDAD DE PROJECT ZOMBOID</small><span /></div></div>
+        <div className="login-panel" style={{ background: "linear-gradient(180deg, var(--surface), var(--surface2))", border: "1px solid var(--border)", borderRadius: 24, padding: "32px 28px", boxShadow: "0 30px 60px rgba(2, 6, 23, 0.32)" }}>
+          <div className="login-panel-heading"><span className="login-eyebrow">ACTUALIZACIÓN DE SEGURIDAD</span><h2>CONFIRMA TU GMAIL</h2><p className="login-subtitle">Para continuar, añade un Gmail real a tu cuenta.</p></div>
+          {error && <div style={{ background: "#c0392b18", border: "1px solid #c0392b55", borderRadius: 4, padding: "10px 14px", color: "#e74c3c", fontSize: 13, marginBottom: 20 }}>{error}</div>}
+          <form onSubmit={handleSubmit}>
+            <div style={{ marginBottom: 24 }}><label style={labelStyle}>Gmail</label><input className="login-input" style={inputStyle} type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tu@gmail.com" autoComplete="email" required autoFocus /></div>
+            <button type="submit" className="login-submit" style={primaryBtn}>ENVIAR CÓDIGO</button>
+          </form>
         </div>
       </div>
     </div>
@@ -5975,6 +6008,7 @@ export default function App() {
   const [selectedFactionSubforum, setSelectedFactionSubforum] = useState<ThreadSubforum>(initialRouteRef.current.factionSubforum || "no_oficial")
   const [authReady, setAuthReady] = useState(false)
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState("")
+  const [pendingVerificationType, setPendingVerificationType] = useState<"signup" | "email_change">("signup")
   const [showWelcome, setShowWelcome] = useState(false)
     const [operationMessage, setOperationMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -6400,6 +6434,9 @@ export default function App() {
         const isPasswordRecovery = window.location.hash.includes("type=recovery")
         if (session && mounted) {
           if (isPasswordRecovery) setView("reset_password")
+          else if (isLegacyAuthEmail(session.user.email)) {
+            await supabase.auth.signOut()
+          }
           else await hydrateSession(session.user.id)
         }
       } catch (sessionError) {
@@ -6421,6 +6458,8 @@ export default function App() {
         setUsers([])
         setThreads([])
         setView("login")
+      } else if (isLegacyAuthEmail(session.user.email)) {
+        setView("link_email")
       } else if (!currentUserRef.current || currentUserRef.current.id !== session.user.id) {
         void hydrateSession(session.user.id).catch((sessionError) => {
           console.error("Could not load Supabase profile", sessionError)
@@ -6461,33 +6500,35 @@ export default function App() {
 
   async function handleLogin(characterName: string, password: string) {
     let loginName = characterName
-    if (!characterName.includes("@")) {
-      const { data: forumProfile, error: profileLookupError } = await supabase
-        .from("profiles")
-        .select("id, username")
-        .eq("username", characterName)
-        .maybeSingle()
-      if (profileLookupError && profileLookupError.code !== "PGRST116") throw new Error(profileLookupError.message)
+    const { data: forumProfile, error: profileLookupError } = await supabase
+      .from("profiles")
+      .select("id, username")
+      .eq("username", characterName)
+      .maybeSingle()
+    if (profileLookupError && profileLookupError.code !== "PGRST116") throw new Error(profileLookupError.message)
 
-      if (forumProfile) {
-        const { data: verifiedLink, error: linkLookupError } = await supabase
-          .from("player_links")
-          .select("pz_username")
-          .eq("forum_user_id", forumProfile.id)
-          .eq("verified", true)
-          .maybeSingle()
-        if (linkLookupError) throw new Error(linkLookupError.message)
-        if (verifiedLink?.pz_username) loginName = verifiedLink.pz_username
-      }
+    if (forumProfile) {
+      const { data: verifiedLink, error: linkLookupError } = await supabase
+        .from("player_links")
+        .select("pz_username")
+        .eq("forum_user_id", forumProfile.id)
+        .eq("verified", true)
+        .maybeSingle()
+      if (linkLookupError) throw new Error(linkLookupError.message)
+      if (verifiedLink?.pz_username) loginName = verifiedLink.pz_username
     }
 
     const { data: authData, error } = await supabase.auth.signInWithPassword({
-      email: characterName.includes("@") ? characterName.trim() : authEmailForCharacter(loginName),
+      email: authEmailForCharacter(loginName),
       password,
     })
     if (error) throw new Error(error.message)
 
     if (authData.session?.user?.id) {
+      if (isLegacyAuthEmail(authData.session.user.email)) {
+        setView("link_email")
+        return
+      }
       setView("forum")
       await hydrateSession(authData.session.user.id)
     }
@@ -6507,12 +6548,13 @@ export default function App() {
       await hydrateSession(authData.session.user.id)
     } else {
       setPendingVerificationEmail(email)
+      setPendingVerificationType("signup")
       setView("verify_email")
     }
   }
 
   async function handleVerifyEmail(code: string) {
-    const { data, error } = await supabase.auth.verifyOtp({ email: pendingVerificationEmail, token: code, type: "signup" })
+    const { data, error } = await supabase.auth.verifyOtp({ email: pendingVerificationEmail, token: code, type: pendingVerificationType })
     if (error) throw new Error(error.message)
     if (!data.user) throw new Error("No se pudo verificar la cuenta.")
     setView("forum")
@@ -6520,8 +6562,16 @@ export default function App() {
   }
 
   async function handleResendVerification() {
-    const { error } = await supabase.auth.resend({ type: "signup", email: pendingVerificationEmail })
+    const { error } = await supabase.auth.resend({ type: pendingVerificationType === "email_change" ? "email_change" : "signup", email: pendingVerificationEmail })
     if (error) throw new Error(error.message)
+  }
+
+  async function handleRequestLegacyEmail(email: string) {
+    const { error } = await supabase.auth.updateUser({ email })
+    if (error) throw new Error(error.message)
+    setPendingVerificationEmail(email)
+    setPendingVerificationType("email_change")
+    setView("verify_email")
   }
 
   async function handleForgotPassword(email: string) {
@@ -7075,6 +7125,9 @@ export default function App() {
     }
     if (view === "verify_email") {
       return <VerifyEmailView email={pendingVerificationEmail} onVerify={handleVerifyEmail} onResend={handleResendVerification} />
+    }
+    if (view === "link_email") {
+      return <LinkEmailView onRequest={handleRequestLegacyEmail} />
     }
     if (view === "forgot_password") {
       return <ForgotPasswordView onRequest={handleForgotPassword} goLogin={() => setView("login")} />

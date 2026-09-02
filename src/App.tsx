@@ -7,7 +7,6 @@ import siteLogoImg from "@/imports/final123.png"
 import defaultBannerImg from "@/imports/default-banner.jpg"
 import eclipseGif from "@/imports/giphy.gif"
 import accountNameGuideImg from "@/imports/dasdsadasdasdsadas.png"
-import serverInterfaceImg from "@/imports/server-interface.png"
 
 const DEFAULT_BANNER_URL = defaultBannerImg
 
@@ -4093,10 +4092,6 @@ function VerificationView({ currentUser, onBack }: { currentUser: User; onBack: 
         </div>
         <div className="profile-page-mark">VERIFICACIÓN</div>
       </div>
-      <figure style={{ margin: "0 0 18px", padding: 12, background: "rgba(15,23,32,0.7)", border: "1px solid var(--border)", borderRadius: 8 }}>
-        <img src={serverInterfaceImg} alt="Interfaz del servidor EclipseOrder mostrando dónde encontrar el nombre de tu cuenta" style={{ display: "block", width: "100%", height: "auto", borderRadius: 4 }} />
-        <figcaption style={{ marginTop: 8, color: "var(--text-dim)", fontSize: 12 }}>Interfaz de referencia: busca tu nombre de cuenta en el servidor.</figcaption>
-      </figure>
       <figure style={{ margin: "0 0 18px", padding: 12, background: "rgba(15,23,32,0.7)", border: "1px solid var(--border)", borderRadius: 8 }}>
         <img src={accountNameGuideImg} alt="Pantalla del servidor donde aparece resaltado el nombre de la cuenta" style={{ display: "block", width: "100%", height: "auto", borderRadius: 4 }} />
         <figcaption style={{ marginTop: 8, color: "var(--text-dim)", fontSize: 12 }}>Usá el nombre resaltado de tu cuenta, no el nombre del personaje.</figcaption>

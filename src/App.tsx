@@ -967,7 +967,7 @@ function RoleMark({ role }: { role: Role }) {
         height: 18,
         borderRadius: 6,
         border: `1px solid ${isAdmin ? "rgba(255,204,102,0.72)" : "rgba(77,216,223,0.55)"}`,
-        background: isAdmin ? "linear-gradient(135deg, rgba(255,214,102,0.18), rgba(255,153,51,0.12))" : "rgba(77,216,223,0.12)",
+        background: isAdmin ? "linear-gradient(135deg, rgba(217,119,6,0.18), rgba(168,85,247,0.12))" : "rgba(168,85,247,0.12)",
         boxShadow: `0 0 10px ${isAdmin ? "rgba(255,194,83,0.18)" : "rgba(77,216,223,0.16)"}`,
         verticalAlign: "middle",
         overflow: "visible",
@@ -1448,7 +1448,7 @@ function Logo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
           width: imgSize,
           height: imgSize,
           borderRadius: 16,
-          background: "linear-gradient(135deg, rgba(249,115,22,0.25), rgba(14,165,233,0.22))",
+          background: "linear-gradient(135deg, rgba(168,85,247,0.25), rgba(124,58,237,0.22))",
           border: "1px solid rgba(148,163,184,0.2)",
           display: "flex",
           alignItems: "center",
@@ -1871,7 +1871,7 @@ function LogoutModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel:
           <button onClick={onCancel} style={{ flex: 1, background: "transparent", border: "1px solid var(--border2)", borderRadius: 4, color: "var(--text-muted)", cursor: "pointer", padding: "10px", fontSize: 12, fontFamily: "Oswald, sans-serif", fontWeight: 600, letterSpacing: "0.08em" }}>
             CANCELAR
           </button>
-          <button onClick={onConfirm} style={{ flex: 1, background: "linear-gradient(135deg, #c0392b 0%, #922b21 100%)", border: "none", borderRadius: 4, color: "#fff", cursor: "pointer", padding: "10px", fontSize: 12, fontFamily: "Oswald, sans-serif", fontWeight: 600, letterSpacing: "0.08em" }}>
+          <button onClick={onConfirm} style={{ flex: 1, background: "linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)", border: "none", borderRadius: 4, color: "#fff", cursor: "pointer", padding: "10px", fontSize: 12, fontFamily: "Oswald, sans-serif", fontWeight: 600, letterSpacing: "0.08em" }}>
             SÍ, SALIR
           </button>
         </div>
@@ -2232,6 +2232,13 @@ function Header({
                 <button className="header-account-logout" onClick={() => setShowLogoutModal(true)}><span>↪</span> Cerrar sesión</button>
               </div>
             </div>
+          </div>
+
+          <div className="discord-invite-wrap">
+            <a className="discord-invite-trigger" href="https://discord.gg/jFy8fkXymk" target="_blank" rel="noreferrer" aria-label="Unirte al servidor de Discord">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 5.4A16.2 16.2 0 0 0 15.7 4l-.5 1a14.8 14.8 0 0 0-6.4 0l-.5-1a16.2 16.2 0 0 0-3.8 1.4C2.1 9.2 1.4 12.9 1.7 16.5a15.7 15.7 0 0 0 4.7 2.4l1.1-1.5a9.7 9.7 0 0 1-1.7-.8l.4-.3a11.3 11.3 0 0 0 11.6 0l.4.3a10 10 0 0 1-1.7.8l1.1 1.5a15.7 15.7 0 0 0 4.7-2.4c.4-4.2-.7-7.8-2.8-11.1ZM8.5 14.2c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2Zm7 0c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2Z" /></svg>
+            </a>
+            <div className="discord-invite-card" role="tooltip">¡Únete a nuestro servidor de Discord!</div>
           </div>
 
           <div className={`header-server-presence ${serverStatus?.online ? "is-online" : ""}`} aria-label={serverStatus?.online ? `${serverStatus.player_count} jugadores conectados` : "Estado del servidor no disponible"}>
@@ -2610,7 +2617,7 @@ function CategoryView({
               onSound("success")
             }}
             style={{
-              background: "linear-gradient(135deg, rgba(249,115,22,0.2), rgba(120,53,15,0.14))",
+              background: "linear-gradient(135deg, rgba(168,85,247,0.18), rgba(88,28,135,0.12))",
               border: "1px solid rgba(249,115,22,0.35)",
               borderRadius: 10,
               color: "#fdba74",
@@ -2675,8 +2682,8 @@ function CategoryView({
         </div>
       )}
 
-      {category !== "facciones" && <main style={{ width: "100%", background: "linear-gradient(180deg, rgba(13, 20, 30, 0.96), rgba(11, 17, 25, 0.9))", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden", boxShadow: "0 20px 40px rgba(2, 6, 23, 0.18)" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px", background: "linear-gradient(90deg, rgba(17,24,39,0.9) 0%, rgba(15,23,32,0.7) 100%)", borderBottom: "1px solid var(--border)" }}>
+      {category !== "facciones" && <main style={{ width: "100%", background: "linear-gradient(180deg, rgba(18, 12, 28, 0.96), rgba(15, 9, 25, 0.9))", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden", boxShadow: "0 20px 40px rgba(2, 6, 23, 0.18)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px", background: "linear-gradient(90deg, rgba(22,16,31,0.9) 0%, rgba(18,12,28,0.7) 100%)", borderBottom: "1px solid var(--border)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
             <div style={{ width: 5, height: 18, background: color, borderRadius: 999, boxShadow: `0 0 18px ${color}` }} />
             <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 18, letterSpacing: "0.08em", color: "var(--text)" }}>
@@ -3149,19 +3156,24 @@ function ForumView({
     return () => { mounted = false }
   }, [currentUser.id])
 
+  const totalMessages = threads.reduce((total, thread) => total + threadReplyCount(thread), 0)
+  const sortedThreads = [...threads].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  const recentThreads = sortedThreads.slice(0, 3)
+
   return (
-    <div className="forum-shell" style={{ maxWidth: 1360, margin: "0 auto", padding: "18px 14px 40px" }}>
-      <div className="forum-hero">
-        <div>
-          <span className="forum-hero-kicker">ECLIPSE ORDER</span>
-          <p>Comparte información, historias y decisiones que mantienen viva la comunidad.</p>
+    <div className="forum-shell forum-redesign">
+      <section className="forum-hero">
+        <div className="forum-hero-copy">
+          <span className="forum-hero-kicker">ECLIPSE ORDER / COMUNIDAD RP</span>
+          <h1>Eclipse Order<br /><em>Historias, rol y comunidad</em></h1>
+          <p>Tu historia comienza aquí.</p>
         </div>
         <div className="forum-hero-stats">
-          <div><strong>{threads.length}</strong><span>hilos</span></div>
-          <div><strong>{threads.reduce((total, thread) => total + threadReplyCount(thread), 0)}</strong><span>mensajes</span></div>
-          <div><strong>{users.length}</strong><span>miembros</span></div>
+          <div><strong>{threads.length}</strong><span>HILOS ABIERTOS</span></div>
+          <div><strong>{totalMessages}</strong><span>MENSAJES</span></div>
+          <div><strong>{users.length}</strong><span>SUPERVIVIENTES</span></div>
         </div>
-      </div>
+      </section>
       <div className="forum-layout">
         {isAccountVerified && !isVerificationNoticeDismissed ? (
           <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 10, margin: "0 0 14px", padding: "10px 16px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.55)", borderRadius: 6, color: "#6ee7b7", fontSize: 13 }}>
@@ -3180,9 +3192,7 @@ function ForumView({
         ) : null}
         <main className="forum-directory">
           <div className="forum-directory-heading">
-            <div>
-              <h2>Explora el foro</h2>
-            </div>
+            <div><h2>Explora el foro</h2></div>
           </div>
           <div className="forum-groups">
             {FORUM_CATEGORY_GROUPS.map((group) => (
@@ -3215,7 +3225,7 @@ function ForumView({
                           onSound("select")
                         }}
                         style={{
-                          background: isActive ? `linear-gradient(135deg, ${c}22, rgba(15, 23, 32, 0.9))` : "rgba(15, 23, 32, 0.35)",
+                          background: isActive ? `linear-gradient(135deg, ${c}22, rgba(18, 12, 28, 0.9))` : "rgba(18, 12, 28, 0.35)",
                           border: `1px solid ${isActive ? c : "var(--border)"}`,
                           borderRadius: 10,
                           padding: "15px 16px",
@@ -3249,6 +3259,30 @@ function ForumView({
             ))}
           </div>
         </main>
+        <aside className="forum-side-rail">
+          <section className="forum-side-panel forum-welcome-panel">
+            <span className="forum-section-kicker">PARTICIPACIÓN COMUNITARIA</span>
+            <h2>Tu participación importa.</h2>
+            <p>Consulta las publicaciones recientes, comparte un reporte o presenta tu historia.</p>
+            <button type="button" onClick={() => { setView("forum"); onOpenCategory("historias"); onSound("click") }}>ABRIR HISTORIAS <span>↗</span></button>
+          </section>
+          <section className="forum-side-panel forum-recent-panel">
+            <div className="forum-side-heading"><span className="forum-section-kicker">PUBLICACIONES RECIENTES</span><span>{recentThreads.length.toString().padStart(2, "0")}</span></div>
+            {recentThreads.length === 0 ? <p className="forum-empty-note">Aún no hay transmisiones.</p> : recentThreads.map((thread) => {
+              const author = users.find((user) => user.id === thread.authorId)
+              return (
+                <button type="button" className="forum-recent-item" key={thread.id} onClick={() => { setSelectedThread(thread.id); setView("thread"); onSound("select") }}>
+                  <span><strong>{thread.title}</strong><small>{author?.username || "Superviviente"} / {threadReplyCount(thread)} mensajes</small></span>
+                  <b>↗</b>
+                </button>
+              )
+            })}
+          </section>
+          <section className="forum-side-panel forum-manifesto-panel">
+            <span className="forum-section-kicker">NORMAS DE LA COMUNIDAD</span>
+            <p>Respeta el rol.<br />Cuida la historia.<br /><em>Sobrevive en comunidad.</em></p>
+          </section>
+        </aside>
       </div>
     </div>
   )
@@ -3499,8 +3533,8 @@ function ProfileView({
   const [pendingBannerUrl, setPendingBannerUrl] = useState<string>("")
   const [avatarUrl, setAvatarUrl] = useState(selectedUser.avatarUrl || "")
   const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [isEditingProfile, setIsEditingProfile] = useState(false)
   const [profileSaveMessage, setProfileSaveMessage] = useState("")
-  const [copyMessage, setCopyMessage] = useState("")
   const [isVerified, setIsVerified] = useState(false)
   const [userBadges, setUserBadges] = useState<BadgeType[]>([])
   const avatarFileRef = useRef<File | null>(null)
@@ -3512,24 +3546,22 @@ function ProfileView({
     setPendingBannerUrl("")
     setAvatarUrl(selectedUser.avatarUrl || "")
     setProfileSaveMessage("")
+    setIsEditingProfile(false)
   }, [selectedUserId, selectedUser.bio, selectedUser.bannerUrl, selectedUser.avatarUrl])
 
   useEffect(() => {
     let mounted = true
-    void supabase
-      .from("player_links")
-      .select("id")
-      .eq("forum_user_id", selectedUser.id)
-      .eq("verified", true)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (mounted) {
-          const isVerifiedNow = Boolean(data)
-          setIsVerified(isVerifiedNow)
-          const badges = calculateUserBadges(selectedUser, threads, users, isVerifiedNow)
-          setUserBadges(badges)
-        }
-      })
+    void Promise.all([
+      supabase.from("player_links").select("id, forum_user_id, pz_username, verified").eq("verified", true),
+      supabase.from("player_playtime").select("username, total_seconds").order("total_seconds", { ascending: false }).limit(10),
+    ]).then(([{ data: verifiedLinks }, { data: playtime }]) => {
+      if (!mounted) return
+      const links = (verifiedLinks as PlayerLink[] | null) || []
+      syncServerBadgeData((playtime as PlayerPlaytime[] | null) || [], links)
+      const isVerifiedNow = links.some((link) => link.forum_user_id === selectedUser.id)
+      setIsVerified(isVerifiedNow)
+      setUserBadges(calculateUserBadges(selectedUser, threads, users, isVerifiedNow))
+    })
     return () => { mounted = false }
   }, [selectedUser.id, selectedUser, threads, users])
 
@@ -3547,16 +3579,6 @@ function ProfileView({
   const redeemedRolePoints = selectedUser.redeemedRolePoints || 0
   const canSeeRolePointDetails = isOwnProfile || currentUser.role === "admin"
   const isTop1Profile = userBadges.includes("most-active")
-
-  async function handleCopyProfileLink() {
-    try {
-      await navigator.clipboard.writeText(window.location.href)
-      setCopyMessage("Enlace copiado")
-    } catch {
-      setCopyMessage("Copia la URL del navegador")
-    }
-    window.setTimeout(() => setCopyMessage(""), 2200)
-  }
 
   function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -3587,172 +3609,96 @@ function ProfileView({
     e.target.value = ""
   }
 
+  async function saveProfile() {
+    if (isSavingProfile) return
+    setIsSavingProfile(true)
+    setProfileSaveMessage("")
+    try {
+      const nextBannerUrl = pendingBannerUrl || (bannerUrl && bannerUrl !== DEFAULT_BANNER_URL ? bannerUrl : null)
+      await onSaveProfile(currentUser.id, {
+        avatarUrl,
+        bio,
+        bannerUrl: nextBannerUrl,
+        avatarFile: avatarFileRef.current || undefined,
+        bannerFile: bannerFileRef.current || undefined,
+      })
+      avatarFileRef.current = null
+      bannerFileRef.current = null
+      setPendingBannerUrl("")
+      setProfileSaveMessage("Perfil guardado correctamente.")
+    } catch (saveError) {
+      setProfileSaveMessage(saveError instanceof Error ? saveError.message : "No se pudo guardar el perfil.")
+    } finally {
+      setIsSavingProfile(false)
+    }
+  }
+
+  if (isOwnProfile && isEditingProfile) {
+    return (
+      <main className="profile-edit-page" style={{ maxWidth: 1160, margin: "0 auto", padding: "30px 20px 50px" }}>
+        <button type="button" className="profile-edit-back" onClick={() => setIsEditingProfile(false)}>← VOLVER AL PERFIL</button>
+        <div className="profile-edit-heading">
+          <div><span>CONFIGURACIÓN DE CUENTA</span><h1>Editar perfil</h1><p>Personaliza la información visible para el resto de la comunidad.</p></div>
+          <div className="profile-edit-status">CAMBIOS LOCALES<br /><strong>LISTOS PARA GUARDAR</strong></div>
+        </div>
+        <div className="profile-edit-layout">
+          <section className="profile-edit-form">
+            <div className="profile-edit-section-title"><span>01 / IDENTIDAD VISUAL</span><small>IMÁGENES</small></div>
+            <div className="profile-upload-grid">
+              <label className="profile-upload-box"><span className="profile-upload-icon">+</span><strong>Avatar</strong><small>Imagen cuadrada recomendada</small><input type="file" accept="image/*" onChange={handleImageUpload} /></label>
+              <label className="profile-upload-box"><span className="profile-upload-icon">+</span><strong>Banner</strong><small>Imagen panorámica recomendada</small><input type="file" accept="image/*" onChange={handleBannerUpload} /></label>
+            </div>
+            <div className="profile-edit-section-title"><span>02 / PRESENTACIÓN</span><small>DESCRIPCIÓN</small></div>
+            <label className="profile-edit-label">Biografía<textarea value={bio} onChange={(event) => setBio(event.target.value)} placeholder="Cuéntanos quién eres dentro del servidor..." /></label>
+            <div className="profile-edit-actions">
+              <button type="button" className="profile-edit-cancel" onClick={() => setIsEditingProfile(false)}>CANCELAR</button>
+              <button type="button" className="profile-edit-save" onClick={() => void saveProfile()} disabled={isSavingProfile}>{isSavingProfile ? "GUARDANDO..." : "GUARDAR PERFIL"}</button>
+            </div>
+            {profileSaveMessage && <div className={profileSaveMessage === "Perfil guardado correctamente." ? "profile-save-success" : "profile-save-error"}>{profileSaveMessage}</div>}
+          </section>
+          <aside className="profile-edit-preview">
+            <span className="profile-edit-preview-kicker">VISTA PREVIA</span>
+            <div className="profile-preview-banner" style={{ background: bannerBackground }}><span>IDENTIDAD DE USUARIO</span></div>
+            <div className="profile-preview-body"><Avatar letter={profileUser.avatar} role={profileUser.role} size={64} imageUrl={profileUser.avatarUrl} /><div><h2>{profileUser.username}</h2><span>{roleLabel(profileUser.role)}</span></div><p>{bio || "La biografía aparecerá aquí."}</p></div>
+          </aside>
+        </div>
+      </main>
+    )
+  }
+
 
   return (
-    <div className="profile-view" style={{ maxWidth: 1100, margin: "0 auto", padding: "30px 20px 40px" }}>
+    <div className="profile-view profile-redesign" style={{ maxWidth: 1100, margin: "0 auto", padding: "30px 20px 40px" }}>
       <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
         ← Volver al foro
       </button>
-
       <div className="profile-page-heading">
-        <div>
-          <span>ARCHIVO DE USUARIO</span>
-          <h1>Perfil</h1>
-          <p>Configura la identidad con la que te reconocerá la comunidad.</p>
-        </div>
+        <div><span>ARCHIVO DE USUARIO</span><h1>Perfil</h1><p>Configura la identidad con la que te reconocerá la comunidad.</p></div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={handleCopyProfileLink} style={{ ...primaryBtn, width: "auto", padding: "9px 13px", fontSize: 11 }}>
-            Copiar enlace
-          </button>
-          {copyMessage && <span style={{ color: "var(--accent)", fontSize: 11 }}>{copyMessage}</span>}
-          <div className="profile-page-mark">EO / {roleLabel(selectedUser.role)}</div>
+          {isOwnProfile && <button type="button" className="profile-edit-toggle" onClick={() => setIsEditingProfile(true)}>Editar perfil</button>}
+          <div className="profile-page-mark">PERFIL DE USUARIO</div>
         </div>
       </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 18 }}>
-        <section className="profile-main" style={{ background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", borderRadius: 18, overflow: "visible" }}>
-          <div
-            style={{
-              height: 120,
-              background: bannerBackground,
-              position: "relative",
-              borderBottom: "1px solid var(--border)",
-            }}
-          >
-            <div className="profile-identity" style={{ position: "absolute", left: 24, bottom: -28, display: "flex", alignItems: "center", gap: 16 }}>
-              <Avatar letter={profileUser.avatar} role={profileUser.role} size={72} imageUrl={profileUser.avatarUrl} />
-              <div>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 7,
-                    fontFamily: "Oswald, sans-serif",
-                    fontSize: 26,
-                    letterSpacing: "0.06em",
-                    color: isTop1Profile ? "transparent" : "#fff",
-                    background: isTop1Profile ? "linear-gradient(90deg, #fff5b0 0%, #f4d35e 15%, #fffef0 32%, #f7ca54 52%, #fef7d9 68%, #d7a82d 84%, #fff0a8 100%)" : undefined,
-                    backgroundSize: isTop1Profile ? "220% 100%" : undefined,
-                    WebkitBackgroundClip: isTop1Profile ? "text" : undefined,
-                    backgroundClip: isTop1Profile ? "text" : undefined,
-                    WebkitTextFillColor: isTop1Profile ? "transparent" : undefined,
-                    animation: isTop1Profile ? "goldTextShift 2.4s ease-in-out infinite" : undefined,
-                    textShadow: isTop1Profile ? "0 0 16px rgba(255,214,102,0.45)" : undefined,
-                  }}
-                >
-                  {profileUser.username}<RoleMark role={profileUser.role} />
-                  <UserBadges badges={userBadges} glowTopRank={isTop1Profile} />
-                </div>
-                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.8)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>{roleLabel(profileUser.role)}</div>
-              </div>
-            </div>
+      <section className="profile-main" style={{ background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", borderRadius: 18, overflow: "visible" }}>
+        <div style={{ height: 120, background: bannerBackground, position: "relative", borderBottom: "1px solid var(--border)" }}>
+          <div className="profile-identity" style={{ position: "absolute", left: 24, bottom: -28, display: "flex", alignItems: "center", gap: 16 }}>
+            <Avatar letter={profileUser.avatar} role={profileUser.role} size={72} imageUrl={profileUser.avatarUrl} />
+            <div><div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "Oswald, sans-serif", fontSize: 26, letterSpacing: "0.06em", color: isTop1Profile ? "#f4d35e" : "#fff" }}>{profileUser.username}<RoleMark role={profileUser.role} /><UserBadges badges={userBadges} glowTopRank={isTop1Profile} /></div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.8)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>{roleLabel(profileUser.role)}</div></div>
           </div>
-
-          <div className="profile-main-body" style={{ padding: "42px 22px 22px" }}>
-            <div className="profile-points" style={{ marginBottom: 22, padding: "16px", borderRadius: 14, border: "1px solid rgba(245,158,11,0.3)", background: "linear-gradient(135deg, rgba(245,158,11,0.12), rgba(15,23,42,0.45))" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                <div>
-                  <div className="role-points-title" style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "0.1em", color: "#fbbf24", textTransform: "uppercase" }}>
-                    Puntos de rol
-                  </div>
-                  <div style={{ marginTop: 4, fontFamily: "Oswald, sans-serif", fontSize: 28, color: "var(--text)" }}>
-                    {rolePoints} puntos
-                  </div>
-                  {canSeeRolePointDetails && redeemedRolePoints > 0 && (
-                    <div style={{ marginTop: 2, fontSize: 11, color: "var(--text-dim)" }}>
-                      Puntos utilizados: {redeemedRolePoints}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {isOwnProfile ? (
-              <>
-                <div className="profile-section-heading">
-                  <span>Personalización</span>
-                  <small>IDENTIDAD VISUAL</small>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 18 }}>
-                  <div>
-                    <label style={labelStyle}>Logo / avatar</label>
-                    <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: "1px dashed var(--border)", borderRadius: 12, padding: "18px 12px", background: "rgba(15,23,42,0.5)", cursor: "pointer", color: "var(--text-muted)" }}>
-                      <span>📷</span>
-                      <span>Subir imagen</span>
-                      <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: "none" }} />
-                    </label>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 18 }}>
-                  <label style={labelStyle}>Banner personalizado</label>
-                  <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: "1px dashed var(--border)", borderRadius: 12, padding: "18px 12px", background: "rgba(15,23,42,0.5)", cursor: "pointer", color: "var(--text-muted)" }}>
-                    <span>🖼️</span>
-                    <span>Subir imagen de banner</span>
-                    <input type="file" accept="image/*" onChange={handleBannerUpload} style={{ display: "none" }} />
-                  </label>
-                </div>
-
-                <div style={{ marginTop: 18 }}>
-                  <label style={labelStyle}>Descripción</label>
-                  <textarea
-                    value={bio}
-                    onChange={(e) => setBio(e.target.value)}
-                    placeholder="Cuéntanos quién eres dentro del servidor..."
-                    style={{ ...inputStyle, minHeight: 120, resize: "vertical" }}
-                  />
-                </div>
-
-                <div style={{ marginTop: 18, display: "flex", justifyContent: "flex-end" }}>
-                  <button
-                    onClick={async () => {
-                      if (isSavingProfile) return
-                      setIsSavingProfile(true)
-                      setProfileSaveMessage("")
-                      try {
-                        const nextBannerUrl = pendingBannerUrl || (bannerUrl && bannerUrl !== DEFAULT_BANNER_URL ? bannerUrl : null)
-                        await onSaveProfile(currentUser.id, {
-                          avatarUrl,
-                          bio,
-                          bannerUrl: nextBannerUrl,
-                          avatarFile: avatarFileRef.current || undefined,
-                          bannerFile: bannerFileRef.current || undefined,
-                        })
-                        avatarFileRef.current = null
-                        bannerFileRef.current = null
-                        setPendingBannerUrl("")
-                        setProfileSaveMessage("Perfil guardado correctamente.")
-                      } catch (saveError) {
-                        setProfileSaveMessage(saveError instanceof Error ? saveError.message : "No se pudo guardar el perfil.")
-                      } finally {
-                        setIsSavingProfile(false)
-                      }
-                    }}
-                    disabled={isSavingProfile}
-                    style={{ ...primaryBtn, width: "auto", padding: "12px 22px", opacity: isSavingProfile ? 0.65 : 1, cursor: isSavingProfile ? "wait" : "pointer" }}
-                  >
-                    {isSavingProfile ? "GUARDANDO..." : "GUARDAR PERFIL"}
-                  </button>
-                </div>
-                {profileSaveMessage && (
-                  <div className={profileSaveMessage === "Perfil guardado correctamente." ? "profile-save-success" : "profile-save-error"}>
-                    {profileSaveMessage}
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                <div style={{ fontSize: 13, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em", marginBottom: 10, textTransform: "uppercase" }}>
-                  Bio
-                </div>
-                <div style={{ color: "var(--text-muted)", lineHeight: 1.8, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                  {selectedUser.bio || "Este usuario aún no ha escrito una descripción."}
-                </div>
-              </>
-            )}
-          </div>
-        </section>
-      </div>
+        </div>
+        <div className="profile-main-body profile-public-body" style={{ padding: "42px 22px 22px" }}>
+          <article className="profile-presentation-block">
+            <div className="profile-section-heading"><span>Presentación</span><small>IDENTIDAD DE USUARIO</small></div>
+            <div style={{ color: "var(--text-muted)", lineHeight: 1.8, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{selectedUser.bio || "Este usuario aún no ha escrito una descripción."}</div>
+          </article>
+          <aside className="profile-points profile-points-minimal">
+            <div className="profile-points-heading"><span className="role-points-title">PUNTOS DE ROL</span><span className="profile-points-status">ACTIVO</span></div>
+            <div className="profile-points-main"><strong>{rolePoints}</strong><span>disponibles</span></div>
+            <div className="profile-points-meter"><span style={{ width: `${Math.min(100, Math.max(8, rolePoints > 0 ? 42 : 8))}%` }} /></div>
+            {canSeeRolePointDetails && redeemedRolePoints > 0 && <div className="profile-points-used"><span>Utilizados</span><strong>{redeemedRolePoints}</strong></div>}
+          </aside>
+        </div>
+      </section>
     </div>
   )
 }
@@ -3787,7 +3733,7 @@ function MembersView({ users, onOpenProfile, onLoadMemberAvatars, onBack }: {
     : [1, page > 3 ? "..." : 2, ...[page - 1, page, page + 1].filter((value) => value > 1 && value < pageCount), page < pageCount - 2 ? "..." : pageCount - 1, pageCount]
 
   return (
-    <main className="members-view server-view" style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 20px 50px" }}>
+    <main className="members-view directory-view" style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 20px 50px" }}>
       <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
         ← Volver al foro
       </button>
@@ -3887,7 +3833,7 @@ function ServerView({ users, onOpenProfile, onBack }: { users: User[]; onOpenPro
   }, [])
 
   return (
-    <main className="members-view server-view" style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 20px 50px" }}>
+    <main className="members-view server-view server-redesign" style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 20px 50px" }}>
       <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
         ← Volver al foro
       </button>
@@ -4194,7 +4140,7 @@ function ControlPanelView({ currentUser, onSaveAccount, onBack }: {
               <label style={labelStyle}>Apellido<input value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Tu apellido" required style={inputStyle} /></label>
             </div>
           )}
-          <div className="profile-section-heading control-panel-section-heading"><span>Seguridad</span><small>SUPABASE AUTH</small></div>
+          <div className="profile-section-heading control-panel-section-heading"><span>Seguridad</span></div>
           <label style={labelStyle}>Nueva contraseña<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Dejar vacío para mantenerla" style={inputStyle} /></label>
           <label style={labelStyle}>Repetir contraseña<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repite la nueva contraseña" style={inputStyle} /></label>
           {error && <div className="profile-save-error">{error}</div>}
@@ -4897,7 +4843,7 @@ function ThreadView({
                   width: "auto",
                   padding: "8px 12px",
                   fontSize: 11,
-                  background: "linear-gradient(135deg, rgba(34,197,94,0.22), rgba(20,83,45,0.22))",
+                  background: "linear-gradient(135deg, rgba(168,85,247,0.18), rgba(88,28,135,0.18))",
                   border: "1px solid rgba(34,197,94,0.5)",
                   color: "#86efac",
                   boxShadow: "none",
@@ -4922,7 +4868,7 @@ function ThreadView({
                   placeholder="Cantidad"
                   style={{ ...inputStyle, width: 100, padding: "8px 9px", fontSize: 11 }}
                 />
-                <button onClick={handleAddThreadRolePoints} disabled={!pointsToAdd} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11, background: "linear-gradient(135deg, #f59e0b, #b45309)", opacity: pointsToAdd ? 1 : 0.5, cursor: pointsToAdd ? "pointer" : "not-allowed" }}>
+                <button onClick={handleAddThreadRolePoints} disabled={!pointsToAdd} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11, background: "linear-gradient(135deg, #d97706, #92400e)", opacity: pointsToAdd ? 1 : 0.5, cursor: pointsToAdd ? "pointer" : "not-allowed" }}>
                   AÑADIR PUNTOS
                 </button>
               </div>
@@ -4931,11 +4877,11 @@ function ThreadView({
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 11, color: "#72c8bf", fontFamily: "JetBrains Mono, monospace" }}>PDR FACCIONARIO</span>
                 <input type="number" min="1" value={pointsToAdd} onChange={(e) => setPointsToAdd(e.target.value)} placeholder="Cantidad" style={{ ...inputStyle, width: 100, padding: "8px 9px", fontSize: 11 }} />
-                <button onClick={handleAddFactionRolePoints} disabled={!pointsToAdd} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11, background: "linear-gradient(135deg, #4dd8df, #147d8a)", opacity: pointsToAdd ? 1 : 0.5 }}>ASIGNAR AL HILO</button>
+                <button onClick={handleAddFactionRolePoints} disabled={!pointsToAdd} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11, background: "linear-gradient(135deg, #a855f7, #7c3aed)", opacity: pointsToAdd ? 1 : 0.5 }}>ASIGNAR AL HILO</button>
               </div>
             )}
             {canClaimFactionPoints && (
-              <button onClick={() => onClaimFactionRolePoints(thread.id)} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11, background: "linear-gradient(135deg, #e6a23c, #a85d1a)" }}>
+              <button onClick={() => onClaimFactionRolePoints(thread.id)} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11, background: "linear-gradient(135deg, #d97706, #92400e)" }}>
                 RECLAMAR {factionRolePoints} PDR FACCIONARIO
               </button>
             )}
@@ -4963,7 +4909,7 @@ function ThreadView({
           {isEditing ? "Revisa el contenido en el formulario superior antes de guardar." : isLoadingThread ? "CARGANDO HILO..." : <MarkdownText content={thread.content} />}
         </div>
         {thread.category === "facciones" && (
-          <div style={{ marginTop: 18, padding: "13px 15px", border: "1px solid rgba(77,216,223,0.3)", borderRadius: 10, background: "linear-gradient(135deg, rgba(77,216,223,0.1), rgba(10,22,35,0.7))", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ marginTop: 18, padding: "13px 15px", border: "1px solid rgba(168,85,247,0.3)", borderRadius: 10, background: "linear-gradient(135deg, rgba(168,85,247,0.1), rgba(22,16,31,0.7))", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
             <span style={{ color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "0.08em" }}>PUNTOS DE ROL FACCIONARIO · SOLO EN ESTE HILO</span>
             <strong style={{ color: "#8cecf0", fontFamily: "Oswald, sans-serif", fontSize: 18 }}>{factionRolePoints} PDR {thread.factionRolePointsClaimed ? "· RECLAMADOS" : ""}</strong>
           </div>
@@ -5231,7 +5177,7 @@ function ThreadView({
                           type="button"
                           onClick={() => toggleMention(user.id)}
                           style={{
-                            background: selected ? "linear-gradient(135deg, rgba(56,189,248,0.18), rgba(14,165,233,0.08))" : "rgba(15,23,42,0.45)",
+                            background: selected ? "linear-gradient(135deg, rgba(168,85,247,0.18), rgba(124,58,237,0.08))" : "rgba(18,12,28,0.45)",
                             border: `1px solid ${selected ? "#38bdf8" : "var(--border)"}`,
                             borderRadius: 999,
                             color: selected ? "#e0f2fe" : "var(--text-muted)",
@@ -5517,7 +5463,7 @@ function AdminView({
           style={{
             width: 4,
             height: 28,
-            background: "linear-gradient(180deg, #c0392b, #7b1c13)",
+            background: "linear-gradient(180deg, #a855f7, #6d28d9)",
             borderRadius: 2,
           }}
         />
@@ -5729,7 +5675,7 @@ function AdminView({
                         setContactMessages((prev) => ({ ...prev, [user.id]: "" }))
                       }}
                       disabled={!contactMessages[user.id]?.trim()}
-                      style={{ ...primaryBtn, width: "auto", padding: "6px 9px", fontSize: 10, boxShadow: "none", background: "linear-gradient(135deg, #0ea5e9, #0369a1)", opacity: contactMessages[user.id]?.trim() ? 1 : 0.45, cursor: contactMessages[user.id]?.trim() ? "pointer" : "not-allowed" }}
+                      style={{ ...primaryBtn, width: "auto", padding: "6px 9px", fontSize: 10, boxShadow: "none", background: "linear-gradient(135deg, #a855f7, #7c3aed)", opacity: contactMessages[user.id]?.trim() ? 1 : 0.45, cursor: contactMessages[user.id]?.trim() ? "pointer" : "not-allowed" }}
                     >
                       CONTACTAR
                     </button>

@@ -6622,15 +6622,16 @@ export default function App() {
 
   async function handleLogin(characterName: string, password: string) {
     const loginInput = characterName.trim()
-    let loginName = characterName
+    let loginName = loginInput
     const { data: forumProfile, error: profileLookupError } = await supabase
       .from("profiles")
       .select("id, username")
-      .eq("username", characterName)
+      .ilike("username", loginInput)
       .maybeSingle()
     if (profileLookupError && profileLookupError.code !== "PGRST116") throw new Error(profileLookupError.message)
 
     if (forumProfile) {
+      loginName = forumProfile.username
       const { data: verifiedLink, error: linkLookupError } = await supabase
         .from("player_links")
         .select("pz_username")

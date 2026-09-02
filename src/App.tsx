@@ -7,6 +7,7 @@ import siteLogoImg from "@/imports/final123.png"
 import defaultBannerImg from "@/imports/default-banner.jpg"
 import eclipseGif from "@/imports/giphy.gif"
 import accountNameGuideImg from "@/imports/dasdsadasdasdsadas.png"
+import serverInterfaceImg from "@/imports/Captura de pantalla 2026-09-02 024918.png"
 
 const DEFAULT_BANNER_URL = defaultBannerImg
 
@@ -2314,19 +2315,31 @@ function ThreadRow({
           <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
             <span style={{ color: "var(--text-muted)" }}>
               <span style={{
-                color: authorBadges.includes("most-active") ? "transparent" : "var(--text-muted)",
-                background: authorBadges.includes("most-active") ? "linear-gradient(90deg, #fff5b0 0%, #f4d35e 15%, #fffef0 32%, #f7ca54 52%, #fef7d9 68%, #d7a82d 84%, #fff0a8 100%)" : undefined,
-                backgroundSize: authorBadges.includes("most-active") ? "220% 100%" : undefined,
-                WebkitBackgroundClip: authorBadges.includes("most-active") ? "text" : undefined,
-                backgroundClip: authorBadges.includes("most-active") ? "text" : undefined,
-                WebkitTextFillColor: authorBadges.includes("most-active") ? "transparent" : undefined,
-                animation: authorBadges.includes("most-active") ? "goldTextShift 2.4s ease-in-out infinite" : undefined,
-                textShadow: authorBadges.includes("most-active") ? "0 0 16px rgba(255,214,102,0.45)" : undefined,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "3px 9px",
+                borderRadius: 999,
+                background: "rgba(30, 41, 59, 0.88)",
+                border: "1px solid rgba(148, 163, 184, 0.55)",
+                boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.08), 0 0 8px rgba(52,211,153,0.15)",
+                verticalAlign: "middle",
               }}>
-                {author?.username}
+                <span style={{
+                  color: authorBadges.includes("most-active") ? "transparent" : "var(--text-muted)",
+                  background: authorBadges.includes("most-active") ? "linear-gradient(90deg, #fff5b0 0%, #f4d35e 15%, #fffef0 32%, #f7ca54 52%, #fef7d9 68%, #d7a82d 84%, #fff0a8 100%)" : undefined,
+                  backgroundSize: authorBadges.includes("most-active") ? "220% 100%" : undefined,
+                  WebkitBackgroundClip: authorBadges.includes("most-active") ? "text" : undefined,
+                  backgroundClip: authorBadges.includes("most-active") ? "text" : undefined,
+                  WebkitTextFillColor: authorBadges.includes("most-active") ? "transparent" : undefined,
+                  animation: authorBadges.includes("most-active") ? "goldTextShift 2.4s ease-in-out infinite" : undefined,
+                  textShadow: authorBadges.includes("most-active") ? "0 0 16px rgba(255,214,102,0.45)" : undefined,
+                }}>
+                  {author?.username}
+                </span>
+                {author && <RoleMark role={author.role} />}
+                {authorBadges.length > 0 && <UserBadges badges={authorBadges} glowTopRank={authorBadges.includes("most-active")} />}
               </span>
-              {author && <RoleMark role={author.role} />}
-              {authorBadges.length > 0 && <UserBadges badges={authorBadges} glowTopRank={authorBadges.includes("most-active")} />}
             </span> · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes
           </div>
         </div>
@@ -4081,6 +4094,10 @@ function VerificationView({ currentUser, onBack }: { currentUser: User; onBack: 
         <div className="profile-page-mark">VERIFICACIÓN</div>
       </div>
       <figure style={{ margin: "0 0 18px", padding: 12, background: "rgba(15,23,32,0.7)", border: "1px solid var(--border)", borderRadius: 8 }}>
+        <img src={serverInterfaceImg} alt="Interfaz del servidor EclipseOrder mostrando dónde encontrar el nombre de tu cuenta" style={{ display: "block", width: "100%", height: "auto", borderRadius: 4 }} />
+        <figcaption style={{ marginTop: 8, color: "var(--text-dim)", fontSize: 12 }}>Interfaz de referencia: busca tu nombre de cuenta en el servidor.</figcaption>
+      </figure>
+      <figure style={{ margin: "0 0 18px", padding: 12, background: "rgba(15,23,32,0.7)", border: "1px solid var(--border)", borderRadius: 8 }}>
         <img src={accountNameGuideImg} alt="Pantalla del servidor donde aparece resaltado el nombre de la cuenta" style={{ display: "block", width: "100%", height: "auto", borderRadius: 4 }} />
         <figcaption style={{ marginTop: 8, color: "var(--text-dim)", fontSize: 12 }}>Usá el nombre resaltado de tu cuenta, no el nombre del personaje.</figcaption>
       </figure>
@@ -5040,19 +5057,31 @@ function ThreadView({
                     <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
                       {replyAuthor ? <button type="button" onClick={() => onOpenProfile(replyAuthor)} style={{ border: "none", padding: 0, background: "transparent", color: reply.isStaff ? "#3498db" : "var(--text)", cursor: "pointer", fontWeight: 700 }}>
                         <span style={{
-                          color: replyAuthorBadges.includes("most-active") ? "transparent" : reply.isStaff ? "#3498db" : "var(--text)",
-                          background: replyAuthorBadges.includes("most-active") ? "linear-gradient(90deg, #fff5b0 0%, #f4d35e 15%, #fffef0 32%, #f7ca54 52%, #fef7d9 68%, #d7a82d 84%, #fff0a8 100%)" : undefined,
-                          backgroundSize: replyAuthorBadges.includes("most-active") ? "220% 100%" : undefined,
-                          WebkitBackgroundClip: replyAuthorBadges.includes("most-active") ? "text" : undefined,
-                          backgroundClip: replyAuthorBadges.includes("most-active") ? "text" : undefined,
-                          WebkitTextFillColor: replyAuthorBadges.includes("most-active") ? "transparent" : undefined,
-                          animation: replyAuthorBadges.includes("most-active") ? "goldTextShift 2.4s ease-in-out infinite" : undefined,
-                          textShadow: replyAuthorBadges.includes("most-active") ? "0 0 16px rgba(255,214,102,0.45)" : undefined,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
+                          padding: "3px 9px",
+                          borderRadius: 999,
+                          background: "rgba(30, 41, 59, 0.88)",
+                          border: "1px solid rgba(148, 163, 184, 0.55)",
+                          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.08), 0 0 8px rgba(52,211,153,0.15)",
+                          verticalAlign: "middle",
                         }}>
-                          {replyAuthor.username}
+                          <span style={{
+                            color: replyAuthorBadges.includes("most-active") ? "transparent" : reply.isStaff ? "#3498db" : "var(--text)",
+                            background: replyAuthorBadges.includes("most-active") ? "linear-gradient(90deg, #fff5b0 0%, #f4d35e 15%, #fffef0 32%, #f7ca54 52%, #fef7d9 68%, #d7a82d 84%, #fff0a8 100%)" : undefined,
+                            backgroundSize: replyAuthorBadges.includes("most-active") ? "220% 100%" : undefined,
+                            WebkitBackgroundClip: replyAuthorBadges.includes("most-active") ? "text" : undefined,
+                            backgroundClip: replyAuthorBadges.includes("most-active") ? "text" : undefined,
+                            WebkitTextFillColor: replyAuthorBadges.includes("most-active") ? "transparent" : undefined,
+                            animation: replyAuthorBadges.includes("most-active") ? "goldTextShift 2.4s ease-in-out infinite" : undefined,
+                            textShadow: replyAuthorBadges.includes("most-active") ? "0 0 16px rgba(255,214,102,0.45)" : undefined,
+                          }}>
+                            {replyAuthor.username}
+                          </span>
+                          <RoleMark role={replyAuthor.role} />
+                          {replyAuthorBadges.length > 0 && <UserBadges badges={replyAuthorBadges} glowTopRank={replyAuthorBadges.includes("most-active")} />}
                         </span>
-                        <RoleMark role={replyAuthor.role} />
-                        {replyAuthorBadges.length > 0 && <UserBadges badges={replyAuthorBadges} glowTopRank={replyAuthorBadges.includes("most-active")} />}
                       </button> : "Usuario"}
                       {reply.isStaff && (
                         <span style={{ marginLeft: 6, fontSize: 10, color: "#3498db", fontFamily: "JetBrains Mono, monospace" }}>

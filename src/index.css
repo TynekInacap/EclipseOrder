@@ -4259,7 +4259,10 @@ body {
   --highlight: #c6bbff;
   --border: rgba(159, 140, 255, 0.2);
   --surface: rgba(18, 18, 31, 0.92);
-  max-width: 1240px;
+  width: calc(100% - 40px);
+  max-width: none !important;
+  margin-right: auto;
+  margin-left: auto;
 }
 
 .store-view::before {
@@ -4614,6 +4617,18 @@ body {
 
 /* Public profile showcase */
 .profile-public-page { max-width: 1220px !important; }
+
+.profile-redesign,
+.profile-edit-page,
+.profile-public-page,
+.directory-view,
+.server-view,
+.control-panel-view {
+  width: calc(100% - 40px) !important;
+  max-width: none !important;
+  margin-right: auto !important;
+  margin-left: auto !important;
+}
 .profile-public-back { margin-bottom: 22px; padding: 0; border: 0; background: transparent; color: #9fc8ec; cursor: pointer; font: 10px 'JetBrains Mono', monospace; letter-spacing: 0.12em; }
 .profile-public-heading { display: flex; align-items: end; justify-content: space-between; gap: 22px; margin-bottom: 22px; padding-bottom: 18px; border-bottom: 1px solid rgba(143, 182, 220, 0.2); }
 .profile-public-heading > div:first-child > span { color: #9fc8ec; font: 9px 'JetBrains Mono', monospace; letter-spacing: 0.16em; }

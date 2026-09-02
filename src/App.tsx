@@ -6436,7 +6436,7 @@ export default function App() {
     const restoreSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
-        const isPasswordRecovery = window.location.hash.includes("type=recovery")
+        const isPasswordRecovery = window.location.hash.includes("type=recovery") || window.location.search.includes("reset-password=1")
         if (session && mounted) {
           if (isPasswordRecovery) {
             passwordRecoveryPendingRef.current = true
@@ -6605,7 +6605,8 @@ export default function App() {
   }
 
   async function handleForgotPassword(email: string) {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin })
+    const redirectTo = `${window.location.origin}/?reset-password=1`
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
     if (error) throw new Error(error.message)
   }
 

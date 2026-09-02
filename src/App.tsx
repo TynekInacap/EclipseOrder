@@ -333,6 +333,7 @@ function pasteImageIntoEditor(event: React.ClipboardEvent<HTMLDivElement>, edito
 type View =
   | "login"
   | "register"
+  | "verify_email"
   | "forum"
   | "members"
   | "server"
@@ -1645,13 +1646,13 @@ function LoginView({
 
             <form onSubmit={handleSubmit}>
               <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>Nombre de personaje o usuario</label>
+                <label style={labelStyle}>Nombre de personaje, usuario o Gmail</label>
                 <input
                   className="login-input"
                   style={inputStyle}
                   value={characterName}
                   onChange={(e) => setCharacterName(e.target.value)}
-                  placeholder="Nombre de tu cuenta PZ o username verificado"
+                  placeholder="Nombre de personaje, usuario o Gmail"
                   autoFocus
                 />
               </div>
@@ -1712,11 +1713,12 @@ function RegisterView({
   onRegister,
   goLogin,
 }: {
-  onRegister: (username: string, password: string) => Promise<void>
+  onRegister: (username: string, email: string, password: string) => Promise<void>
   goLogin: () => void
 }) {
   const [characterFirstName, setCharacterFirstName] = useState("")
   const [characterLastName, setCharacterLastName] = useState("")
+  const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
   const [error, setError] = useState("")
@@ -1738,12 +1740,16 @@ function RegisterView({
       setError("La contraseña debe tener al menos 6 caracteres.")
       return
     }
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      setError("Indica un Gmail válido para verificar tu cuenta.")
+      return
+    }
     if (password !== confirm) {
       setError("Las contraseñas no coinciden.")
       return
     }
     try {
-      await onRegister(username.trim(), password)
+      await onRegister(username.trim(), email.trim(), password)
       setError("")
     } catch (registerError) {
       setError(registerError instanceof Error ? registerError.message : "No se pudo crear la cuenta.")
@@ -1830,6 +1836,13 @@ function RegisterView({
                 <label style={labelStyle}>Contraseña</label>
                 <input className="login-input" style={inputStyle} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres" />
               </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Gmail</label>
+                <input className="login-input" style={inputStyle} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@gmail.com" autoComplete="email" />
+                <p style={{ margin: "5px 0 0", fontSize: 11, color: "var(--text-dim)" }}>
+                  Recibirás un código de 6 dígitos para verificar que el Gmail es tuyo.
+                </p>
+              </div>
               <div style={{ marginBottom: 28 }}>
                 <label style={labelStyle}>Confirmar contraseña</label>
                 <input className="login-input" style={inputStyle} type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Repite la contraseña" />
@@ -1844,6 +1857,62 @@ function RegisterView({
               </button>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function VerifyEmailView({
+  email,
+  onVerify,
+  onResend,
+}: {
+  email: string
+  onVerify: (code: string) => Promise<void>
+  onResend: () => Promise<void>
+}) {
+  const [code, setCode] = useState("")
+  const [error, setError] = useState("")
+  const [message, setMessage] = useState("")
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    setError("")
+    setMessage("")
+    if (!/^\d{6}$/.test(code)) {
+      setError("Introduce el código de 6 dígitos recibido en tu Gmail.")
+      return
+    }
+    try {
+      await onVerify(code)
+    } catch (verifyError) {
+      setError(verifyError instanceof Error ? verifyError.message : "El código no es válido.")
+    }
+  }
+
+  async function handleResend() {
+    setError("")
+    try {
+      await onResend()
+      setMessage("Hemos enviado un código nuevo a tu Gmail.")
+    } catch (resendError) {
+      setError(resendError instanceof Error ? resendError.message : "No se pudo reenviar el código.")
+    }
+  }
+
+  return (
+    <div className="login-shell" style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 16px", backgroundImage: "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(192,57,43,0.12) 0%, transparent 60%)" }}>
+      <div className="login-content" style={{ width: "100%", maxWidth: 520 }}>
+        <div className="login-brand" style={{ textAlign: "center", marginBottom: 40 }}><Logo /><div className="login-brand-line"><span /><small>COMUNIDAD DE PROJECT ZOMBOID</small><span /></div></div>
+        <div className="login-panel" style={{ background: "linear-gradient(180deg, var(--surface), var(--surface2))", border: "1px solid var(--border)", borderRadius: 24, padding: "32px 28px", boxShadow: "0 30px 60px rgba(2, 6, 23, 0.32)" }}>
+          <div className="login-panel-heading"><span className="login-eyebrow">VERIFICACIÓN DE CUENTA</span><h2>REVISA TU GMAIL</h2><p className="login-subtitle">Hemos enviado un código a {email}.</p></div>
+          {(error || message) && <div style={{ background: error ? "#c0392b18" : "rgba(16,185,129,0.12)", border: `1px solid ${error ? "#c0392b55" : "rgba(16,185,129,0.5)"}`, borderRadius: 4, padding: "10px 14px", color: error ? "#e74c3c" : "#6ee7b7", fontSize: 13, marginBottom: 20 }}>{error || message}</div>}
+          <form onSubmit={handleSubmit}>
+            <div style={{ marginBottom: 24 }}><label style={labelStyle}>Código de verificación</label><input className="login-input" style={{ ...inputStyle, letterSpacing: "0.3em", textAlign: "center" }} inputMode="numeric" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} placeholder="000000" autoFocus /></div>
+            <button type="submit" className="login-submit" style={primaryBtn}>VERIFICAR CUENTA</button>
+          </form>
+          <button type="button" onClick={() => void handleResend()} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "block", fontSize: 12, margin: "22px auto 0", padding: 0, textDecoration: "underline" }}>Reenviar código</button>
         </div>
       </div>
     </div>
@@ -5822,6 +5891,7 @@ export default function App() {
   const [selectedReportStatus, setSelectedReportStatus] = useState<ThreadStatus>(initialRouteRef.current.reportStatus || "abierto")
   const [selectedFactionSubforum, setSelectedFactionSubforum] = useState<ThreadSubforum>(initialRouteRef.current.factionSubforum || "no_oficial")
   const [authReady, setAuthReady] = useState(false)
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState("")
   const [showWelcome, setShowWelcome] = useState(false)
     const [operationMessage, setOperationMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -6300,22 +6370,24 @@ export default function App() {
 
   async function handleLogin(characterName: string, password: string) {
     let loginName = characterName
-    const { data: forumProfile, error: profileLookupError } = await supabase
-      .from("profiles")
-      .select("id, username")
-      .eq("username", characterName)
-      .maybeSingle()
-    if (profileLookupError && profileLookupError.code !== "PGRST116") throw new Error(profileLookupError.message)
-
-    if (forumProfile) {
-      const { data: verifiedLink, error: linkLookupError } = await supabase
-        .from("player_links")
-        .select("pz_username")
-        .eq("forum_user_id", forumProfile.id)
-        .eq("verified", true)
+    if (!characterName.includes("@")) {
+      const { data: forumProfile, error: profileLookupError } = await supabase
+        .from("profiles")
+        .select("id, username")
+        .eq("username", characterName)
         .maybeSingle()
-      if (linkLookupError) throw new Error(linkLookupError.message)
-      if (verifiedLink?.pz_username) loginName = verifiedLink.pz_username
+      if (profileLookupError && profileLookupError.code !== "PGRST116") throw new Error(profileLookupError.message)
+
+      if (forumProfile) {
+        const { data: verifiedLink, error: linkLookupError } = await supabase
+          .from("player_links")
+          .select("pz_username")
+          .eq("forum_user_id", forumProfile.id)
+          .eq("verified", true)
+          .maybeSingle()
+        if (linkLookupError) throw new Error(linkLookupError.message)
+        if (verifiedLink?.pz_username) loginName = verifiedLink.pz_username
+      }
     }
 
     const { data: authData, error } = await supabase.auth.signInWithPassword({
@@ -6330,10 +6402,10 @@ export default function App() {
     }
   }
 
-  async function handleRegister(username: string, password: string) {
+  async function handleRegister(username: string, email: string, password: string) {
     welcomePendingUsernameRef.current = username
     const { data: authData, error } = await supabase.auth.signUp({
-      email: authEmailForCharacter(username),
+      email,
       password,
       options: { data: { username } },
     })
@@ -6343,8 +6415,22 @@ export default function App() {
       setView("forum")
       await hydrateSession(authData.session.user.id)
     } else {
-      setView("login")
+      setPendingVerificationEmail(email)
+      setView("verify_email")
     }
+  }
+
+  async function handleVerifyEmail(code: string) {
+    const { data, error } = await supabase.auth.verifyOtp({ email: pendingVerificationEmail, token: code, type: "signup" })
+    if (error) throw new Error(error.message)
+    if (!data.user) throw new Error("No se pudo verificar la cuenta.")
+    setView("forum")
+    await hydrateSession(data.user.id)
+  }
+
+  async function handleResendVerification() {
+    const { error } = await supabase.auth.resend({ type: "signup", email: pendingVerificationEmail })
+    if (error) throw new Error(error.message)
   }
 
   async function handleLogout() {
@@ -6883,6 +6969,9 @@ export default function App() {
   if (!currentUser) {
     if (view === "register") {
       return <RegisterView onRegister={handleRegister} goLogin={() => setView("login")} />
+    }
+    if (view === "verify_email") {
+      return <VerifyEmailView email={pendingVerificationEmail} onVerify={handleVerifyEmail} onResend={handleResendVerification} />
     }
     return <LoginView onLogin={handleLogin} goRegister={() => setView("register")} />
   }

@@ -4244,6 +4244,7 @@ function ControlPanelView({ currentUser, onSaveAccount, onBack }: {
   const [lastName, setLastName] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
   const [isVerified, setIsVerified] = useState(false)
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
@@ -4328,9 +4329,17 @@ function ControlPanelView({ currentUser, onSaveAccount, onBack }: {
               <label style={labelStyle}>Apellido<input value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Tu apellido" required style={inputStyle} /></label>
             </div>
           )}
-          <div className="profile-section-heading control-panel-section-heading"><span>Seguridad</span></div>
-          <label style={labelStyle}>Nueva contraseña<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Dejar vacío para mantenerla" style={inputStyle} /></label>
-          <label style={labelStyle}>Repetir contraseña<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repite la nueva contraseña" style={inputStyle} /></label>
+              <div className="profile-section-heading control-panel-section-heading"><span>Seguridad</span></div>
+              {!isChangingPassword ? (
+                <button type="button" onClick={() => setIsChangingPassword(true)} style={{ ...primaryBtn, width: "auto", alignSelf: "flex-start", background: "transparent", border: "1px solid var(--border-strong)", color: "var(--text)" }}>
+                  CAMBIAR CONTRASEÑA
+                </button>
+              ) : (
+                <div style={{ display: "grid", gap: 12 }}>
+                  <label style={labelStyle}>Nueva contraseña<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo 6 caracteres" style={inputStyle} autoFocus /></label>
+                  <label style={labelStyle}>Repetir contraseña<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repite la nueva contraseña" style={inputStyle} /></label>
+                </div>
+              )}
           {error && <div className="profile-save-error">{error}</div>}
           {message && <div className="profile-save-success">{message}</div>}
           <button type="submit" disabled={isSaving} style={{ ...primaryBtn, width: "auto", alignSelf: "flex-start", opacity: isSaving ? 0.65 : 1, cursor: isSaving ? "wait" : "pointer" }}>

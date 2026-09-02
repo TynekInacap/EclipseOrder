@@ -334,6 +334,8 @@ type View =
   | "login"
   | "register"
   | "verify_email"
+  | "forgot_password"
+  | "reset_password"
   | "forum"
   | "members"
   | "server"
@@ -1550,9 +1552,11 @@ function Avatar({ letter, role, size = 32, imageUrl }: { letter: string; role: R
 function LoginView({
   onLogin,
   goRegister,
+  goForgotPassword,
 }: {
   onLogin: (characterName: string, password: string) => Promise<void>
   goRegister: () => void
+  goForgotPassword: () => void
 }) {
   const [characterName, setCharacterName] = useState("")
   const [password, setPassword] = useState("")
@@ -1672,6 +1676,10 @@ function LoginView({
               </button>
             </form>
 
+            <button type="button" onClick={goForgotPassword} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "block", fontSize: 12, margin: "16px auto 0", padding: 0, textDecoration: "underline" }}>
+              ¿Olvidaste tu contraseña?
+            </button>
+
             <div
               className="login-register"
               style={{
@@ -1703,6 +1711,81 @@ function LoginView({
         </div>
       </div>
 
+    </div>
+  )
+}
+
+function ForgotPasswordView({
+  onRequest,
+  goLogin,
+}: {
+  onRequest: (email: string) => Promise<void>
+  goLogin: () => void
+}) {
+  const [email, setEmail] = useState("")
+  const [message, setMessage] = useState("")
+  const [error, setError] = useState("")
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    setError("")
+    setMessage("")
+    try {
+      await onRequest(email.trim())
+      setMessage("Si existe una cuenta con ese email, recibirás un enlace para recuperar el acceso.")
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "No se pudo enviar el enlace.")
+    }
+  }
+
+  return (
+    <div className="login-shell" style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 16px", backgroundImage: "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(192,57,43,0.12) 0%, transparent 60%)" }}>
+      <div className="login-content" style={{ width: "100%", maxWidth: 520 }}>
+        <div className="login-brand" style={{ textAlign: "center", marginBottom: 40 }}><Logo /><div className="login-brand-line"><span /><small>COMUNIDAD DE PROJECT ZOMBOID</small><span /></div></div>
+        <div className="login-panel" style={{ background: "linear-gradient(180deg, var(--surface), var(--surface2))", border: "1px solid var(--border)", borderRadius: 24, padding: "32px 28px", boxShadow: "0 30px 60px rgba(2, 6, 23, 0.32)" }}>
+          <div className="login-panel-heading"><span className="login-eyebrow">RECUPERACIÓN DE CUENTA</span><h2>¿OLVIDASTE TU CONTRASEÑA?</h2><p className="login-subtitle">Te enviaremos un enlace seguro a tu email.</p></div>
+          {(error || message) && <div style={{ background: error ? "#c0392b18" : "rgba(16,185,129,0.12)", border: `1px solid ${error ? "#c0392b55" : "rgba(16,185,129,0.5)"}`, borderRadius: 4, padding: "10px 14px", color: error ? "#e74c3c" : "#6ee7b7", fontSize: 13, marginBottom: 20 }}>{error || message}</div>}
+          <form onSubmit={handleSubmit}>
+            <div style={{ marginBottom: 24 }}><label style={labelStyle}>Email de tu cuenta</label><input className="login-input" style={inputStyle} type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tu@gmail.com" autoComplete="email" required autoFocus /></div>
+            <button type="submit" className="login-submit" style={primaryBtn}>ENVIAR ENLACE</button>
+          </form>
+          <button type="button" onClick={goLogin} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "block", fontSize: 12, margin: "22px auto 0", padding: 0, textDecoration: "underline" }}>Volver a iniciar sesión</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ResetPasswordView({ onReset }: { onReset: (password: string) => Promise<void> }) {
+  const [password, setPassword] = useState("")
+  const [confirm, setConfirm] = useState("")
+  const [error, setError] = useState("")
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    if (password.length < 6) return setError("La contraseña debe tener al menos 6 caracteres.")
+    if (password !== confirm) return setError("Las contraseñas no coinciden.")
+    try {
+      await onReset(password)
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : "No se pudo actualizar la contraseña.")
+    }
+  }
+
+  return (
+    <div className="login-shell" style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 16px", backgroundImage: "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(192,57,43,0.12) 0%, transparent 60%)" }}>
+      <div className="login-content" style={{ width: "100%", maxWidth: 520 }}>
+        <div className="login-brand" style={{ textAlign: "center", marginBottom: 40 }}><Logo /><div className="login-brand-line"><span /><small>COMUNIDAD DE PROJECT ZOMBOID</small><span /></div></div>
+        <div className="login-panel" style={{ background: "linear-gradient(180deg, var(--surface), var(--surface2))", border: "1px solid var(--border)", borderRadius: 24, padding: "32px 28px", boxShadow: "0 30px 60px rgba(2, 6, 23, 0.32)" }}>
+          <div className="login-panel-heading"><span className="login-eyebrow">ENLACE VERIFICADO</span><h2>NUEVA CONTRASEÑA</h2><p className="login-subtitle">Crea una contraseña nueva para recuperar tu cuenta.</p></div>
+          {error && <div style={{ background: "#c0392b18", border: "1px solid #c0392b55", borderRadius: 4, padding: "10px 14px", color: "#e74c3c", fontSize: 13, marginBottom: 20 }}>{error}</div>}
+          <form onSubmit={handleSubmit}>
+            <div style={{ marginBottom: 16 }}><label style={labelStyle}>Nueva contraseña</label><input className="login-input" style={inputStyle} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo 6 caracteres" autoComplete="new-password" autoFocus /></div>
+            <div style={{ marginBottom: 24 }}><label style={labelStyle}>Confirmar contraseña</label><input className="login-input" style={inputStyle} type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} placeholder="Repite la contraseña" autoComplete="new-password" /></div>
+            <button type="submit" className="login-submit" style={primaryBtn}>GUARDAR CONTRASEÑA</button>
+          </form>
+        </div>
+      </div>
     </div>
   )
 }
@@ -6314,7 +6397,11 @@ export default function App() {
     const restoreSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
-        if (session && mounted) await hydrateSession(session.user.id)
+        const isPasswordRecovery = window.location.hash.includes("type=recovery")
+        if (session && mounted) {
+          if (isPasswordRecovery) setView("reset_password")
+          else await hydrateSession(session.user.id)
+        }
       } catch (sessionError) {
         console.error("Could not restore Supabase session", sessionError)
       } finally {
@@ -6325,6 +6412,10 @@ export default function App() {
     void restoreSession()
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!mounted) return
+      if (_event === "PASSWORD_RECOVERY") {
+        setView("reset_password")
+        return
+      }
       if (!session) {
         setCurrentUser(null)
         setUsers([])
@@ -6391,7 +6482,7 @@ export default function App() {
     }
 
     const { data: authData, error } = await supabase.auth.signInWithPassword({
-      email: authEmailForCharacter(loginName),
+      email: characterName.includes("@") ? characterName.trim() : authEmailForCharacter(loginName),
       password,
     })
     if (error) throw new Error(error.message)
@@ -6431,6 +6522,18 @@ export default function App() {
   async function handleResendVerification() {
     const { error } = await supabase.auth.resend({ type: "signup", email: pendingVerificationEmail })
     if (error) throw new Error(error.message)
+  }
+
+  async function handleForgotPassword(email: string) {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin })
+    if (error) throw new Error(error.message)
+  }
+
+  async function handleResetPassword(password: string) {
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) throw new Error(error.message)
+    await supabase.auth.signOut()
+    setView("login")
   }
 
   async function handleLogout() {
@@ -6973,7 +7076,13 @@ export default function App() {
     if (view === "verify_email") {
       return <VerifyEmailView email={pendingVerificationEmail} onVerify={handleVerifyEmail} onResend={handleResendVerification} />
     }
-    return <LoginView onLogin={handleLogin} goRegister={() => setView("register")} />
+    if (view === "forgot_password") {
+      return <ForgotPasswordView onRequest={handleForgotPassword} goLogin={() => setView("login")} />
+    }
+    if (view === "reset_password") {
+      return <ResetPasswordView onReset={handleResetPassword} />
+    }
+    return <LoginView onLogin={handleLogin} goRegister={() => setView("register")} goForgotPassword={() => setView("forgot_password")} />
   }
 
   return (

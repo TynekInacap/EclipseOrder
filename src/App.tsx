@@ -3175,10 +3175,10 @@ function ForumView({
         </div>
       </section>
       <div className="forum-layout">
-        {isAccountVerified && !isVerificationNoticeDismissed ? (
+        {isAccountVerified ? (
           <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 10, margin: "0 0 14px", padding: "10px 16px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.55)", borderRadius: 6, color: "#6ee7b7", fontSize: 13 }}>
             <span aria-hidden="true" style={{ display: "inline-grid", placeItems: "center", width: 20, height: 20, borderRadius: "50%", background: "#16a34a", color: "#fff", fontWeight: 700 }}>✓</span>
-            <strong>Cuenta verificada</strong>
+            <strong>Tu cuenta ha sido verificada</strong>
             <button type="button" aria-label="Ocultar aviso de cuenta verificada" title="Ocultar aviso" onClick={() => { window.localStorage.setItem(`verification-notice-dismissed-${currentUser.id}`, "true"); setIsVerificationNoticeDismissed(true) }} style={{ marginLeft: "auto", border: 0, background: "transparent", color: "#6ee7b7", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
           </div>
         ) : !isAccountVerified && !isVerificationNoticeDismissed ? (

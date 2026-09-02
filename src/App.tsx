@@ -2023,7 +2023,7 @@ function LinkEmailView({ onRequest }: { onRequest: (email: string) => Promise<vo
       <div className="login-content" style={{ width: "100%", maxWidth: 520 }}>
         <div className="login-brand" style={{ textAlign: "center", marginBottom: 40 }}><Logo /><div className="login-brand-line"><span /><small>COMUNIDAD DE PROJECT ZOMBOID</small><span /></div></div>
         <div className="login-panel" style={{ background: "linear-gradient(180deg, var(--surface), var(--surface2))", border: "1px solid var(--border)", borderRadius: 24, padding: "32px 28px", boxShadow: "0 30px 60px rgba(2, 6, 23, 0.32)" }}>
-          <div className="login-panel-heading"><span className="login-eyebrow">ACTUALIZACIÓN DE SEGURIDAD</span><h2>CONFIRMA TU GMAIL</h2><p className="login-subtitle">Para continuar, añade un Gmail real a tu cuenta.</p></div>
+          <div className="login-panel-heading"><span className="login-eyebrow">ACTUALIZACIÓN DE SEGURIDAD</span><h2>CONFIRMA TU GMAIL</h2><p className="login-subtitle">Añade un Gmail a tu cuenta.</p></div>
           {error && <div style={{ background: "#c0392b18", border: "1px solid #c0392b55", borderRadius: 4, padding: "10px 14px", color: "#e74c3c", fontSize: 13, marginBottom: 20 }}>{error}</div>}
           <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: 24 }}><label style={labelStyle}>Gmail</label><input className="login-input" style={inputStyle} type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tu@gmail.com" autoComplete="email" required autoFocus /></div>

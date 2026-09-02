@@ -3175,7 +3175,7 @@ function ForumView({
         </div>
       </section>
       <div className="forum-layout">
-        {isAccountVerified ? (
+        {isAccountVerified && !isVerificationNoticeDismissed ? (
           <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 10, margin: "0 0 14px", padding: "10px 16px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.55)", borderRadius: 6, color: "#6ee7b7", fontSize: 13 }}>
             <span aria-hidden="true" style={{ display: "inline-grid", placeItems: "center", width: 20, height: 20, borderRadius: "50%", background: "#16a34a", color: "#fff", fontWeight: 700 }}>✓</span>
             <strong>Tu cuenta ha sido verificada</strong>

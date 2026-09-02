@@ -7,7 +7,7 @@ import siteLogoImg from "@/imports/final123.png"
 import defaultBannerImg from "@/imports/default-banner.jpg"
 import eclipseGif from "@/imports/giphy.gif"
 import accountNameGuideImg from "@/imports/dasdsadasdasdsadas.png"
-import serverInterfaceImg from "@/imports/Captura de pantalla 2026-09-02 024918.png"
+import serverInterfaceImg from "@/imports/server-interface.png"
 
 const DEFAULT_BANNER_URL = defaultBannerImg
 

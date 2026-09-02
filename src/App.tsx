@@ -905,6 +905,7 @@ const SESSION_STORAGE_KEY = "eclipse-order-session"
 const LOCAL_USERS_STORAGE_KEY = "eclipse-order-local-users"
 const STORE_PRODUCTS_STORAGE_KEY = "eclipse-order-store-products"
 const STORE_REDEMPTIONS_STORAGE_KEY = "eclipse-order-store-redemptions"
+const PENDING_VERIFICATION_STORAGE_KEY = "eclipse-order-pending-verification"
 const REPLIES_PAGE_SIZE = 20
 
 const STATUS_LABELS: Record<ThreadStatus, string> = {
@@ -1668,14 +1669,14 @@ function LoginView({
 
             <form onSubmit={handleSubmit}>
               <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>Correo electrónico o nombre de personaje</label>
+                <label style={labelStyle}>Correo electrónico o nombre y apellido</label>
                 <input
                   className="login-input"
                   style={inputStyle}
                   value={characterName}
                   onChange={(e) => setCharacterName(e.target.value)}
                   type="text"
-                  placeholder="tu@gmail.com o Tynek"
+                  placeholder="tu@gmail.com o Juan Pérez"
                   autoComplete="username"
                   autoFocus
                 />
@@ -6101,13 +6102,20 @@ const navBtn: React.CSSProperties = {
 
 export default function App() {
   const initialRouteRef = useRef<RouteState>(routeFromLocation())
+  const storedVerification = (() => {
+    try {
+      return JSON.parse(sessionStorage.getItem(PENDING_VERIFICATION_STORAGE_KEY) || "null") as { email?: string; type?: "signup" | "email_change" } | null
+    } catch {
+      return null
+    }
+  })()
   const [users, setUsers] = useState<User[]>([])
   const [threads, setThreads] = useState<Thread[]>([])
   const [storeProducts, setStoreProducts] = useState<StoreProduct[]>([])
   const [redemptions, setRedemptions] = useState<StoreRedemption[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const recoveryLinkOpen = window.location.hash.includes("type=recovery") || window.location.search.includes("reset-password=1")
-  const [view, setView] = useState<View>(recoveryLinkOpen ? "reset_password" : initialRouteRef.current.view === "forum" ? "login" : initialRouteRef.current.view)
+  const [view, setView] = useState<View>(recoveryLinkOpen ? "reset_password" : storedVerification?.email ? "verify_email" : initialRouteRef.current.view === "forum" ? "login" : initialRouteRef.current.view)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [selectedThread, setSelectedThread] = useState<string>(initialRouteRef.current.threadId || "")
   const [selectedProfileId, setSelectedProfileId] = useState<string>(initialRouteRef.current.profileId || "")
@@ -6115,9 +6123,9 @@ export default function App() {
   const [selectedReportStatus, setSelectedReportStatus] = useState<ThreadStatus>(initialRouteRef.current.reportStatus || "abierto")
   const [selectedFactionSubforum, setSelectedFactionSubforum] = useState<ThreadSubforum>(initialRouteRef.current.factionSubforum || "no_oficial")
   const [authReady, setAuthReady] = useState(false)
-  const [pendingVerificationEmail, setPendingVerificationEmail] = useState("")
-  const [pendingVerificationType, setPendingVerificationType] = useState<"signup" | "email_change">("signup")
-  const pendingVerificationTypeRef = useRef<"signup" | "email_change" | null>(null)
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState(storedVerification?.email || "")
+  const [pendingVerificationType, setPendingVerificationType] = useState<"signup" | "email_change">(storedVerification?.type || "signup")
+  const pendingVerificationTypeRef = useRef<"signup" | "email_change" | null>(storedVerification?.type || null)
   const passwordRecoveryPendingRef = useRef(false)
   const [showWelcome, setShowWelcome] = useState(false)
     const [operationMessage, setOperationMessage] = useState<string | null>(null)
@@ -6683,6 +6691,7 @@ export default function App() {
       await hydrateSession(authData.session.user.id)
     } else {
       pendingVerificationTypeRef.current = "signup"
+      sessionStorage.setItem(PENDING_VERIFICATION_STORAGE_KEY, JSON.stringify({ email, type: "signup" }))
       setPendingVerificationEmail(email)
       setPendingVerificationType("signup")
       setView("verify_email")
@@ -6694,6 +6703,7 @@ export default function App() {
     if (error) throw new Error(error.message)
     if (!data.user) throw new Error("No se pudo verificar la cuenta.")
     pendingVerificationTypeRef.current = null
+    sessionStorage.removeItem(PENDING_VERIFICATION_STORAGE_KEY)
     setView("forum")
     await hydrateSession(data.user.id)
   }
@@ -6710,6 +6720,7 @@ export default function App() {
       pendingVerificationTypeRef.current = null
       throw new Error(error.message)
     }
+    sessionStorage.setItem(PENDING_VERIFICATION_STORAGE_KEY, JSON.stringify({ email, type: "email_change" }))
     setPendingVerificationEmail(email)
     setPendingVerificationType("email_change")
     setView("verify_email")

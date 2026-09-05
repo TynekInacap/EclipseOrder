@@ -4585,6 +4585,14 @@ function ControlPanelView({ currentUser, onSaveAccount, onBack }: {
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
   const [isSaving, setIsSaving] = useState(false)
+  const [activeSection, setActiveSection] = useState<"account" | "security" | "privacy" | "notifications" | "appearance">("account")
+  const [showProfile, setShowProfile] = useState(() => localStorage.getItem(`settings-profile-visible-${currentUser.id}`) !== "false")
+  const [showActivity, setShowActivity] = useState(() => localStorage.getItem(`settings-activity-visible-${currentUser.id}`) !== "false")
+  const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem(`settings-sounds-${currentUser.id}`) !== "false")
+
+  function updatePreference(key: string, value: boolean) {
+    localStorage.setItem(`settings-${key}-${currentUser.id}`, String(value))
+  }
 
   useEffect(() => {
     let mounted = true
@@ -4653,8 +4661,19 @@ function ControlPanelView({ currentUser, onSaveAccount, onBack }: {
         </div>
         <div className="profile-page-mark">CUENTA / {roleLabel(currentUser.role)}</div>
       </div>
-      <div className="control-panel-layout">
-        <form className="control-panel-card" onSubmit={handleSubmit}>
+      <div className="control-panel-layout control-panel-shell">
+        <nav className="control-panel-nav" aria-label="Opciones del panel de control">
+          <span className="control-panel-nav-kicker">AJUSTES DE CUENTA</span>
+          {[{ id: "account", label: "Identidad", detail: "Nombre y datos" }, { id: "security", label: "Seguridad", detail: "Contraseña y acceso" }, { id: "privacy", label: "Privacidad", detail: "Visibilidad y actividad" }, { id: "notifications", label: "Notificaciones", detail: "Avisos del foro" }, { id: "appearance", label: "Preferencias", detail: "Sonido y experiencia" }].map((section) => (
+            <button key={section.id} type="button" className={`control-panel-nav-item ${activeSection === section.id ? "is-active" : ""}`} onClick={() => setActiveSection(section.id as typeof activeSection)}>
+              <strong>{section.label}</strong>
+              <small>{section.detail}</small>
+            </button>
+          ))}
+        </nav>
+        <div className="control-panel-content">
+        {(activeSection === "account" || activeSection === "security") && <form className="control-panel-card" onSubmit={handleSubmit}>
+          {activeSection === "account" && <>
           <div className="profile-section-heading"><span>Datos personales</span><small>IDENTIDAD</small></div>
           <div className="control-current-name"><span>Nombre actual</span><strong>{currentUser.username}</strong></div>
           {isVerified ? (
@@ -4665,7 +4684,9 @@ function ControlPanelView({ currentUser, onSaveAccount, onBack }: {
               <label style={labelStyle}>Apellido<input value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Tu apellido" required style={inputStyle} /></label>
             </div>
           )}
-              <div className="profile-section-heading control-panel-section-heading"><span>Seguridad</span></div>
+          </>}
+          {activeSection === "security" && <div className="profile-section-heading"><span>Seguridad</span><small>PROTECCIÓN</small></div>}
+          {activeSection === "account" && <div className="profile-section-heading control-panel-section-heading"><span>Seguridad</span></div>}
               {!isChangingPassword ? (
                 <button type="button" onClick={() => setIsChangingPassword(true)} style={{ ...primaryBtn, width: "auto", alignSelf: "flex-start", background: "transparent", border: "1px solid var(--border-strong)", color: "var(--text)" }}>
                   CAMBIAR CONTRASEÑA
@@ -4681,9 +4702,16 @@ function ControlPanelView({ currentUser, onSaveAccount, onBack }: {
           <button type="submit" disabled={isSaving} style={{ ...primaryBtn, width: "auto", alignSelf: "flex-start", opacity: isSaving ? 0.65 : 1, cursor: isSaving ? "wait" : "pointer" }}>
             {isSaving ? "GUARDANDO..." : "GUARDAR CAMBIOS"}
           </button>
-        </form>
-        <section className="control-panel-card">
+        </form>}
+        {activeSection === "privacy" && <section className="control-panel-card control-settings-card">
+          <div className="profile-section-heading"><span>Privacidad</span><small>CONTROL PERSONAL</small></div>
+          <p className="control-settings-intro">Decide qué información de tu actividad queda visible para la comunidad.</p>
+          <label className="control-setting-row"><span><strong>Perfil visible</strong><small>Permite que otros usuarios encuentren y consulten tu perfil.</small></span><input type="checkbox" checked={showProfile} onChange={(event) => { setShowProfile(event.target.checked); updatePreference("profile-visible", event.target.checked) }} /></label>
+          <label className="control-setting-row"><span><strong>Mostrar actividad</strong><small>Permite mostrar tu última actividad en los directorios.</small></span><input type="checkbox" checked={showActivity} onChange={(event) => { setShowActivity(event.target.checked); updatePreference("activity-visible", event.target.checked) }} /></label>
+        </section>}
+        {activeSection === "notifications" && <section className="control-panel-card">
           <div className="profile-section-heading"><span>Historial de notificaciones</span><small>{currentUser.notifications?.length || 0} REGISTROS</small></div>
+          <p className="control-settings-intro">Aquí aparecen las respuestas, menciones y actualizaciones de los hilos a los que estás suscrito.</p>
           <div className="control-notification-history">
             {(currentUser.notifications || []).map((notification) => (
               <article key={notification.id} className={`control-notification-entry ${notification.read ? "" : "is-unread"}`}>
@@ -4693,7 +4721,14 @@ function ControlPanelView({ currentUser, onSaveAccount, onBack }: {
             ))}
             {(!currentUser.notifications || currentUser.notifications.length === 0) && <div className="header-account-empty">Aún no tienes notificaciones.</div>}
           </div>
-        </section>
+        </section>}
+        {activeSection === "appearance" && <section className="control-panel-card control-settings-card">
+          <div className="profile-section-heading"><span>Preferencias</span><small>EXPERIENCIA</small></div>
+          <p className="control-settings-intro">Ajusta pequeños detalles de la experiencia del foro en este dispositivo.</p>
+          <label className="control-setting-row"><span><strong>Sonidos de interacción</strong><small>Reproduce sonidos para notificaciones y acciones importantes.</small></span><input type="checkbox" checked={soundEnabled} onChange={(event) => { setSoundEnabled(event.target.checked); updatePreference("sounds", event.target.checked) }} /></label>
+          <div className="control-preference-note"><strong>Diseño adaptativo</strong><span>La interfaz se ajusta automáticamente a tu pantalla y respeta la configuración de movimiento reducido del sistema.</span></div>
+        </section>}
+        </div>
       </div>
     </main>
   )
@@ -5237,13 +5272,13 @@ function ThreadView({
         </button>
       </div>
     )}
-    <div className="forum-wide-view" style={{ maxWidth: 820, margin: "0 auto", padding: "32px 20px" }}>
+    <div className="forum-wide-view thread-view" style={{ maxWidth: 820, margin: "0 auto", padding: "32px 20px" }}>
       <button onClick={goBack} className="store-back">
         ← VOLVER
       </button>
 
       {/* Thread header */}
-      <div style={{ background: "var(--surface)", border: "1px solid #1e2330", borderLeft: `4px solid ${CATEGORY_COLORS[thread.category]}`, borderRadius: 8, padding: "24px 24px 20px", marginBottom: 16 }}>
+      <div className="thread-hero-card" style={{ background: "var(--surface)", border: "1px solid #1e2330", borderLeft: `4px solid ${CATEGORY_COLORS[thread.category]}`, borderRadius: 8, padding: "24px 24px 20px", marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div style={{ flex: 1 }}>
             <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
@@ -5470,7 +5505,7 @@ function ThreadView({
           <div style={{ marginTop: 18, display: "grid", gap: 12 }}>
             {thread.attachments.map((att, idx) =>
               att.type === "image" ? (
-                <div
+                <div className="thread-reply-card"
                   key={idx}
                   onClick={() => setLightbox(att)}
                   style={{
@@ -6568,6 +6603,7 @@ export default function App() {
   }, [])
 
   const playInteractionSound = useCallback((type: "click" | "select" | "success" | "notification") => {
+    if (currentUser && localStorage.getItem(`settings-sounds-${currentUser.id}`) === "false") return
     const AudioCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
     if (!AudioCtor) return
 

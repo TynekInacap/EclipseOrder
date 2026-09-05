@@ -1,0 +1,7893 @@
+import { useState, useEffect, useCallback, useRef } from "react"
+import DOMPurify from "dompurify"
+import { marked } from "marked"
+import { supabase } from "@/lib/supabase"
+import logoImg from "@/imports/bg,f8f8f8-flat,750x,075,f-pad,750x1000,f8f8f8.jpg"
+import siteLogoImg from "@/imports/final123.png"
+import defaultBannerImg from "@/imports/default-banner.jpg"
+import eclipseGif from "@/imports/giphy.gif"
+import accountNameGuideImg from "@/imports/server-guide.png"
+
+const DEFAULT_BANNER_URL = defaultBannerImg
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Role = "user" | "admin" | "moderator"
+type Category = "bugs" | "reportes" | "historias" | "facciones" | "normativa"
+type ThreadStatus = "abierto" | "cerrado" | "en_revision"
+type ThreadSubforum = "formato" | "no_oficial" | "oficial"
+type CharacterSubforum = "fichas" | "cerrados"
+const SUBSCRIBABLE_CATEGORIES: Category[] = ["facciones", "bugs", "historias", "reportes"]
+
+interface NotificationItem {
+  id: string
+  text: string
+  createdAt: string
+  read?: boolean
+}
+
+interface Toast {
+  id: string
+  message: string
+  type: "success" | "info" | "warning"
+  duration?: number
+}
+
+type BadgeType = "most-active" | "most-active-2" | "most-active-3" | "highest-pdr" | "verified"
+
+interface Badge {
+  type: BadgeType
+  label: string
+  title: string
+  icon: string
+  color: string
+}
+
+interface User {
+  id: string
+  username: string
+  password: string
+  role: Role
+  joinedAt: string
+  avatar: string
+  avatarUrl?: string
+  bio?: string
+  bannerUrl?: string
+  notifications?: NotificationItem[]
+  rolePoints?: number
+  redeemedRolePoints?: number
+  ownedProductIds?: string[]
+  suspended?: boolean
+  badges?: BadgeType[]
+}
+
+interface ProfileVisit {
+  id: string
+  visitorId: string
+  visitedAt: string
+}
+
+interface StoreProduct {
+  id: string
+  title: string
+  price: number
+  description: string
+  imageUrl?: string
+  createdAt: string
+  kind?: "personal" | "faccion"
+  imageFile?: File
+}
+
+interface StoreRedemption {
+  id: string
+  userId: string
+  username: string
+  productId: string
+  productTitle: string
+  price: number
+  quantity: number
+  status?: "pending" | "delivered"
+  createdAt: string
+}
+
+interface Attachment {
+  name: string
+  type: "image" | "video"
+  dataUrl: string
+}
+
+interface Reply {
+  id: string
+  authorId: string
+  content: string
+  createdAt: string
+  editedAt?: string
+  isStaff?: boolean
+  attachments?: Attachment[]
+}
+
+interface Thread {
+  id: string
+  title: string
+  category: Category
+  authorId: string
+  content: string
+  status: ThreadStatus
+  createdAt: string
+  editedAt?: string
+  replies: Reply[]
+  pinned?: boolean
+  attachments?: Attachment[]
+  adminOnly?: boolean
+  subforum?: ThreadSubforum
+  factionRolePoints?: number
+  factionRolePointsClaimed?: boolean
+  visitorCount?: number
+  replyCount?: number
+  repliesLoaded?: boolean
+  contentLoaded?: boolean
+}
+
+interface ServerStatus {
+  online: boolean
+  player_count: number
+  peak_player_count: number
+  online_since: string | null
+  checked_at: string
+}
+
+interface ServerPlayer {
+  username: string
+}
+
+interface PlayerLink {
+  id: string
+  forum_user_id: string
+  pz_username: string | null
+  character_name: string
+  server_name: string
+  verified: boolean
+  verified_by?: string | null
+  verified_at: string
+  last_seen?: string | null
+}
+
+interface PlayerLinkRequest {
+  id: string
+  forum_user_id: string
+  pz_username: string
+  status: "pending" | "approved" | "rejected"
+  rejection_reason?: string | null
+  reviewed_by?: string | null
+  reviewed_at?: string | null
+  created_at: string
+}
+
+interface PlayerPlaytime {
+  username: string
+  total_seconds: number
+}
+
+let globalPlaytimeLeaderboard: PlayerPlaytime[] = []
+let globalVerifiedPlayerLinks: PlayerLink[] = []
+
+function syncServerBadgeData(leaderboard: PlayerPlaytime[], verifiedLinks: PlayerLink[]) {
+  globalPlaytimeLeaderboard = leaderboard
+  globalVerifiedPlayerLinks = verifiedLinks
+}
+
+interface ServerActivityItem {
+  id: string
+  type: string
+  title: string
+  message: string
+  username?: string | null
+  metadata?: Record<string, unknown>
+  created_at: string
+}
+
+const THREAD_DRAFT_STORAGE_PREFIX = "eclipse-order-thread-draft"
+const REPLY_DRAFT_STORAGE_PREFIX = "eclipse-order-reply-draft"
+
+type ThreadDraft = {
+  title: string
+  category: Category
+  content: string
+  contentText: string
+  mentionedUserIds: string[]
+  updatedAt: string
+}
+
+type ReplyDraft = {
+  content: string
+  contentText: string
+  mentionedUserIds: string[]
+  updatedAt: string
+}
+
+function getThreadDraftKey(userId: string, category: Category) {
+  return `${THREAD_DRAFT_STORAGE_PREFIX}:${userId}:${category}`
+}
+
+function getReplyDraftKey(userId: string, threadId: string) {
+  return `${REPLY_DRAFT_STORAGE_PREFIX}:${userId}:${threadId}`
+}
+
+function readDraft<T>(key: string): T | null {
+  try {
+    const rawValue = window.localStorage.getItem(key)
+    return rawValue ? (JSON.parse(rawValue) as T) : null
+  } catch {
+    return null
+  }
+}
+
+function persistDraft<T>(key: string, value: T | null) {
+  try {
+    if (!value) {
+      window.localStorage.removeItem(key)
+      return
+    }
+    window.localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // Ignore storage quota issues in the browser.
+  }
+}
+
+function MarkdownText({ content, inline = false }: { content: string; inline?: boolean }) {
+  const normalizedContent = content.replace(/:::\s*(left|center|right)\s*\n([\s\S]*?)\n:::/g, '<div class="markdown-align-$1">\n$2\n</div>')
+  const html = DOMPurify.sanitize(marked.parse(normalizedContent, { async: false, breaks: true, gfm: true }) as string, {
+    ADD_DATA_URI_TAGS: ["img"],
+  })
+
+  if (inline) {
+    const inlineHtml = DOMPurify.sanitize(marked.parseInline(content, { async: false, breaks: true, gfm: true }) as string)
+    return <span dangerouslySetInnerHTML={{ __html: inlineHtml }} />
+  }
+
+  return <div className="markdown-content" dangerouslySetInnerHTML={{ __html: html }} />
+}
+
+function AlignmentIcon({ mode }: { mode: "left" | "center" | "right" }) {
+  return <span className={`markdown-align-icon markdown-align-icon-${mode}`} aria-hidden="true"><i /><i /><i /><i /></span>
+}
+
+function MarkdownToolbar({ editorRef, onInsertImage }: { editorRef: React.RefObject<HTMLDivElement | null>; onInsertImage: (file: File) => void }) {
+  const savedSelectionRef = useRef<Range | null>(null)
+
+  function saveSelection() {
+    const selection = window.getSelection()
+    if (selection?.rangeCount && editorRef.current?.contains(selection.anchorNode)) {
+      savedSelectionRef.current = selection.getRangeAt(0).cloneRange()
+    }
+  }
+
+  function restoreSelection() {
+    const selection = window.getSelection()
+    if (!selection || !savedSelectionRef.current) return
+    selection.removeAllRanges()
+    selection.addRange(savedSelectionRef.current)
+  }
+
+  function applyFormat(command: string, value?: string) {
+    restoreSelection()
+    editorRef.current?.focus()
+    if (command === "createLink") {
+      const url = window.prompt("URL del enlace", "https://")
+      if (!url) return
+      document.execCommand(command, false, url)
+      return
+    }
+    document.execCommand(command, false, value)
+  }
+
+  const tools = [
+    { label: "H1", title: "Encabezado", command: "formatBlock", value: "h1" },
+    { label: "B", title: "Negrita", command: "bold" },
+    { label: "I", title: "Cursiva", command: "italic" },
+    { label: "S", title: "Tachado", command: "strikeThrough" },
+    { label: ">", title: "Cita", command: "formatBlock", value: "blockquote" },
+    { label: "</>", title: "Código", command: "formatBlock", value: "pre" },
+    { label: "•", title: "Lista", command: "insertUnorderedList" },
+    { label: "1.", title: "Lista numerada", command: "insertOrderedList" },
+    { label: "🔗", title: "Enlace", command: "createLink" },
+    { label: <AlignmentIcon mode="left" />, title: "Alinear a la izquierda", command: "justifyLeft" },
+    { label: <AlignmentIcon mode="center" />, title: "Centrar", command: "justifyCenter" },
+    { label: <AlignmentIcon mode="right" />, title: "Alinear a la derecha", command: "justifyRight" },
+  ]
+
+  const colors = ["#000000", "#ffffff", "#ef4444", "#f97316", "#fbbf24", "#22c55e", "#14b8a6", "#38bdf8", "#3b82f6", "#8b5cf6", "#ec4899", "#94a3b8", "#475569", "#7f1d1d", "#854d0e"]
+  const fonts = ["Arial", "Arial Black", "Comic Sans MS", "Courier New", "Georgia", "Impact", "Sans-serif", "Serif", "Times New Roman", "Trebuchet MS", "Verdana"]
+  const imageInputRef = useRef<HTMLInputElement>(null)
+
+  return <div className="markdown-toolbar" role="toolbar" aria-label="Formato visual">
+    {tools.map((tool) => <button key={tool.title} type="button" title={tool.title} aria-label={tool.title} data-tooltip={tool.title} onMouseDown={(event) => { event.preventDefault(); saveSelection() }} onClick={() => applyFormat(tool.command, tool.value)}>{tool.label}</button>)}
+    <span className="markdown-toolbar-divider" aria-hidden="true" />
+    <select title="Fuente" aria-label="Fuente" onMouseDown={saveSelection} onChange={(event) => applyFormat("fontName", event.target.value)} defaultValue="Arial">
+      {fonts.map((font) => <option key={font} value={font}>{font}</option>)}
+    </select>
+    <select title="Tamaño de fuente" aria-label="Tamaño de fuente" onMouseDown={saveSelection} onChange={(event) => applyFormat("fontSize", event.target.value)} defaultValue="3">
+      {[1, 2, 3, 4, 5, 6, 7].map((size) => <option key={size} value={size}>{size}</option>)}
+    </select>
+    <details className="markdown-color-picker">
+      <summary title="Color del texto" aria-label="Color del texto"><span className="markdown-color-current" /></summary>
+      <div className="markdown-color-palette">
+        {colors.map((color) => <button key={color} type="button" title={`Color ${color}`} aria-label={`Color ${color}`} onMouseDown={(event) => { event.preventDefault(); saveSelection() }} onClick={() => applyFormat("foreColor", color)}><span className="markdown-color-swatch" style={{ background: color }} /></button>)}
+      </div>
+    </details>
+    <button type="button" title="Insertar imagen" aria-label="Insertar imagen" data-tooltip="Insertar imagen" onMouseDown={(event) => event.preventDefault()} onClick={() => imageInputRef.current?.click()}>▧</button>
+    <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) onInsertImage(file); event.target.value = "" }} />
+    <span>Formato visual</span>
+  </div>
+}
+
+function VisualEditor({ editorRef, onChange, onPaste, placeholder = "Escribe el contenido del hilo..." }: { editorRef: React.RefObject<HTMLDivElement | null>; onChange: (html: string, text: string) => void; onPaste?: (event: React.ClipboardEvent<HTMLDivElement>) => void; placeholder?: string }) {
+  return <div ref={editorRef} contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" onPaste={onPaste} onInput={(event) => { const element = event.currentTarget; onChange(element.innerHTML, element.textContent || "") }} className="visual-editor" data-placeholder={placeholder} />
+}
+
+function pasteImageIntoEditor(event: React.ClipboardEvent<HTMLDivElement>, editorRef: React.RefObject<HTMLDivElement | null>, onChange: (html: string, text: string) => void) {
+  const imageItem = Array.from(event.clipboardData.items).find((item) => item.type.startsWith("image/"))
+  if (!imageItem) return
+  event.preventDefault()
+  const file = imageItem.getAsFile()
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = () => {
+    editorRef.current?.focus()
+    document.execCommand("insertImage", false, String(reader.result))
+    const element = editorRef.current
+    if (element) onChange(element.innerHTML, element.textContent || "")
+  }
+  reader.readAsDataURL(file)
+}
+
+type View =
+  | "login"
+  | "register"
+  | "verify_email"
+  | "forgot_password"
+  | "reset_password"
+  | "link_email"
+  | "forum"
+  | "members"
+  | "server"
+  | "control"
+  | "verification"
+  | "category"
+  | "report_status"
+  | "faction_subforum"
+  | "character_subforum"
+  | "thread"
+  | "new_thread"
+  | "profile"
+  | "store"
+  | "admin"
+
+type RouteState = {
+  view: View
+  profileId?: string
+  threadId?: string
+  category?: Category
+  reportStatus?: ThreadStatus
+  factionSubforum?: ThreadSubforum
+  characterSubforum?: CharacterSubforum
+}
+
+type NavigationSnapshot = RouteState & {
+  category: Category
+  reportStatus: ThreadStatus
+  factionSubforum: ThreadSubforum
+  characterSubforum: CharacterSubforum
+}
+
+function routeFromLocation(): RouteState {
+  const segments = window.location.pathname.split("/").filter(Boolean).map((segment) => decodeURIComponent(segment))
+
+  if (segments[0] === "ingresar") return { view: "login" }
+  if (segments[0] === "registro") return { view: "register" }
+  if (segments[0] === "recuperar") return { view: "forgot_password" }
+  if (segments[0] === "restablecer") return { view: "reset_password" }
+  if (segments[0] === "servidor") return { view: "server" }
+  if (segments[0] === "miembros") return { view: "members" }
+  if (segments[0] === "tienda") return { view: "store" }
+  if (segments[0] === "control") return { view: "control" }
+  if (segments[0] === "verificacion") return { view: "verification" }
+  if (segments[0] === "admin") return { view: "admin" }
+  if (segments[0] === "perfil" && segments[1]) return { view: "profile", profileId: segments[1] }
+  if (segments[0] === "hilo" && segments[1]) return { view: "thread", threadId: segments[1] }
+  if (segments[0] === "foro" && segments[2] === "nuevo" && segments[1]) {
+    return { view: "new_thread", category: segments[1] as Category }
+  }
+  if (segments[0] === "foro" && segments[1] === "reportes" && segments[2]) {
+    if (segments[2] === "aceptados") return { view: "report_status", category: "reportes", reportStatus: "cerrado" }
+    return { view: "report_status", category: "reportes", reportStatus: segments[2] as ThreadStatus }
+  }
+  if (segments[0] === "foro" && segments[1] === "bugs" && segments[2]) {
+    return { view: "report_status", category: "bugs", reportStatus: segments[2] as ThreadStatus }
+  }
+  if (segments[0] === "foro" && segments[1] === "facciones" && segments[2]) {
+    return { view: "faction_subforum", category: "facciones", factionSubforum: segments[2] as ThreadSubforum }
+  }
+  if (segments[0] === "foro" && segments[1] === "historias" && segments[2] === "fichas") {
+    return { view: "character_subforum", category: "historias", characterSubforum: "fichas" }
+  }
+  if (segments[0] === "foro" && segments[1] === "historias" && segments[2] === "cerrados") {
+    return { view: "character_subforum", category: "historias", characterSubforum: "cerrados" }
+  }
+  if (segments[0] === "foro" && segments[1]) {
+    return { view: "category", category: segments[1] as Category }
+  }
+
+  return { view: "forum" }
+}
+
+function pathFromState(view: View, profileId: string, threadId: string, category: Category, reportStatus: ThreadStatus, factionSubforum: ThreadSubforum, characterSubforum: CharacterSubforum) {
+  if (view === "login") return "/ingresar"
+  if (view === "register") return "/registro"
+  if (view === "forgot_password") return "/recuperar"
+  if (view === "reset_password") return "/restablecer"
+  if (view === "profile" && profileId) return `/perfil/${encodeURIComponent(profileId)}`
+  if (view === "server") return "/servidor"
+  if (view === "members") return "/miembros"
+  if (view === "store") return "/tienda"
+  if (view === "control") return "/control"
+  if (view === "verification") return "/verificacion"
+  if (view === "admin") return "/admin"
+  if (view === "thread" && threadId) return `/hilo/${encodeURIComponent(threadId)}`
+  if (view === "new_thread") return `/foro/${category}/nuevo`
+  if (view === "category") return `/foro/${category}`
+  if (view === "report_status") return category === "reportes" && reportStatus === "cerrado"
+    ? "/foro/reportes/aceptados"
+    : `/foro/${category}/${reportStatus}`
+  if (view === "faction_subforum") return `/foro/facciones/${factionSubforum}`
+  if (view === "character_subforum") return `/foro/historias/${characterSubforum}`
+  return "/"
+}
+
+type ProfileRow = {
+  id: string
+  username: string
+  role: Role
+  avatar: string
+  avatar_url?: string | null
+  bio?: string | null
+  banner_url?: string | null
+  notifications?: NotificationItem[]
+  role_points?: number
+  redeemed_role_points?: number
+  joined_at: string
+}
+
+type ProfileUpdates = Partial<User> & {
+  avatarFile?: File
+  bannerFile?: File
+}
+
+type NotificationRow = {
+  id: string
+  user_id: string
+  text: string
+  read: boolean
+  created_at: string
+}
+
+type ThreadRow = {
+  id: string
+  title: string
+  category: Category
+  author_id: string
+  content: string
+  status: ThreadStatus
+  pinned: boolean
+  admin_only: boolean
+  created_at: string
+  edited_at?: string | null
+  subforum?: ThreadSubforum
+  faction_role_points?: number
+  faction_role_points_claimed?: boolean
+}
+
+type ReplyRow = {
+  id: string
+  thread_id: string
+  author_id: string
+  content: string
+  is_staff: boolean
+  created_at: string
+  edited_at?: string | null
+}
+
+type ReplySummaryRow = {
+  thread_id: string
+  reply_count: number | string
+  last_reply_id?: string | null
+  last_author_id?: string | null
+  last_created_at?: string | null
+}
+
+type AttachmentRow = {
+  id: string
+  thread_id?: string
+  reply_id?: string
+  name: string
+  type: "image" | "video"
+  data_url?: string | null
+  storage_path?: string | null
+}
+
+const ATTACHMENTS_BUCKET = "forum-attachments"
+
+function attachmentUrl(row: AttachmentRow) {
+  if (row.storage_path) {
+    return supabase.storage.from(ATTACHMENTS_BUCKET).getPublicUrl(row.storage_path).data.publicUrl
+  }
+  return row.data_url || ""
+}
+
+async function uploadInlineImages(content: string, folder: string) {
+  if (!content.includes("<img")) return content
+  const documentParser = new DOMParser()
+  const documentFragment = documentParser.parseFromString(content, "text/html")
+  const images = Array.from(documentFragment.querySelectorAll("img"))
+
+  await Promise.all(images.map(async (image) => {
+    if (!image.src.startsWith("data:")) return
+    const response = await fetch(image.src)
+    const blob = await response.blob()
+    const extension = blob.type.split("/")[1] || "png"
+    const path = `${folder}/${crypto.randomUUID()}.${extension}`
+    const { error } = await supabase.storage.from(ATTACHMENTS_BUCKET).upload(path, blob, {
+      contentType: blob.type || "image/png",
+      upsert: false,
+    })
+    if (error) throw new Error(`No se pudo subir una imagen insertada: ${error.message}`)
+    image.src = supabase.storage.from(ATTACHMENTS_BUCKET).getPublicUrl(path).data.publicUrl
+  }))
+
+  return documentFragment.body.innerHTML
+}
+
+function mapProfile(row: ProfileRow): User {
+  return {
+    id: row.id,
+    username: row.username,
+    password: "",
+    role: row.role,
+    joinedAt: row.joined_at,
+    avatar: row.avatar,
+    avatarUrl: row.avatar_url || undefined,
+    bio: row.bio || undefined,
+    bannerUrl: row.banner_url || undefined,
+    notifications: row.notifications || [],
+    rolePoints: row.role_points || 0,
+    redeemedRolePoints: row.redeemed_role_points || 0,
+  }
+}
+
+function mapReply(row: ReplyRow): Reply {
+  return {
+    id: row.id,
+    authorId: row.author_id,
+    content: row.content,
+    createdAt: row.created_at,
+    editedAt: row.edited_at || undefined,
+    isStaff: row.is_staff,
+  }
+}
+
+async function loadSupabaseForum(currentUserId?: string) {
+  const notificationsQuery = currentUserId
+    ? supabase.from("notifications").select("id, user_id, text, read, created_at").eq("user_id", currentUserId).order("created_at", { ascending: false }).limit(50)
+    : Promise.resolve({ data: [], error: null })
+  const threadQuery = supabase.from("threads").select("id, title, category, author_id, content, status, pinned, admin_only, created_at, edited_at, subforum, faction_role_points, faction_role_points_claimed").order("pinned", { ascending: false }).order("created_at", { ascending: false })
+  const { data: threadRows, error: threadsError } = await threadQuery
+  if (threadsError) throw threadsError
+  const requestedThreadIds = (threadRows || []).map((thread) => thread.id)
+
+  const [
+    { data: profileRows, error: profilesError },
+    { data: notificationRows, error: notificationsError },
+    { data: replySummaryRows, error: replySummariesError },
+    { data: threadViewRows, error: threadViewsError },
+  ] = await Promise.all([
+    supabase.from("profiles").select("id, username, role, avatar, avatar_url, banner_url, bio, role_points, redeemed_role_points, joined_at").order("joined_at", { ascending: true }),
+    notificationsQuery,
+    supabase.rpc("get_thread_reply_summaries", { requested_thread_ids: requestedThreadIds }),
+    supabase.rpc("get_thread_view_counts", { requested_thread_ids: requestedThreadIds }),
+  ])
+
+  if (profilesError) throw profilesError
+  if (notificationsError) throw notificationsError
+  if (replySummariesError) throw replySummariesError
+  const threadViewCounts = threadViewsError ? [] : (threadViewRows || []) as { thread_id: string; visitor_count: number | string }[]
+  const threadViewCountById = new Map(threadViewCounts.map((view) => [view.thread_id, Number(view.visitor_count)]))
+
+  const notificationsByUser = new Map<string, NotificationItem[]>()
+  for (const row of (notificationRows || []) as NotificationRow[]) {
+    const userNotifications = notificationsByUser.get(row.user_id) || []
+    userNotifications.push({ id: row.id, text: row.text, read: row.read, createdAt: row.created_at })
+    notificationsByUser.set(row.user_id, userNotifications)
+  }
+  const users = (profileRows || []).map((row) => {
+    const profile = mapProfile(row as ProfileRow)
+    return { ...profile, notifications: notificationsByUser.get(profile.id) || [] }
+  })
+  const replySummariesByThread = new Map((replySummaryRows || []).map((row) => {
+    const summary = row as ReplySummaryRow
+    return [summary.thread_id, summary] as const
+  }))
+  const threads = (threadRows || []).map((row) => {
+    const thread = row as ThreadRow
+    const replySummary = replySummariesByThread.get(thread.id)
+    return {
+      id: thread.id,
+      title: thread.title,
+      category: thread.category,
+      authorId: thread.author_id,
+      content: thread.content,
+      status: thread.status,
+      pinned: thread.pinned,
+      adminOnly: thread.admin_only,
+      subforum: thread.subforum || (thread.category === "facciones" ? "no_oficial" : undefined),
+      factionRolePoints: thread.faction_role_points || 0,
+      factionRolePointsClaimed: thread.faction_role_points_claimed || false,
+      visitorCount: threadViewCountById.get(thread.id) || 0,
+      replyCount: Number(replySummary?.reply_count || 0),
+      repliesLoaded: false,
+      contentLoaded: true,
+      createdAt: thread.created_at,
+      editedAt: thread.edited_at || undefined,
+      attachments: [],
+      replies: replySummary?.last_reply_id && replySummary.last_author_id && replySummary.last_created_at ? [{
+        id: replySummary.last_reply_id,
+        authorId: replySummary.last_author_id,
+        content: "",
+        createdAt: replySummary.last_created_at,
+        isStaff: false,
+      }] : [],
+    }
+  })
+
+  // Ensure rules thread is always present
+  const rulesThread: Thread = {
+    id: "t-rules-historias",
+    title: "Formato para fichas del personaje",
+    category: "historias",
+    authorId: "u0",
+    content: "**FORMATO PARA FICHAS DEL PERSONAJE**\n\n> **Nombre y Apellido:**\n> **Edad:**\n> **Historia Breve Del Personaje:**\n> **Descripción Psicológica Del Personaje**\n> **Foto/ilustración del personaje**\n\n**Todo personaje** debe presentar una biografía breve y básica antes de su participación activa. La biografía define únicamente el punto de partida del personaje y no su desarrollo completo. Debe establecer de forma clara un origen general, rasgos psicológicos principales, motivaciones iniciales y límites concretos, como miedos, debilidades o conflictos internos. No se exige profundidad ni extensión inicial, ya que el desarrollo del personaje ocurre dentro del mismo servidor.\n\nEl desarrollo activo de la biografía durante el juego otorga peso narrativo real. Las decisiones tomadas, los vínculos construidos, los conflictos sostenidos y la evolución psicológica forman parte del canon personal del personaje. Las biografías que se desarrollen de manera coherente y sostenida serán recompensadas ya sea con **PDR** o **FDR** de manera casual.\n\nEn el caso que el usuario no interprete humanamente un personaje, fuerce situaciones conflictivas o innecesarias, será bloqueado por nula interpretación.\n\nLos usuarios que realicen roles relevantes para el futuro deberán guardar capturas de sus roles previos.\n\nAl cierre de cada temporada, el staff podrá reconocer a aquellos personajes que hayan demostrado un desarrollo, coherencia narrativa sostenida. Estas premiaciones más que nada es para incentivar el rolear y mantener un personaje bien construído.\n\nCada personaje creado por un usuario debe ser único e irrepetible. No está permitido reutilizar historias, perfiles psicológicos, rasgos, antecedentes ni recrear vínculos familiares con personajes anteriores.\n\nTodos los personajes deben tener un mínimo de **16 años**, sin excepciones.",
+    status: "abierto",
+    createdAt: "2026-08-03T11:00:00Z",
+    contentLoaded: true,
+    pinned: true,
+    replies: [],
+    adminOnly: true,
+  }
+
+  const reportRulesThread: Thread = {
+    id: "t-rules-reportes",
+    title: "Normativa de la Sección y plantilla de reporte",
+    category: "reportes",
+    authorId: "u0",
+    content: "**Reglas específicas de la sección de reportes**\n\n- En los reportes solo hablan los acusados, el que reporta y el miembro del Staff que tome el reporte. Aunque hayas estado involucrado (como testigo o con pruebas) no podrás participar.\n\n- El motivo de sanción debe ser claro.\n\n- El título del reporte debe seguir el formato: **Nombre Apellido**.\n\n- Si el usuario que reporta o el usuario reportado están baneados permanentemente o de forma indefinida, el reporte será rechazado.\n\n- El denunciante, luego de 72 horas, puede solicitar al Encargado de Staff que coloque un encargado para responder su reporte. Aun así esto no quiere decir que el reporte sea tomado sí o cuando el usuario lo solicite. El Equipo del Staff y los Administradores se reserva el derecho de tomar el reporte cuando sea conveniente.\n\n- Cualquier reporte hecho con la intención de molestar, hostigar o con pruebas editadas para incriminar a un usuario/staff terminará con tu cuenta baneada de la comunidad.\n\n- El reporte estará en estado de pendiente hasta que el acusado responda o un Staff pida la respuesta del acusado (con un mínimo de 24 horas de espera). Esto quiere decir que si se excede el límite de tiempo y todavía el acusado no ha respondido se podrá tomar como aceptado el reporte sin problema alguno, basándose en los hechos que aclaró el denunciante.\n\n- En caso de que el Staff considere que las pruebas entregadas son suficientes para una resolución, no estará obligado a esperar la respuesta del acusado.\n\n- El caso no se tomará en cuenta si se reporta luego de 2 semanas de lo ocurrido.\n\n- Las pruebas no pueden estar manipuladas de ninguna forma. Si se muestran dichas pruebas, deben de estar en su formato original. Esto incluye el ocultado de información como puede ser tapar el chat o los nombres de los personajes. En caso de que esto se realice, el reporte será cerrado a favor del contrincante (si las pruebas son editadas por el acusado, el reporte es aceptado mientras que si las pruebas son editadas por el denunciante, el reporte es rechazado).\n\n- Además, la manipulación de pruebas puede llevar a una sanción, llegando hasta la expulsión de nuestra comunidad en ciertos casos.\n\n- La explicación de los hechos no puede superar los 1000 caracteres.\n\n**Modus operandi**\n\n**General:**\n\nAl realizar el reporte, el denunciante o creador del mismo deberá de dar toda la información que pueda al respecto del caso. Si es un reporte múltiple (con varios acusados) los motivos de sanción deben de ser idénticos para cada persona. Por ejemplo, en caso de que un acusado haya sido denunciado erróneamente por DM y este lo remarque, el reporte será rechazado para todos. Si quiere reportar a un grupo de personas por distintos motivos, realice distintos reportes.\n\nLas pruebas deben de ser claras y la explicación breve y concisa, no se vaya por las ramas porque solo entorpecerá la resolución de dicha denuncia/reporte. Procure explicar todo lo que pueda teniendo chances limitadas para defender su palabra. Una vez cree el reporte, no podrá contestarlo hasta que un Staff le permita hacerlo. Deberá de esperar a la respuesta del acusado o del Staff que se haga cargo de dicha denuncia.\n\nSi usted fue el acusado, deberá de responder el reporte lo más rápido que pueda. No es necesario que cuente con pruebas a excepción de que comente que las tiene o que hable sobre sucesos los cuales las pruebas del contrincante no los muestran. El comentar tener pruebas y luego no mostrarlas es un indicativo que tomará el Staff para creerle más al denunciante que al acusado. Usted deberá de responder el reporte y esperar a la respuesta del Staff.\n\nSi el acusado vuelve a responder sin que el Staff le dé el permiso, el Staff podrá aceptar el reporte por este mismo motivo aun si las pruebas no son del todo convincentes. A la vez, si el acusado responde al denunciante sin el permiso del Staff, el Staff podrá rechazar el reporte aun si las pruebas son convincentes.\n\nEl denunciante luego de crear el post solo podrá volver a comentar en el mismo si el Staff le da permiso, mientras que el acusado luego de dar una respuesta al post solo podrá volver a comentar si el Staff le otorga el permiso.\n\nEl editar o eliminar el post luego de una respuesta podrá resultar en una sanción por parte del Staff a cargo de dicho reporte.\n\n**Contra usuarios:**\n\nEs obligatorio que dicho reporte cuente con pruebas sobre lo relatado. En caso de no tenerlas, el reporte será rechazado a excepción de que el Staff vea conveniente no hacerlo.\n\n**Plantilla/formato del reporte**\n\n**Nombre del denunciante:** Responder aquí.\n\n**Nombre del acusado:** Responder aquí.\n\n**Fecha de lo ocurrido:** Responder aquí.\n\n**Motivos de sanción:** Responder aquí.\n\n**Breve explicación de los hechos:** Responder aquí.\n\n**Pruebas sobre lo relatado:** Responder aquí.",
+    status: "abierto",
+    createdAt: "2026-08-03T10:00:00Z",
+    contentLoaded: true,
+    pinned: true,
+    replies: [],
+    adminOnly: true,
+  }
+
+  const factionFormatThread: Thread = {
+    id: "t-rules-facciones-formato",
+    title: "Formato para presentar una facción",
+    category: "facciones",
+    authorId: "u0",
+    content: "**El titulo del hilo debe ser nombre de la facción**\n\n**Introducción y Lore**:\n\n**Ubicación**:\n\n**Miembros**:\n\n**Screenshots (Si requiere)**:",
+    status: "abierto",
+    createdAt: "2026-08-03T09:00:00Z",
+    contentLoaded: true,
+    pinned: true,
+    replies: [],
+    adminOnly: true,
+    subforum: "formato",
+  }
+
+  // Filter out duplicate rules thread and add it at the beginning
+  const filteredThreads = threads.filter((t) => t.id !== "t-rules-historias" && t.id !== "t-rules-reportes" && t.id !== "t-rules-facciones-formato")
+  const allThreads = [rulesThread, reportRulesThread, factionFormatThread, ...filteredThreads]
+
+  return { users, threads: allThreads }
+}
+
+// ─── Seed Data ────────────────────────────────────────────────────────────────
+
+const SEED_USERS: User[] = [
+  {
+    id: "u0",
+    username: "Henry Kissinger",
+    password: "cartas",
+    role: "admin",
+    joinedAt: "2024-01-01",
+    avatar: "H",
+    avatarUrl: logoImg,
+    bio: "Moderador principal del servidor. Mantengo el orden dentro de la comunidad y reviso los reportes de jugadores.",
+    bannerUrl: DEFAULT_BANNER_URL,
+    notifications: [],
+  },
+]
+
+const SEED_THREADS: Thread[] = [
+  {
+    id: "t1",
+    title: "Bug: Objetos desaparecen al cerrar el servidor",
+    category: "bugs",
+    authorId: "u2",
+    content:
+      "Cuando el servidor se reinicia, los objetos que dejé en el suelo del safehouse desaparecen. Esto pasa desde la última actualización. He perdido 3 mochilas llenas de comida enlatada y munición. Reproduzco el bug dejando objetos en coordenadas 11420x8203, reiniciando el servidor y volviendo a la ubicación.",
+    status: "en_revision",
+    createdAt: "2026-08-05T14:22:00Z",
+    pinned: true,
+    replies: [
+      {
+        id: "r1",
+        authorId: "u1",
+        content:
+          "Gracias por el reporte detallado. Hemos reproducido el bug en el entorno de pruebas. Estamos trabajando en un hotfix.",
+        createdAt: "2026-08-06T09:10:00Z",
+        isStaff: true,
+      },
+    ],
+  },
+  {
+    id: "t2",
+    title: "Facción: Zonas de control del norte del mapa",
+    category: "facciones",
+    authorId: "u3",
+    content:
+      "Propongo crear una zona PvP opcional al norte, cerca de Louisville. Así los jugadores que quieren combate PvP tienen su espacio sin afectar a los que prefieren PvE. Se podría marcar con señales en el juego y anunciarlo en el Discord.",
+    status: "abierto",
+    createdAt: "2026-08-07T18:45:00Z",
+    replies: [
+      {
+        id: "r2",
+        authorId: "u2",
+        content: "+1 a esta idea. Llevan meses pidiendo esto en el Discord.",
+        createdAt: "2026-08-07T19:30:00Z",
+      },
+    ],
+  },
+  {
+    id: "t3",
+    title: "Reporte: Jugador usando speed hack - MrGriefer2024",
+    category: "reportes",
+    authorId: "u2",
+    content:
+      "El usuario MrGriefer2024 estaba moviéndose a velocidad anormal cerca de West Point. Tengo capturas de pantalla y un clip de video. También destruyó mis barricadas sin poder ser alcanzado. Hora del incidente: 2026-08-08 ~20:30 server time.",
+    status: "cerrado",
+    createdAt: "2026-08-08T21:00:00Z",
+    replies: [
+      {
+        id: "r3",
+        authorId: "u0",
+        content:
+          "El jugador ha sido baneado permanentemente tras revisar los logs del servidor. Gracias por el reporte con evidencia.",
+        createdAt: "2026-08-09T10:00:00Z",
+        isStaff: true,
+      },
+    ],
+  },
+  {
+    id: "t-rules-reportes",
+    title: "Normativa de la Sección y plantilla de reporte",
+    category: "reportes",
+    authorId: "u0",
+    content:
+      "Antes de abrir un reporte, revisa esta guía:\n\n1. Menciona al menos a un usuario involucrado.\n2. Describe el incidente con la mayor claridad posible.\n3. Añade fecha, hora y ubicación aproximada.\n4. Sube capturas o vídeos si existen pruebas.\n5. No reportes por disputas personales ni rumores sin evidencia.\n\nEl staff revisará cada caso en orden de prioridad y responderá según la gravedad.",
+    status: "abierto",
+    createdAt: "2026-08-03T11:00:00Z",
+    replies: [],
+    pinned: true,
+    adminOnly: true,
+  },
+  {
+    id: "t4",
+    title: "Facción: Eventos semanales de supervivencia",
+    category: "facciones",
+    authorId: "u3",
+    content:
+      "Sería genial tener eventos semanales con reglas especiales: sin vehículos, solo armas blancas, hordes especiales los viernes, etc. Esto daría más vida al servidor entre actualizaciones.",
+    status: "cerrado",
+    createdAt: "2026-08-03T11:00:00Z",
+    replies: [],
+  },
+  {
+    id: "t5",
+    title: "La caída de Mika — Diario del día 47",
+    category: "historias",
+    authorId: "u3",
+    content:
+      "Día 47 desde el inicio del Eclipse.\n\nEncontré un diario abandonado en una farmacia de Muldraugh. Su dueño anterior se llamaba Carlos. No sé si sobrevivió.\n\nLlevo tres semanas sin ver a otra persona con vida. El silencio ya no me asusta, me preocupa más el ruido. Ayer escuché un motor al norte, cerca de la estación de policía, pero cuando llegué no había nadie. Solo sangre fresca y una mochila verde oliva con munición del 9mm.\n\nAlguien más sigue aquí fuera. Y no sé si eso es bueno o malo.",
+    status: "abierto",
+    createdAt: "2026-08-09T16:00:00Z",
+    replies: [
+      {
+        id: "r4",
+        authorId: "u2",
+        content: "Bro esa mochila era mía... fui a buscar agua y cuando volví ya no estaba. Sobreviví escondiéndome en el sótano del bar. ¿Dónde estás ahora?",
+        createdAt: "2026-08-09T18:30:00Z",
+      },
+    ],
+  },
+  {
+    id: "t6",
+    title: "El Cazador Solitario — Origen de ZombieHunter99",
+    category: "historias",
+    authorId: "u2",
+    content:
+      "Antes del Eclipse trabajaba como guardia de seguridad en el almacén de Knox. Turno de noche, solo, con una linterna y una radio que solo captaba estática.\n\nLa primera noche que todo se derrumbó, estaba en mi puesto cuando vi a mi compañero Tomás tambalearse por el pasillo. Pensé que estaba borracho. Error casi fatal.\n\nDesde entonces cargo siempre con dos cosas: la navaja que le quité a Tomás antes de que me alcanzara, y la culpa de haberle fallado.\n\nSoy ZombieHunter, pero la verdad es que no cazar zombies me cuesta trabajo. Lo que me cuesta es olvidar las caras que reconozco entre ellos.",
+    status: "abierto",
+    createdAt: "2026-08-10T09:15:00Z",
+    pinned: true,
+    replies: [],
+  },
+]
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const CATEGORY_LABELS: Record<Category, string> = {
+  bugs: "Reporte de Bug",
+  reportes: "Reportes del servidor",
+  historias: "Historia de Personaje",
+  facciones: "Facciones",
+  normativa: "Normativa",
+}
+
+const CATEGORY_ICONS: Record<Category, string> = {
+  bugs: "🐛",
+  reportes: "⚠️",
+  historias: "📖",
+  facciones: "🛡️",
+  normativa: "📜",
+}
+
+const CATEGORY_DESCRIPTIONS: Record<Category, string> = {
+  bugs: "Reporta errores, glitches y problemas técnicos del servidor.",
+  reportes: "Reporta jugadores que violen las reglas del servidor.",
+  historias: "Comparte la historia de tu personaje.",
+  facciones: "Discute grupos, clanes y facciones del rol.",
+  normativa: "Consulta y debate las normas del servidor.",
+}
+
+const CATEGORY_COLORS: Record<Category, string> = {
+  bugs: "#e74c3c",
+  reportes: "#e67e22",
+  historias: "#8e44ad",
+  facciones: "#22c55e",
+  normativa: "#38bdf8",
+}
+
+const CATEGORY_THREAD_ACTIONS: Record<Category, string> = {
+  bugs: "NOTIFICAR BUG",
+  reportes: "NOTIFICAR REPORTE",
+  historias: "COMPARTIR HISTORIA",
+  facciones: "PROPONER FACCIÓN",
+  normativa: "PROPONER NORMATIVA",
+}
+
+const BADGES: Record<BadgeType, Badge> = {
+  "most-active": {
+    type: "most-active",
+    label: "TOP HISTÓRICO",
+    title: "Top 1 histórico de actividad",
+    icon: "🏆",
+    color: "#ff6b6b",
+  },
+  "most-active-2": {
+    type: "most-active-2",
+    label: "TOP 2",
+    title: "Segundo puesto histórico de actividad",
+    icon: "🥈",
+    color: "#cbd5e1",
+  },
+  "most-active-3": {
+    type: "most-active-3",
+    label: "TOP 3",
+    title: "Tercer puesto histórico de actividad",
+    icon: "★",
+    color: "#cd7c32",
+  },
+  "highest-pdr": {
+    type: "highest-pdr",
+    label: "MAYOR PDR",
+    title: "Mayor cantidad de Puntos de Rol",
+    icon: "⭐",
+    color: "#ffd93d",
+  },
+  verified: {
+    type: "verified",
+    label: "VERIFICADO",
+    title: "Cuenta verificada con el servidor",
+    icon: "✓",
+    color: "#16a34a",
+  },
+}
+
+const FACTION_SUBFORUM_LABELS: Record<ThreadSubforum, string> = {
+  formato: "FORMATO",
+  no_oficial: "NO OFICIAL",
+  oficial: "OFICIAL",
+}
+
+const ROLE_REDEEM_COST = 100
+const SESSION_STORAGE_KEY = "eclipse-order-session"
+const LOCAL_USERS_STORAGE_KEY = "eclipse-order-local-users"
+const STORE_PRODUCTS_STORAGE_KEY = "eclipse-order-store-products"
+const STORE_REDEMPTIONS_STORAGE_KEY = "eclipse-order-store-redemptions"
+const PENDING_VERIFICATION_STORAGE_KEY = "eclipse-order-pending-verification"
+const REPLIES_PAGE_SIZE = 20
+
+const STATUS_LABELS: Record<ThreadStatus, string> = {
+  abierto: "Abierto",
+  cerrado: "Cerrado",
+  en_revision: "En revisión",
+}
+
+const STATUS_COLORS: Record<ThreadStatus, string> = {
+  abierto: "#27ae60",
+  cerrado: "#7f8c8d",
+  en_revision: "#f39c12",
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("es-ES", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+function formatServerUptime(onlineSince: string | null) {
+  if (!onlineSince) return "No disponible"
+  const elapsedMinutes = Math.max(0, Math.floor((Date.now() - new Date(onlineSince).getTime()) / 60_000))
+  const days = Math.floor(elapsedMinutes / 1_440)
+  const hours = Math.floor((elapsedMinutes % 1_440) / 60)
+  const minutes = elapsedMinutes % 60
+  if (days > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${minutes}m`
+  return `${minutes}m`
+}
+
+function formatPlaytime(totalSeconds: number) {
+  const totalMinutes = Math.max(0, Math.floor(totalSeconds / 60))
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return `${hours}h ${minutes.toString().padStart(2, "0")}m`
+}
+
+function threadLastActivity(thread: Thread) {
+  const lastReply = thread.replies[thread.replies.length - 1]
+  return new Date(lastReply?.createdAt || thread.createdAt).getTime()
+}
+
+function threadReplyCount(thread: Thread) {
+  return thread.replyCount ?? thread.replies.length
+}
+
+function canSubscribeToThread(thread: Thread) {
+  return SUBSCRIBABLE_CATEGORIES.includes(thread.category)
+}
+
+function uid() {
+  return Math.random().toString(36).slice(2, 10)
+}
+
+function authEmailForCharacter(name: string) {
+  const slug = name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+  return `${slug || "personaje"}@eclipse-order.local`
+}
+
+function isLegacyAuthEmail(email: string | undefined) {
+  return Boolean(email?.toLowerCase().endsWith("@eclipse-order.local"))
+}
+
+function roleLabel(role: Role) {
+  return role === "user" ? "USUARIO" : role.toUpperCase()
+}
+
+function RoleMark({ role }: { role: Role }) {
+  if (role === "user") return null
+  const isAdmin = role === "admin"
+
+  return (
+    <span
+      style={{
+        position: "relative",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        marginLeft: 6,
+        width: 18,
+        height: 18,
+        borderRadius: 6,
+        border: `1px solid ${isAdmin ? "rgba(255,204,102,0.72)" : "rgba(77,216,223,0.55)"}`,
+        background: isAdmin ? "linear-gradient(135deg, rgba(217,119,6,0.18), rgba(168,85,247,0.12))" : "rgba(168,85,247,0.12)",
+        boxShadow: `0 0 10px ${isAdmin ? "rgba(255,194,83,0.18)" : "rgba(77,216,223,0.16)"}`,
+        verticalAlign: "middle",
+        overflow: "visible",
+        cursor: "default",
+      }}
+      onMouseEnter={(e) => {
+        const label = e.currentTarget.querySelector('[data-role-label="true"]') as HTMLElement | null
+        if (label) {
+          label.style.opacity = "1"
+          label.style.transform = "translateX(-50%) translateY(0)"
+        }
+      }}
+      onMouseLeave={(e) => {
+        const label = e.currentTarget.querySelector('[data-role-label="true"]') as HTMLElement | null
+        if (label) {
+          label.style.opacity = "0"
+          label.style.transform = "translateX(-50%) translateY(4px)"
+        }
+      }}
+    >
+      <span
+        aria-label={isAdmin ? "Administrador" : "Moderador"}
+        style={{
+          position: "relative",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 12,
+          height: 12,
+        }}
+      >
+        {isAdmin ? (
+          <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}>
+            <defs>
+              <linearGradient id="admin-shield-gradient" x1="5" y1="2.5" x2="19" y2="21.5" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#fff9d6" />
+                <stop offset="28%" stopColor="#f9d76b" />
+                <stop offset="70%" stopColor="#f0b843" />
+                <stop offset="100%" stopColor="#a96b10" />
+              </linearGradient>
+            </defs>
+            <path d="M12 2.7 17.8 4.7V11c0 4.7-2.7 8.3-5.8 10.1C9 19.3 6.2 15.7 6.2 11V4.7L12 2.7Z" fill="url(#admin-shield-gradient)" stroke="rgba(255,243,182,0.9)" strokeWidth="0.8" strokeLinejoin="round" />
+            <path d="M9.2 7.3h5.7M9.2 11.6h4.2M9.2 15.8h5.6" stroke="#fff5d2" strokeWidth="1.2" strokeLinecap="round" />
+            <path d="M10.2 5.2 12 3.9l1.8 1.3v1.1h-3.6V5.2Z" fill="#fff0b3" opacity="0.95" />
+          </svg>
+        ) : (
+          <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}>
+            <path d="M12 2.1 15 8.5h6.5l-5.2 3.8 2 6.1L12 0l-6.3 18.4 2-6.1L2.5 8.5H9L12 2.1Z" fill="rgba(125,211,252,0.06)" stroke="rgba(124,225,255,0.9)" strokeWidth="0.8" strokeLinejoin="round" />
+          </svg>
+        )}
+      </span>
+
+      <span
+        data-role-label="true"
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "calc(100% + 8px)",
+          transform: "translateX(-50%) translateY(4px)",
+          opacity: 0,
+          pointerEvents: "none",
+          padding: "4px 7px",
+          borderRadius: 999,
+          background: isAdmin ? "rgba(255,214,102,0.14)" : "rgba(77,216,223,0.12)",
+          border: `1px solid ${isAdmin ? "rgba(255,214,102,0.55)" : "rgba(77,216,223,0.5)"}`,
+          color: isAdmin ? "#ffd869" : "#8cecf0",
+          fontFamily: "JetBrains Mono, monospace",
+          fontSize: 8,
+          letterSpacing: "0.08em",
+          lineHeight: 1,
+          whiteSpace: "nowrap",
+          boxShadow: "0 0 12px rgba(0,0,0,0.25)",
+          transition: "opacity 0.16s ease, transform 0.16s ease",
+          zIndex: 10,
+        }}
+      >
+        {isAdmin ? "ADMIN" : "MOD"}
+      </span>
+    </span>
+  )
+}
+
+function calculateUserBadges(user: User, threads: Thread[], users: User[], isVerified: boolean): BadgeType[] {
+  const badges: BadgeType[] = []
+
+  if (isVerified) {
+    badges.push("verified")
+  }
+
+  const verifiedLink = globalVerifiedPlayerLinks.find((link) => link.forum_user_id === user.id && link.verified)
+  const linkedPzUsername = verifiedLink?.pz_username?.trim()
+  if (linkedPzUsername && globalPlaytimeLeaderboard.length > 0) {
+    const normalizedUsername = linkedPzUsername.toLowerCase()
+    const linkedRankIndex = globalPlaytimeLeaderboard.findIndex((entry) => entry.username.trim().toLowerCase() === normalizedUsername)
+
+    if (linkedRankIndex === 0) badges.push("most-active")
+    if (linkedRankIndex === 1) badges.push("most-active-2")
+    if (linkedRankIndex === 2) badges.push("most-active-3")
+
+    if (linkedRankIndex >= 0) {
+      const linkedAccounts = globalVerifiedPlayerLinks.filter(
+        (link) => link.verified && link.pz_username?.trim().toLowerCase() === normalizedUsername,
+      )
+      const sharedTopRank = linkedAccounts.some((link) => {
+        const rankIndex = globalPlaytimeLeaderboard.findIndex((entry) => entry.username.trim().toLowerCase() === link.pz_username!.trim().toLowerCase())
+        return rankIndex === 0
+      })
+      if (sharedTopRank && !badges.includes("most-active")) {
+        badges.push("most-active")
+      }
+    }
+  }
+
+  const userRolePoints = user.rolePoints || 0
+  const maxRolePoints = Math.max(...users.map((u) => u.rolePoints || 0), 0)
+  const usersWithMaxPDR = users.filter((u) => (u.rolePoints || 0) === maxRolePoints && maxRolePoints > 0).length
+
+  if (userRolePoints === maxRolePoints && maxRolePoints > 0 && usersWithMaxPDR === 1) {
+    badges.push("highest-pdr")
+  }
+
+  return badges
+}
+
+
+function UserBadges({ badges, glowTopRank = false }: { badges: BadgeType[]; glowTopRank?: boolean }) {
+  if (!badges || badges.length === 0) return null
+
+  return (
+    <>
+      {glowTopRank && (
+        <style>{`
+          @keyframes topRankGlow {
+            0% { filter: drop-shadow(0 0 0 rgba(255,208,92,0)); transform: scale(1) translateY(1px); }
+            20% { filter: drop-shadow(0 0 6px rgba(255,224,130,0.85)) drop-shadow(0 0 12px rgba(251,191,36,0.55)); transform: scale(1.04) translateY(1px); }
+            50% { filter: drop-shadow(0 0 10px rgba(255,255,255,0.9)) drop-shadow(0 0 22px rgba(251,191,36,0.7)); transform: scale(1.06) translateY(1px); }
+            100% { filter: drop-shadow(0 0 0 rgba(255,208,92,0)); transform: scale(1) translateY(1px); }
+          }
+          @keyframes goldTextShift {
+            0% { background-position: 0% 50%; filter: brightness(1); }
+            50% { background-position: 100% 50%; filter: brightness(1.25); }
+            100% { background-position: 0% 50%; filter: brightness(1); }
+          }
+        `}</style>
+      )}
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 7, marginLeft: 8, verticalAlign: "middle" }}>
+        {badges.map((badgeType) => {
+          const gradientId = `${badgeType}-gradient`
+          const badgeTitle = BADGES[badgeType]?.title || "Insignia"
+          const isTopRankBadge = badgeType === "most-active" && glowTopRank
+
+          const badgeContent = (() => {
+            if (badgeType === "most-active") {
+              return (
+                <svg viewBox="0 0 260 260" style={{ width: "100%", height: "100%", display: "block" }}>
+                  <defs>
+                    <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#ffe49a" />
+                      <stop offset="18%" stopColor="#f8d86a" />
+                      <stop offset="50%" stopColor="#d98d00" />
+                      <stop offset="100%" stopColor="#fff2bf" />
+                    </linearGradient>
+                    <linearGradient id={`${gradientId}-shield`} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#1b1d1f" />
+                      <stop offset="100%" stopColor="#3b2d1a" />
+                    </linearGradient>
+                    <linearGradient id={`${gradientId}-banner`} x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#f9d77f" />
+                      <stop offset="100%" stopColor="#c98c17" />
+                    </linearGradient>
+                  </defs>
+                  <g>
+                    <path d="M130 18 L167 44 L190 35 L212 56 L240 68 L220 102 L228 130 L206 162 L190 184 L210 223 L174 239 L130 254 L86 239 L50 223 L70 184 L54 162 L32 130 L40 102 L20 68 L48 56 L70 35 L93 44 Z" fill="url(#${gradientId})" stroke="#a86400" strokeWidth="6" strokeLinejoin="round" />
+                    <path d="M128 32 L156 66 L181 62 L202 85 L176 106 L188 132 L166 155 L184 185 L152 205 L128 228 L104 205 L72 185 L90 155 L68 132 L80 106 L54 85 L75 62 L100 66 Z" fill="url(#${gradientId}-shield)" stroke="#e9bf5a" strokeWidth="6" strokeLinejoin="round" />
+                    <path d="M60 92 C86 64, 102 54, 130 54 C158 54, 174 64, 200 92 L178 78 L162 62 L130 42 L98 62 L82 78 Z" fill="url(#${gradientId})" stroke="#ffeb9f" strokeWidth="5" strokeLinejoin="round" />
+                    <circle cx="130" cy="122" r="46" fill="#0d1014" stroke="#f7d15f" strokeWidth="6" />
+                    <circle cx="130" cy="122" r="38" fill="none" stroke="#7a4c06" strokeWidth="3" />
+                    <path d="M130 122 L130 92 M130 122 L152 136 M130 122 L112 140" stroke="#f5d67b" strokeWidth="4" strokeLinecap="round" />
+                    <circle cx="130" cy="122" r="5" fill="#f4c449" />
+                    <path d="M73 182 C90 198, 110 210, 130 216 C150 210, 170 198, 187 182 L202 224 C174 242, 150 250, 130 252 C110 250, 86 242, 58 224 Z" fill="url(#${gradientId})" stroke="#8e5e00" strokeWidth="5" strokeLinejoin="round" />
+                    <path d="M84 182 C100 166, 113 158, 130 154 C147 158, 160 166, 176 182" fill="none" stroke="#fbe7a6" strokeWidth="6" strokeLinecap="round" />
+                    <g fontFamily="Impact, Arial Black, sans-serif" fontWeight="900" textAnchor="middle">
+                      <text x="130" y="112" fontSize="44" fill="#f7d977" letterSpacing="2">TOP 1</text>
+                    </g>
+                    <g>
+                      <path d="M72 214 L188 214 L176 232 L82 232 Z" fill="url(#${gradientId}-banner)" stroke="#8a5a04" strokeWidth="4" strokeLinejoin="round" />
+                      <text x="130" y="226" fontFamily="Georgia, serif" fontWeight="700" fontSize="16" fill="#4d2b08" textAnchor="middle" letterSpacing="1">MÁS HORAS JUGADAS</text>
+                    </g>
+                  </g>
+                </svg>
+              )
+            }
+
+            if (badgeType === "most-active-2") {
+              return (
+                <svg viewBox="0 0 260 260" style={{ width: "100%", height: "100%", display: "block" }}>
+                  <defs>
+                    <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#edf1f7" />
+                      <stop offset="25%" stopColor="#dfeaf9" />
+                      <stop offset="50%" stopColor="#95a5b8" />
+                      <stop offset="100%" stopColor="#f2f4f8" />
+                    </linearGradient>
+                    <linearGradient id={`${gradientId}-shield`} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#2b3138" />
+                      <stop offset="100%" stopColor="#5c6978" />
+                    </linearGradient>
+                    <linearGradient id={`${gradientId}-banner`} x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#edf2f8" />
+                      <stop offset="100%" stopColor="#a7b3c3" />
+                    </linearGradient>
+                  </defs>
+                  <g>
+                    <path d="M130 18 L167 44 L190 35 L212 56 L240 68 L220 102 L228 130 L206 162 L190 184 L210 223 L174 239 L130 254 L86 239 L50 223 L70 184 L54 162 L32 130 L40 102 L20 68 L48 56 L70 35 L93 44 Z" fill="url(#${gradientId})" stroke="#6d7e8e" strokeWidth="6" strokeLinejoin="round" />
+                    <path d="M128 32 L156 66 L181 62 L202 85 L176 106 L188 132 L166 155 L184 185 L152 205 L128 228 L104 205 L72 185 L90 155 L68 132 L80 106 L54 85 L75 62 L100 66 Z" fill="url(#${gradientId}-shield)" stroke="#dfeaf9" strokeWidth="6" strokeLinejoin="round" />
+                    <path d="M60 92 C86 64, 102 54, 130 54 C158 54, 174 64, 200 92 L178 78 L162 62 L130 42 L98 62 L82 78 Z" fill="url(#${gradientId})" stroke="#f0f5fb" strokeWidth="5" strokeLinejoin="round" />
+                    <circle cx="130" cy="122" r="46" fill="#0d1014" stroke="#dfeaf9" strokeWidth="6" />
+                    <circle cx="130" cy="122" r="38" fill="none" stroke="#8593a8" strokeWidth="3" />
+                    <path d="M130 122 L130 92 M130 122 L152 136 M130 122 L112 140" stroke="#edf5ff" strokeWidth="4" strokeLinecap="round" />
+                    <circle cx="130" cy="122" r="5" fill="#dfeaf9" />
+                    <path d="M73 182 C90 198, 110 210, 130 216 C150 210, 170 198, 187 182 L202 224 C174 242, 150 250, 130 252 C110 250, 86 242, 58 224 Z" fill="url(#${gradientId})" stroke="#66788a" strokeWidth="5" strokeLinejoin="round" />
+                    <path d="M84 182 C100 166, 113 158, 130 154 C147 158, 160 166, 176 182" fill="none" stroke="#f4f8ff" strokeWidth="6" strokeLinecap="round" />
+                    <g fontFamily="Impact, Arial Black, sans-serif" fontWeight="900" textAnchor="middle">
+                      <text x="130" y="112" fontSize="44" fill="#edf5ff" letterSpacing="2">TOP 2</text>
+                    </g>
+                    <g>
+                      <path d="M72 214 L188 214 L176 232 L82 232 Z" fill="url(#${gradientId}-banner)" stroke="#6b7b88" strokeWidth="4" strokeLinejoin="round" />
+                      <text x="130" y="226" fontFamily="Georgia, serif" fontWeight="700" fontSize="16" fill="#2f3a43" textAnchor="middle" letterSpacing="1">MÁS HORAS JUGADAS</text>
+                    </g>
+                  </g>
+                </svg>
+              )
+            }
+
+            if (badgeType === "most-active-3") {
+              return (
+                <svg viewBox="0 0 260 260" style={{ width: "100%", height: "100%", display: "block" }}>
+                  <defs>
+                    <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#f7c69a" />
+                      <stop offset="25%" stopColor="#d37a3b" />
+                      <stop offset="50%" stopColor="#9a4f10" />
+                      <stop offset="100%" stopColor="#f8d8a9" />
+                    </linearGradient>
+                    <linearGradient id={`${gradientId}-shield`} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#211a17" />
+                      <stop offset="100%" stopColor="#6a3b1b" />
+                    </linearGradient>
+                    <linearGradient id={`${gradientId}-banner`} x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#f7d39d" />
+                      <stop offset="100%" stopColor="#c8782a" />
+                    </linearGradient>
+                  </defs>
+                  <g>
+                    <path d="M130 18 L167 44 L190 35 L212 56 L240 68 L220 102 L228 130 L206 162 L190 184 L210 223 L174 239 L130 254 L86 239 L50 223 L70 184 L54 162 L32 130 L40 102 L20 68 L48 56 L70 35 L93 44 Z" fill="url(#${gradientId})" stroke="#8a4a0a" strokeWidth="6" strokeLinejoin="round" />
+                    <path d="M128 32 L156 66 L181 62 L202 85 L176 106 L188 132 L166 155 L184 185 L152 205 L128 228 L104 205 L72 185 L90 155 L68 132 L80 106 L54 85 L75 62 L100 66 Z" fill="url(#${gradientId}-shield)" stroke="#f2c28c" strokeWidth="6" strokeLinejoin="round" />
+                    <path d="M60 92 C86 64, 102 54, 130 54 C158 54, 174 64, 200 92 L178 78 L162 62 L130 42 L98 62 L82 78 Z" fill="url(#${gradientId})" stroke="#fbe2b2" strokeWidth="5" strokeLinejoin="round" />
+                    <circle cx="130" cy="122" r="46" fill="#0d1014" stroke="#f2c389" strokeWidth="6" />
+                    <circle cx="130" cy="122" r="38" fill="none" stroke="#8d4d13" strokeWidth="3" />
+                    <path d="M130 122 L130 92 M130 122 L152 136 M130 122 L112 140" stroke="#f8d9a1" strokeWidth="4" strokeLinecap="round" />
+                    <circle cx="130" cy="122" r="5" fill="#f0be7a" />
+                    <path d="M73 182 C90 198, 110 210, 130 216 C150 210, 170 198, 187 182 L202 224 C174 242, 150 250, 130 252 C110 250, 86 242, 58 224 Z" fill="url(#${gradientId})" stroke="#7d4006" strokeWidth="5" strokeLinejoin="round" />
+                    <path d="M84 182 C100 166, 113 158, 130 154 C147 158, 160 166, 176 182" fill="none" stroke="#fbe7c9" strokeWidth="6" strokeLinecap="round" />
+                    <g fontFamily="Impact, Arial Black, sans-serif" fontWeight="900" textAnchor="middle">
+                      <text x="130" y="112" fontSize="44" fill="#ffdf9b" letterSpacing="2">TOP 3</text>
+                    </g>
+                    <g>
+                      <path d="M72 214 L188 214 L176 232 L82 232 Z" fill="url(#${gradientId}-banner)" stroke="#7a4107" strokeWidth="4" strokeLinejoin="round" />
+                      <text x="130" y="226" fontFamily="Georgia, serif" fontWeight="700" fontSize="16" fill="#4c2307" textAnchor="middle" letterSpacing="1">MÁS HORAS JUGADAS</text>
+                    </g>
+                  </g>
+                </svg>
+              )
+            }
+
+            if (badgeType === "highest-pdr") {
+              return (
+                <svg viewBox="0 0 100 100" style={{ width: "100%", height: "100%", display: "block" }}>
+                  <defs>
+                    <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#ffd93d" />
+                      <stop offset="50%" stopColor="#ffb700" />
+                      <stop offset="100%" stopColor="#ff9500" />
+                    </linearGradient>
+                    <filter id="shadow-pdr">
+                      <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.4" />
+                    </filter>
+                  </defs>
+                  <path d="M 15 70 L 20 35 L 35 25 L 50 15 L 65 25 L 80 35 L 85 70 Z" fill={`url(#${gradientId})`} stroke="#d4a000" strokeWidth="2" filter="url(#shadow-pdr)" />
+                  <circle cx="20" cy="38" r="4" fill="#ffeb99" />
+                  <circle cx="35" cy="28" r="4" fill="#ffeb99" />
+                  <circle cx="50" cy="18" r="5" fill="#ffeb99" />
+                  <circle cx="65" cy="28" r="4" fill="#ffeb99" />
+                  <circle cx="80" cy="38" r="4" fill="#ffeb99" />
+                  <rect x="15" y="68" width="70" height="6" fill={`url(#${gradientId})`} stroke="#d4a000" strokeWidth="1.5" />
+                  <text x="50" y="65" fontSize="28" fontWeight="bold" textAnchor="middle" fill="#2d1810" fontFamily="Arial, sans-serif" letterSpacing="2">
+                    PDR
+                  </text>
+                </svg>
+              )
+            }
+
+            if (badgeType === "verified") {
+              return (
+                <svg viewBox="0 0 24 24" style={{ width: "100%", height: "100%", display: "block" }}>
+                  <defs>
+                    <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#16a34a" />
+                      <stop offset="100%" stopColor="#15803d" />
+                    </linearGradient>
+                  </defs>
+                  <path d="M12 1.7L19.2 4.4V10.5C19.2 15.8 15.8 19.9 12 22C8.2 19.9 4.8 15.8 4.8 10.5V4.4L12 1.7Z" fill={`url(#${gradientId})`} />
+                  <path d="M10.3 14.2L7.7 11.7L6.5 12.9L10.3 16.7L17.5 9.5L16.3 8.3L10.3 14.2Z" fill="#ffffff" />
+                </svg>
+              )
+            }
+
+            return null
+          })()
+
+          if (!badgeContent) return null
+
+          return (
+            <span
+              key={badgeType}
+              className="user-badge"
+              title={badgeTitle}
+              aria-label={badgeTitle}
+              data-badge-label="true"
+              style={{
+                position: "relative",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: badgeType === "most-active" || badgeType === "most-active-2" || badgeType === "most-active-3" ? 26 : 18,
+                height: badgeType === "most-active" || badgeType === "most-active-2" || badgeType === "most-active-3" ? 26 : 18,
+                verticalAlign: "middle",
+                transform: "translateY(1px)",
+                overflow: "visible",
+                cursor: "help",
+                animation: isTopRankBadge ? "topRankGlow 1.8s ease-in-out infinite" : undefined,
+                pointerEvents: "auto",
+                zIndex: isTopRankBadge ? 100 : "auto",
+              }}
+            >
+              {badgeContent}
+            </span>
+          )
+        })}
+      </span>
+    </>
+  )
+}
+
+function readLocalUsers(): User[] {
+  try {
+    const storedUsers = JSON.parse(localStorage.getItem(LOCAL_USERS_STORAGE_KEY) || "[]")
+    return Array.isArray(storedUsers) ? storedUsers : []
+  } catch {
+    return []
+  }
+}
+
+function readStoreProducts(): StoreProduct[] {
+  try {
+    const storedProducts = JSON.parse(localStorage.getItem(STORE_PRODUCTS_STORAGE_KEY) || "[]")
+    return Array.isArray(storedProducts) ? storedProducts : []
+  } catch {
+    return []
+  }
+}
+
+function mapStoreProduct(row: { id: string; title: string; price: number; description: string; image_url?: string | null; kind?: "personal" | "faccion" | null; created_at: string }): StoreProduct {
+  return {
+    id: row.id,
+    title: row.title,
+    price: row.price,
+    description: row.description,
+    imageUrl: row.image_url || undefined,
+    kind: row.kind || "personal",
+    createdAt: row.created_at,
+  }
+}
+
+function readStoreRedemptions(): StoreRedemption[] {
+  try {
+    const storedRedemptions = JSON.parse(localStorage.getItem(STORE_REDEMPTIONS_STORAGE_KEY) || "[]")
+    return Array.isArray(storedRedemptions) ? storedRedemptions : []
+  } catch {
+    return []
+  }
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function LoadingScreen() {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "var(--bg)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexDirection: "column",
+        gap: "24px",
+        backgroundImage:
+          "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(192,57,43,0.12) 0%, transparent 60%)",
+      }}
+    >
+      <div
+        style={{
+          width: 60,
+          height: 60,
+          border: "3px solid rgba(148, 163, 184, 0.2)",
+          borderTop: "3px solid #f97316",
+          borderRadius: "50%",
+          animation: "spin 1s linear infinite",
+        }}
+      />
+      <div
+        style={{
+          color: "var(--text-muted)",
+          fontSize: 14,
+          fontFamily: "JetBrains Mono, monospace",
+          letterSpacing: "0.05em",
+          animation: "pulse 2s ease-in-out infinite",
+        }}
+      >
+        Cargando foro...
+      </div>
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 0.5; }
+          50% { opacity: 1; }
+        }
+      `}</style>
+    </div>
+  )
+}
+
+function PostingOverlay() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1000,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexDirection: "column",
+        gap: 14,
+        background: "rgba(4, 9, 15, 0.82)",
+        backdropFilter: "blur(5px)",
+      }}
+    >
+      <div className="posting-spinner" aria-hidden="true" />
+      <div style={{ color: "var(--text)", fontSize: 13, fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>
+        PUBLICANDO...
+      </div>
+      <div style={{ color: "var(--text-dim)", fontSize: 11 }}>Subiendo contenido y archivos</div>
+    </div>
+  )
+}
+
+function OperationOverlay({ message }: { message: string }) {
+  return (
+    <div className="operation-overlay" role="status" aria-live="polite" aria-busy="true">
+      <div className="operation-loader" aria-hidden="true"><span /><span /><span /></div>
+      <div className="operation-message">{message}</div>
+      <div className="operation-detail">Espera un momento...</div>
+    </div>
+  )
+}
+
+function DeleteThreadModal({ threadTitle, onConfirm, onCancel }: { threadTitle: string; onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <div role="dialog" aria-modal="true" aria-labelledby="delete-thread-title" style={{ position: "fixed", inset: 0, zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, background: "rgba(2, 6, 23, 0.78)", backdropFilter: "blur(6px)" }}>
+      <div style={{ width: "100%", maxWidth: 440, background: "linear-gradient(180deg, var(--surface), var(--surface2))", border: "1px solid rgba(239,68,68,0.45)", borderRadius: 14, padding: 24, boxShadow: "0 24px 70px rgba(0,0,0,0.45)" }}>
+        <span style={{ color: "#fca5a5", fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "0.12em" }}>CONFIRMACIÓN DE MODERACIÓN</span>
+        <h2 id="delete-thread-title" style={{ margin: "10px 0 8px", color: "var(--text)", fontFamily: "Oswald, sans-serif", fontSize: 24, letterSpacing: "0.06em" }}>¿ELIMINAR ESTE HILO?</h2>
+        <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 14, lineHeight: 1.6 }}>Esta acción no se puede deshacer.</p>
+        <p style={{ margin: "12px 0 0", padding: "10px 12px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, color: "#fecaca", fontSize: 13, overflowWrap: "anywhere" }}>{threadTitle}</p>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22 }}>
+          <button type="button" onClick={onCancel} style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text-muted)", cursor: "pointer", padding: "9px 14px", fontSize: 11, fontFamily: "JetBrains Mono, monospace" }}>CANCELAR</button>
+          <button type="button" onClick={onConfirm} style={{ background: "rgba(239,68,68,0.16)", border: "1px solid rgba(239,68,68,0.6)", borderRadius: 8, color: "#fca5a5", cursor: "pointer", padding: "9px 14px", fontSize: 11, fontFamily: "JetBrains Mono, monospace" }}>ELIMINAR HILO</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Logo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
+  const imgSize = size === "lg" ? 80 : size === "sm" ? 32 : 44
+  const titleSize = size === "lg" ? 28 : size === "sm" ? 15 : 20
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: size === "lg" ? 16 : 10 }}>
+      <div
+        style={{
+          width: imgSize,
+          height: imgSize,
+          borderRadius: 16,
+          background: "linear-gradient(135deg, rgba(168,85,247,0.25), rgba(124,58,237,0.22))",
+          border: "1px solid rgba(148,163,184,0.2)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow: "0 14px 28px rgba(15, 23, 42, 0.28)",
+          overflow: "hidden",
+        }}
+      >
+        <img
+          src={siteLogoImg}
+          alt="Eclipse Horder logo"
+          style={{ width: imgSize * 0.76, height: imgSize * 0.76, objectFit: "contain", flexShrink: 0 }}
+        />
+      </div>
+      <div>
+        <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 700, fontSize: titleSize, letterSpacing: "0.1em", color: "var(--text)", lineHeight: 1.1 }}>
+          ECLIPSE ORDER
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Badge({ label, color }: { label: string; color: string }) {
+  return (
+    <span
+      style={{
+        background: color + "22",
+        color: color,
+        border: `1px solid ${color}44`,
+        borderRadius: 3,
+        padding: "1px 7px",
+        fontSize: 11,
+        fontFamily: "JetBrains Mono, monospace",
+        letterSpacing: "0.05em",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </span>
+  )
+}
+
+function Avatar({ letter, role, size = 32, imageUrl }: { letter: string; role: Role; size?: number; imageUrl?: string }) {
+  const bg =
+    role === "admin"
+      ? "#7b1c13"
+      : role === "moderator"
+      ? "#1a3a5c"
+      : "var(--border)"
+
+  if (imageUrl) {
+    return (
+      <div
+        style={{
+          width: size,
+          height: size,
+          borderRadius: "50%",
+          overflow: "hidden",
+          border: `2px solid ${role === "admin" ? "#c0392b" : role === "moderator" ? "#2980b9" : "var(--border2)"}`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+          background: bg,
+        }}
+      >
+        <img src={imageUrl} alt={letter} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+      </div>
+    )
+  }
+
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        background: bg,
+        border: `2px solid ${role === "admin" ? "#c0392b" : role === "moderator" ? "#2980b9" : "var(--border2)"}`,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: "Oswald, sans-serif",
+        fontWeight: 600,
+        fontSize: size * 0.4,
+        color: "var(--text)",
+        flexShrink: 0,
+      }}
+    >
+      {letter}
+    </div>
+  )
+}
+
+// ─── Login View ───────────────────────────────────────────────────────────────
+
+function LoginView({
+  onLogin,
+  goRegister,
+  goForgotPassword,
+}: {
+  onLogin: (characterName: string, password: string) => Promise<void>
+  goRegister: () => void
+  goForgotPassword: () => void
+}) {
+  const [characterName, setCharacterName] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    try {
+      await onLogin(characterName.trim(), password)
+      setError("")
+    } catch (loginError) {
+      setError(loginError instanceof Error ? loginError.message : "No se pudo iniciar sesión.")
+    }
+  }
+
+  return (
+    <div
+      className="login-shell"
+      style={{
+        minHeight: "100vh",
+        background: "var(--bg)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px 16px",
+        backgroundImage:
+          "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(192,57,43,0.12) 0%, transparent 60%)",
+      }}
+    >
+      <div className="login-orbit login-orbit-one" />
+      <div className="login-orbit login-orbit-two" />
+      <div className="login-content" style={{ width: "100%", maxWidth: 1040 }}>
+        <div className="login-brand" style={{ textAlign: "center", marginBottom: 40 }}>
+          <Logo />
+          <div className="login-brand-line">
+            <span />
+            <small>COMUNIDAD DE PROJECT ZOMBOID</small>
+            <span />
+          </div>
+        </div>
+        <div className="login-eclipse" aria-hidden="true">
+          <img src={eclipseGif} alt="" />
+        </div>
+
+        <div className="login-layout">
+          <div className="login-brief">
+            <span className="login-eyebrow">REFUGIO // ECLIPSE ORDER</span>
+            <h1>
+              SOBREVIVE.
+              <br />
+              <span>CONECTA.</span>
+            </h1>
+            <p>El mundo cambió. Las historias que quedan se escriben aquí.</p>
+            <div className="login-brief-line">
+              <span />
+            </div>
+          </div>
+
+          <div
+            className="login-panel"
+            style={{
+              background: "linear-gradient(180deg, var(--surface), var(--surface2))",
+              border: "1px solid var(--border)",
+              borderRadius: 24,
+              padding: "32px 28px",
+              boxShadow: "0 30px 60px rgba(2, 6, 23, 0.32)",
+            }}
+          >
+            <div className="login-panel-heading">
+              <span className="login-eyebrow">ACCESO DE USUARIO</span>
+              <h2>INICIAR SESIÓN</h2>
+              <p className="login-subtitle">Vuelve a entrar en tu historia.</p>
+            </div>
+
+            {error && (
+              <div
+                style={{
+                  background: "#c0392b18",
+                  border: "1px solid #c0392b55",
+                  borderRadius: 4,
+                  padding: "10px 14px",
+                  color: "#e74c3c",
+                  fontSize: 13,
+                  marginBottom: 20,
+                }}
+              >
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Correo electrónico</label>
+                <input
+                  className="login-input"
+                  style={inputStyle}
+                  value={characterName}
+                  onChange={(e) => setCharacterName(e.target.value)}
+                  type="text"
+                  placeholder="tu@gmail.com"
+                  autoComplete="username"
+                  autoFocus
+                />
+              </div>
+              <div style={{ marginBottom: 24 }}>
+                <label style={labelStyle}>Contraseña</label>
+                <input className="login-input" style={inputStyle} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" />
+              </div>
+              <button type="submit" className="login-submit" style={primaryBtn}>
+                ENTRAR AL FORO
+              </button>
+            </form>
+
+            <button type="button" onClick={goForgotPassword} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "block", fontSize: 12, margin: "16px auto 0", padding: 0, textDecoration: "underline" }}>
+              ¿Olvidaste tu contraseña?
+            </button>
+
+            <div
+              className="login-register"
+              style={{
+                marginTop: 24,
+                paddingTop: 24,
+                borderTop: "1px solid var(--border)",
+                textAlign: "center",
+                fontSize: 13,
+                color: "var(--text-muted)",
+              }}
+            >
+              ¿No tienes cuenta?{" "}
+              <button
+                onClick={goRegister}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#e74c3c",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  padding: 0,
+                  fontSize: 13,
+                }}
+              >
+                Registrarse
+              </button>
+            </div>
+            <a
+              href="https://discord.gg/jFy8fkXymk"
+              target="_blank"
+              rel="noreferrer"
+              style={{ display: "block", marginTop: 18, color: "#7289da", fontSize: 12, textAlign: "center", textDecoration: "none", fontWeight: 600 }}
+            >
+              UNIRTE AL DISCORD
+            </a>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  )
+}
+
+function ForgotPasswordView({
+  onRequest,
+  goLogin,
+}: {
+  onRequest: (email: string) => Promise<void>
+  goLogin: () => void
+}) {
+  const [email, setEmail] = useState("")
+  const [message, setMessage] = useState("")
+  const [error, setError] = useState("")
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    setError("")
+    setMessage("")
+    try {
+      await onRequest(email.trim())
+      setMessage("Si existe una cuenta con ese email, recibirás un enlace para recuperar el acceso.")
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "No se pudo enviar el enlace.")
+    }
+  }
+
+  return (
+    <div className="login-shell" style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 16px", backgroundImage: "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(192,57,43,0.12) 0%, transparent 60%)" }}>
+      <div className="login-content" style={{ width: "100%", maxWidth: 520 }}>
+        <div className="login-brand" style={{ textAlign: "center", marginBottom: 40 }}><Logo /><div className="login-brand-line"><span /><small>COMUNIDAD DE PROJECT ZOMBOID</small><span /></div></div>
+        <div className="login-panel" style={{ background: "linear-gradient(180deg, var(--surface), var(--surface2))", border: "1px solid var(--border)", borderRadius: 24, padding: "32px 28px", boxShadow: "0 30px 60px rgba(2, 6, 23, 0.32)" }}>
+          <div className="login-panel-heading"><span className="login-eyebrow">RECUPERACIÓN DE CUENTA</span><h2>¿OLVIDASTE TU CONTRASEÑA?</h2><p className="login-subtitle">Te enviaremos un enlace seguro a tu email.</p></div>
+          {(error || message) && <div style={{ background: error ? "#c0392b18" : "rgba(16,185,129,0.12)", border: `1px solid ${error ? "#c0392b55" : "rgba(16,185,129,0.5)"}`, borderRadius: 4, padding: "10px 14px", color: error ? "#e74c3c" : "#6ee7b7", fontSize: 13, marginBottom: 20 }}>{error || message}</div>}
+          <form onSubmit={handleSubmit}>
+            <div style={{ marginBottom: 24 }}><label style={labelStyle}>Email de tu cuenta</label><input className="login-input" style={inputStyle} type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tu@gmail.com" autoComplete="email" required autoFocus /></div>
+            <button type="submit" className="login-submit" style={primaryBtn}>ENVIAR ENLACE</button>
+          </form>
+          <button type="button" onClick={goLogin} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "block", fontSize: 12, margin: "22px auto 0", padding: 0, textDecoration: "underline" }}>Volver a iniciar sesión</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ResetPasswordView({ onReset }: { onReset: (password: string) => Promise<void> }) {
+  const [password, setPassword] = useState("")
+  const [confirm, setConfirm] = useState("")
+  const [error, setError] = useState("")
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    if (password.length < 6) return setError("La contraseña debe tener al menos 6 caracteres.")
+    if (password !== confirm) return setError("Las contraseñas no coinciden.")
+    try {
+      await onReset(password)
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : "No se pudo actualizar la contraseña.")
+    }
+  }
+
+  return (
+    <div className="login-shell" style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 16px", backgroundImage: "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(192,57,43,0.12) 0%, transparent 60%)" }}>
+      <div className="login-content" style={{ width: "100%", maxWidth: 520 }}>
+        <div className="login-brand" style={{ textAlign: "center", marginBottom: 40 }}><Logo /><div className="login-brand-line"><span /><small>COMUNIDAD DE PROJECT ZOMBOID</small><span /></div></div>
+        <div className="login-panel" style={{ background: "linear-gradient(180deg, var(--surface), var(--surface2))", border: "1px solid var(--border)", borderRadius: 24, padding: "32px 28px", boxShadow: "0 30px 60px rgba(2, 6, 23, 0.32)" }}>
+          <div className="login-panel-heading"><span className="login-eyebrow">ENLACE VERIFICADO</span><h2>NUEVA CONTRASEÑA</h2><p className="login-subtitle">Crea una contraseña nueva para recuperar tu cuenta.</p></div>
+          {error && <div style={{ background: "#c0392b18", border: "1px solid #c0392b55", borderRadius: 4, padding: "10px 14px", color: "#e74c3c", fontSize: 13, marginBottom: 20 }}>{error}</div>}
+          <form onSubmit={handleSubmit}>
+            <div style={{ marginBottom: 16 }}><label style={labelStyle}>Nueva contraseña</label><input className="login-input" style={inputStyle} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo 6 caracteres" autoComplete="new-password" autoFocus /></div>
+            <div style={{ marginBottom: 24 }}><label style={labelStyle}>Confirmar contraseña</label><input className="login-input" style={inputStyle} type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} placeholder="Repite la contraseña" autoComplete="new-password" /></div>
+            <button type="submit" className="login-submit" style={primaryBtn}>GUARDAR CONTRASEÑA</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Register View ────────────────────────────────────────────────────────────
+
+function RegisterView({
+  onRegister,
+  goLogin,
+}: {
+  onRegister: (username: string, email: string, password: string) => Promise<void>
+  goLogin: () => void
+}) {
+  const [characterFirstName, setCharacterFirstName] = useState("")
+  const [characterLastName, setCharacterLastName] = useState("")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [confirm, setConfirm] = useState("")
+  const [error, setError] = useState("")
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const firstName = characterFirstName.trim()
+    const lastName = characterLastName.trim()
+    const username = `${firstName} ${lastName}`.trim()
+    if (firstName.length < 1 || lastName.length < 1) {
+      setError("Debes indicar el nombre y apellido de tu personaje.")
+      return
+    }
+    if (username.length < 3) {
+      setError("El nombre completo del personaje debe tener al menos 3 caracteres.")
+      return
+    }
+    if (password.length < 6) {
+      setError("La contraseña debe tener al menos 6 caracteres.")
+      return
+    }
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      setError("Indica un Gmail válido para verificar tu cuenta.")
+      return
+    }
+    if (password !== confirm) {
+      setError("Las contraseñas no coinciden.")
+      return
+    }
+    try {
+      await onRegister(username.trim(), email.trim(), password)
+      setError("")
+    } catch (registerError) {
+      setError(registerError instanceof Error ? registerError.message : "No se pudo crear la cuenta.")
+    }
+  }
+
+  return (
+    <div
+      className="login-shell register-shell"
+      style={{
+        minHeight: "100vh",
+        background: "var(--bg)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px 16px",
+        backgroundImage:
+          "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(192,57,43,0.12) 0%, transparent 60%)",
+      }}
+    >
+      <div className="login-content" style={{ width: "100%", maxWidth: 1040 }}>
+        <div className="login-brand" style={{ textAlign: "center", marginBottom: 40 }}>
+          <Logo />
+          <div className="login-brand-line">
+            <span />
+            <small>COMUNIDAD DE PROJECT ZOMBOID</small>
+            <span />
+          </div>
+        </div>
+        <div className="login-eclipse" aria-hidden="true">
+          <img src={eclipseGif} alt="" />
+        </div>
+
+        <div className="login-layout">
+          <div className="login-brief">
+            <span className="login-eyebrow">NUEVO USUARIO</span>
+            <h1>
+              ENCUENTRA.
+              <br />
+              <span>RESISTE.</span>
+            </h1>
+            <p>Tu personaje. Tu historia. Tu lugar en la comunidad.</p>
+            <div className="login-brief-line">
+              <span />
+              <small>CREA TU IDENTIDAD</small>
+            </div>
+          </div>
+
+          <div
+            className="login-panel"
+            style={{
+              background: "linear-gradient(180deg, var(--surface), var(--surface2))",
+              border: "1px solid var(--border)",
+              borderRadius: 24,
+              padding: "32px 28px",
+              boxShadow: "0 30px 60px rgba(2, 6, 23, 0.32)",
+            }}
+          >
+            <div className="login-panel-heading">
+              <span className="login-eyebrow">REGISTRO DE USUARIO</span>
+              <h2>CREAR CUENTA</h2>
+              <p className="login-subtitle">Prepara tu llegada al foro.</p>
+            </div>
+
+            {error && (
+              <div style={{ background: "#c0392b18", border: "1px solid #c0392b55", borderRadius: 4, padding: "10px 14px", color: "#e74c3c", fontSize: 13, marginBottom: 20 }}>
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Nombre de tu personaje</label>
+                <input className="login-input" style={inputStyle} value={characterFirstName} onChange={(e) => setCharacterFirstName(e.target.value)} placeholder="Nombre del personaje" autoFocus />
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Apellido de tu personaje</label>
+                <input className="login-input" style={inputStyle} value={characterLastName} onChange={(e) => setCharacterLastName(e.target.value)} placeholder="Apellido del personaje" />
+                <p style={{ margin: "5px 0 0", fontSize: 11, color: "var(--text-dim)" }}>
+                  Usa el mismo nombre y apellido de tu personaje en el servidor de Zomboid
+                </p>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Gmail</label>
+                <input className="login-input" style={inputStyle} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@gmail.com" autoComplete="email" />
+                <p style={{ margin: "5px 0 0", fontSize: 11, color: "var(--text-dim)" }}>
+                  Recibirás un código de 8 dígitos para verificar que el Gmail es tuyo.
+                </p>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Contraseña</label>
+                <input className="login-input" style={inputStyle} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres" />
+              </div>
+              <div style={{ marginBottom: 28 }}>
+                <label style={labelStyle}>Confirmar contraseña</label>
+                <input className="login-input" style={inputStyle} type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Repite la contraseña" />
+              </div>
+              <button type="submit" className="login-submit" style={primaryBtn}>CREAR CUENTA</button>
+            </form>
+
+            <div className="login-register" style={{ marginTop: 24, paddingTop: 24, borderTop: "1px solid var(--border)", textAlign: "center", fontSize: 13, color: "var(--text-muted)" }}>
+              ¿Ya tienes cuenta?{" "}
+              <button onClick={goLogin} style={{ background: "none", border: "none", color: "#e74c3c", cursor: "pointer", fontWeight: 600, padding: 0, fontSize: 13 }}>
+                Iniciar sesión
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function VerifyEmailView({
+  email,
+  onVerify,
+  onResend,
+}: {
+  email: string
+  onVerify: (code: string) => Promise<void>
+  onResend: () => Promise<void>
+}) {
+  const [code, setCode] = useState("")
+  const [error, setError] = useState("")
+  const [message, setMessage] = useState("")
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    setError("")
+    setMessage("")
+    if (!/^\d{8}$/.test(code)) {
+      setError("Introduce el código de 8 dígitos recibido en tu Gmail.")
+      return
+    }
+    try {
+      await onVerify(code)
+    } catch (verifyError) {
+      setError(verifyError instanceof Error ? verifyError.message : "El código no es válido.")
+    }
+  }
+
+  async function handleResend() {
+    setError("")
+    setMessage("")
+    try {
+      await onResend()
+      setMessage("Hemos enviado un código nuevo a tu Gmail.")
+    } catch (resendError) {
+      setError(resendError instanceof Error ? resendError.message : "No se pudo reenviar el código.")
+    }
+  }
+
+  return (
+    <div className="login-shell" style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 16px", backgroundImage: "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(192,57,43,0.12) 0%, transparent 60%)" }}>
+      <div className="login-content" style={{ width: "100%", maxWidth: 520 }}>
+        <div className="login-brand" style={{ textAlign: "center", marginBottom: 40 }}><Logo /><div className="login-brand-line"><span /><small>COMUNIDAD DE PROJECT ZOMBOID</small><span /></div></div>
+        <div className="login-panel" style={{ background: "linear-gradient(180deg, var(--surface), var(--surface2))", border: "1px solid var(--border)", borderRadius: 24, padding: "32px 28px", boxShadow: "0 30px 60px rgba(2, 6, 23, 0.32)" }}>
+          <div className="login-panel-heading"><span className="login-eyebrow">VERIFICACIÓN DE CUENTA</span><h2>REVISA TU GMAIL</h2><p className="login-subtitle">Hemos enviado un código a {email}.</p></div>
+          {(error || message) && <div style={{ background: error ? "#c0392b18" : "rgba(16,185,129,0.12)", border: `1px solid ${error ? "#c0392b55" : "rgba(16,185,129,0.5)"}`, borderRadius: 4, padding: "10px 14px", color: error ? "#e74c3c" : "#6ee7b7", fontSize: 13, marginBottom: 20 }}>{error || message}</div>}
+          <form onSubmit={handleSubmit}>
+            <div style={{ marginBottom: 24 }}><label style={labelStyle}>Código de verificación</label><input className="login-input" style={{ ...inputStyle, letterSpacing: "0.3em", textAlign: "center" }} inputMode="numeric" maxLength={8} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} placeholder="00000000" autoFocus /></div>
+            <button type="submit" className="login-submit" style={primaryBtn}>VERIFICAR CUENTA</button>
+          </form>
+          <button type="button" onClick={() => void handleResend()} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "block", fontSize: 12, margin: "22px auto 0", padding: 0, textDecoration: "underline" }}>Reenviar código</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LinkEmailView({ onRequest }: { onRequest: (email: string) => Promise<void> }) {
+  const [email, setEmail] = useState("")
+  const [error, setError] = useState("")
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    setError("")
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      setError("Indica un Gmail válido.")
+      return
+    }
+    try {
+      await onRequest(email.trim())
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "No se pudo enviar el código.")
+    }
+  }
+
+  return (
+    <div className="login-shell" style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 16px", backgroundImage: "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(192,57,43,0.12) 0%, transparent 60%)" }}>
+      <div className="login-content" style={{ width: "100%", maxWidth: 520 }}>
+        <div className="login-brand" style={{ textAlign: "center", marginBottom: 40 }}><Logo /><div className="login-brand-line"><span /><small>COMUNIDAD DE PROJECT ZOMBOID</small><span /></div></div>
+        <div className="login-panel" style={{ background: "linear-gradient(180deg, var(--surface), var(--surface2))", border: "1px solid var(--border)", borderRadius: 24, padding: "32px 28px", boxShadow: "0 30px 60px rgba(2, 6, 23, 0.32)" }}>
+          <div className="login-panel-heading"><span className="login-eyebrow">ACTUALIZACIÓN DE SEGURIDAD</span><h2>CONFIRMA TU GMAIL</h2><p className="login-subtitle">Añade un Gmail a tu cuenta.</p></div>
+          {error && <div style={{ background: "#c0392b18", border: "1px solid #c0392b55", borderRadius: 4, padding: "10px 14px", color: "#e74c3c", fontSize: 13, marginBottom: 20 }}>{error}</div>}
+          <form onSubmit={handleSubmit}>
+            <div style={{ marginBottom: 24 }}><label style={labelStyle}>Gmail</label><input className="login-input" style={inputStyle} type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tu@gmail.com" autoComplete="email" required autoFocus /></div>
+            <button type="submit" className="login-submit" style={primaryBtn}>ENVIAR CÓDIGO</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LogoutModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <div
+      onClick={onCancel}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center" }}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "32px 36px", maxWidth: 380, width: "90%", textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}
+      >
+        <img src={siteLogoImg} alt="Eclipse Order" style={{ width: 64, height: 64, objectFit: "contain", marginBottom: 16 }} />
+        <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 700, fontSize: 20, letterSpacing: "0.08em", color: "var(--text)", marginBottom: 10 }}>
+          ¿CERRAR SESIÓN?
+        </div>
+        <p style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 28, lineHeight: 1.5 }}>
+          ¿Estás seguro de que quieres salir del foro de Eclipse Order?
+        </p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onCancel} style={{ flex: 1, background: "transparent", border: "1px solid var(--border2)", borderRadius: 4, color: "var(--text-muted)", cursor: "pointer", padding: "10px", fontSize: 12, fontFamily: "Oswald, sans-serif", fontWeight: 600, letterSpacing: "0.08em" }}>
+            CANCELAR
+          </button>
+          <button onClick={onConfirm} style={{ flex: 1, background: "linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)", border: "none", borderRadius: 4, color: "#fff", cursor: "pointer", padding: "10px", fontSize: 12, fontFamily: "Oswald, sans-serif", fontWeight: 600, letterSpacing: "0.08em" }}>
+            SÍ, SALIR
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function WelcomePanel({ username, onClose }: { username: string; onClose: () => void }) {
+  return (
+    <div className="welcome-backdrop" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
+      <section className="welcome-panel">
+        <button className="welcome-close" type="button" onClick={onClose} aria-label="Cerrar bienvenida">×</button>
+        <div className="welcome-mark"><img src={siteLogoImg} alt="Eclipse Order" /></div>
+        <span className="welcome-kicker">CUENTA CREADA</span>
+        <h2 id="welcome-title">Bienvenido, {username}</h2>
+        <p className="welcome-lead">Tu acceso a Eclipse Order ya está listo.</p>
+        <div className="welcome-points">
+          <div><span>01</span><strong>Explora</strong><small>Conoce las secciones del foro</small></div>
+          <div><span>02</span><strong>Participa</strong><small>Comparte tus ideas e historias</small></div>
+          <div><span>03</span><strong>Personaliza</strong><small>Configura tu perfil de usuario</small></div>
+        </div>
+        <button className="welcome-action" type="button" onClick={onClose}>ENTRAR AL FORO <span>→</span></button>
+      </section>
+    </div>
+  )
+}
+
+function StoreView({
+  currentUser,
+  threads,
+  products,
+  redemptions,
+  onCreateProduct,
+  onRedeemProduct,
+  onBack,
+}: {
+  currentUser: User
+  threads: Thread[]
+  products: StoreProduct[]
+  redemptions: StoreRedemption[]
+  onCreateProduct: (product: StoreProduct) => Promise<void>
+  onRedeemProduct: (product: StoreProduct, quantity: number) => Promise<boolean>
+  onBack: () => void
+}) {
+  const [title, setTitle] = useState("")
+  const [price, setPrice] = useState("")
+  const [description, setDescription] = useState("")
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreviewUrl, setImagePreviewUrl] = useState("")
+  const [productKind, setProductKind] = useState<"personal" | "faccion">("personal")
+  const [error, setError] = useState("")
+  const [quantities, setQuantities] = useState<Record<string, number>>({})
+  const [purchaseMessage, setPurchaseMessage] = useState("")
+  const [isVerified, setIsVerified] = useState(false)
+  const balance = Math.max(0, (currentUser.rolePoints || 0) - (currentUser.redeemedRolePoints || 0))
+  const factionBalance = threads
+    .filter((thread) => thread.category === "facciones" && thread.authorId === currentUser.id && !thread.factionRolePointsClaimed)
+    .reduce((total, thread) => total + (thread.factionRolePoints || 0), 0)
+
+  useEffect(() => {
+    let isMounted = true
+    void supabase
+      .from("player_links")
+      .select("id")
+      .eq("forum_user_id", currentUser.id)
+      .eq("verified", true)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (isMounted) setIsVerified(Boolean(data))
+      })
+      .catch((verificationError) => {
+        console.error("Could not load verification status", verificationError)
+        if (isMounted) setIsVerified(false)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [currentUser.id])
+
+  function handleImageChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    setImageFile(file)
+    setImagePreviewUrl(URL.createObjectURL(file))
+    event.target.value = ""
+  }
+
+  async function handleCreate(event: React.FormEvent) {
+    event.preventDefault()
+    const numericPrice = Number(price)
+    if (!title.trim() || !description.trim() || !Number.isInteger(numericPrice) || numericPrice < 1) {
+      setError("Completa título, descripción y un precio entero mayor a 0.")
+      return
+    }
+    try {
+      await onCreateProduct({ id: uid(), title: title.trim(), price: numericPrice, description: description.trim(), imageUrl: imagePreviewUrl, imageFile: imageFile || undefined, kind: productKind, createdAt: new Date().toISOString() })
+      setTitle("")
+      setPrice("")
+      setDescription("")
+      setImageFile(null)
+      setImagePreviewUrl("")
+      setProductKind("personal")
+      setError("")
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "No se pudo publicar el producto.")
+    }
+  }
+
+  return (
+    <div className="store-view">
+      <div className="store-heading">
+        <button onClick={onBack} className="store-back">← VOLVER AL FORO</button>
+        <span className="store-kicker">ECLIPSE ORDER // RECOMPENSAS</span>
+        <h1>Tienda</h1>
+        <p>Canjea tus puntos de rol por recompensas de la comunidad.</p>
+        <div className="store-balances">
+          <div className={`store-balance ${balance === 0 ? "store-balance-empty" : ""}`}><span>●</span> SALDO PERSONAL <strong>{balance} PDR</strong></div>
+          <div className={`store-balance store-balance-faction ${factionBalance === 0 ? "store-balance-empty" : ""}`}><span>◆</span> SALDO FACCIONARIO <strong>{factionBalance} PDR</strong></div>
+        </div>
+      </div>
+
+      <div className="store-layout">
+        {purchaseMessage && <div style={{ gridColumn: "1 / -1", padding: "12px 16px", border: "1px solid rgba(16,185,129,0.45)", borderRadius: 8, background: "rgba(16,185,129,0.12)", color: "#6ee7b7", fontSize: 13 }}>{purchaseMessage}</div>}
+        <div className="store-catalog-departments">
+        <section className="store-catalog store-department store-user-department">
+          <div className="store-section-title"><span className="store-catalog-title">Recompensas personales</span><small>{products.filter((product) => (product.kind || "personal") === "personal").length} PRODUCTOS</small></div>
+          {products.filter((product) => (product.kind || "personal") === "personal").length === 0 ? (
+            <div className="store-empty">Todavía no hay productos personales disponibles.</div>
+          ) : (
+            <div className="store-products">
+              {products.filter((product) => (product.kind || "personal") === "personal").map((product) => {
+                const quantity = quantities[product.id] || 1
+                const canAfford = balance >= product.price * quantity
+                const canBuy = isVerified && canAfford
+                return (
+                  <article className="store-product" key={product.id}>
+                    <div className="store-product-image">
+                      {product.imageUrl ? <img src={product.imageUrl} alt="" /> : <span>✦</span>}
+                    </div>
+                    <div className="store-product-body">
+                      <div className="store-product-price">{product.price * quantity} PDR total</div>
+                      <h2>{product.title}</h2>
+                      <p>{product.description}</p>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, color: "var(--text-muted)", fontSize: 12 }}>
+                        Cantidad
+                        <input type="number" min="1" max="99" value={quantity} onChange={(event) => setQuantities((previous) => ({ ...previous, [product.id]: Math.max(1, Math.min(99, Number(event.target.value) || 1)) }))} style={{ ...inputStyle, width: 70, padding: "7px 8px" }} />
+                      </label>
+                      <button onClick={async () => {
+                        if (!isVerified) {
+                          setPurchaseMessage("Debes estar verificado para comprar en la tienda.")
+                          window.setTimeout(() => setPurchaseMessage(""), 4000)
+                          return
+                        }
+                        const purchased = await onRedeemProduct(product, quantity)
+                        if (purchased) {
+                          setPurchaseMessage("Muchas gracias por tu compra. Pronto un administrador te entregará la recompensa.")
+                          window.setTimeout(() => setPurchaseMessage(""), 5000)
+                        } else {
+                          setPurchaseMessage("No puedes comprar este producto con tu saldo actual.")
+                          window.setTimeout(() => setPurchaseMessage(""), 4000)
+                        }
+                      }} disabled={!canBuy} className="store-redeem">
+                        {!isVerified ? "VERIFICACIÓN REQUERIDA" : canAfford ? "COMPRAR" : "PUNTOS INSUFICIENTES"}
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          )}
+        </section>
+
+        <section className="store-catalog store-department faction-store-department">
+          <div className="store-section-title faction-store-section-title"><span>Recompensas para facciones</span><small>{products.filter((product) => product.kind === "faccion").length} PRODUCTOS</small></div>
+          {products.filter((product) => product.kind === "faccion").length === 0 ? (
+            <div className="store-empty faction-store-empty">Todavía no hay productos faccionario disponibles.</div>
+          ) : (
+            <div className="store-products">
+              {products.filter((product) => product.kind === "faccion").map((product) => (
+                <article className="store-product faction-store-product" key={product.id}>
+                  <div className="store-product-image">{product.imageUrl ? <img src={product.imageUrl} alt="" /> : <span>✦</span>}</div>
+                  <div className="store-product-body">
+                    <div className="store-product-price">{product.price} PDR FACCIONARIO</div>
+                    <h2>{product.title}</h2>
+                    <p>{product.description}</p>
+                    <button disabled className="store-redeem">CANJE DESDE EL HILO</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+        </div>
+
+        {currentUser.role === "admin" && (
+          <section className="store-admin-panel">
+            <div className="store-section-title"><span>Nuevo producto</span><small>SOLO ADMIN</small></div>
+            <form onSubmit={handleCreate}>
+              {error && <div className="store-error">{error}</div>}
+              <label style={labelStyle}>Título<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Nombre de la recompensa" style={inputStyle} /></label>
+              <label style={labelStyle}>Precio en puntos de rol<input type="number" min="1" step="1" value={price} onChange={(event) => setPrice(event.target.value)} placeholder="100" style={inputStyle} /></label>
+              <label style={labelStyle}>Descripción<textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Describe qué recibe el usuario..." style={{ ...inputStyle, minHeight: 100, resize: "vertical" }} /></label>
+              <label style={labelStyle}>Tipo de recompensa<select value={productKind} onChange={(event) => setProductKind(event.target.value as "personal" | "faccion")} style={inputStyle}><option value="personal">PDR personal</option><option value="faccion">PDR faccionario</option></select></label>
+              <label className="store-upload">{imagePreviewUrl ? <img src={imagePreviewUrl} alt="Vista previa" /> : <span>＋ Añadir imagen</span>}<input type="file" accept="image/*" onChange={handleImageChange} /></label>
+              <button type="submit" className="store-create">PUBLICAR EN TIENDA</button>
+            </form>
+          </section>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Header ───────────────────────────────────────────────────────────────────
+
+function Header({
+  currentUser,
+  onLogout,
+  setView,
+  view,
+  onOpenProfile,
+  onClearNotifications,
+  onRefreshNotifications,
+  onOpenAdmin,
+  onOpenControl,
+}: {
+  currentUser: User
+  onLogout: () => void
+  setView: (v: View) => void
+  view: View
+  onOpenProfile: (user: User) => void
+  onClearNotifications: () => void
+  onRefreshNotifications: () => void
+  onOpenAdmin: () => void
+  onOpenControl: () => void
+}) {
+  const [showLogoutModal, setShowLogoutModal] = useState(false)
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true)
+  const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null)
+  const isStaff = currentUser.role !== "user"
+  const notifications = currentUser.notifications || []
+  const unreadNotifications = notifications.filter((notification) => !notification.read)
+
+  useEffect(() => {
+    let mounted = true
+
+    async function loadServerStatus() {
+      const { data } = await supabase.from("server_status").select("online, player_count, peak_player_count, online_since, checked_at").eq("id", "main").maybeSingle()
+      if (mounted) setServerStatus((data as ServerStatus | null) || null)
+    }
+
+    void loadServerStatus()
+    const refreshTimer = window.setInterval(loadServerStatus, 30_000)
+    return () => {
+      mounted = false
+      window.clearInterval(refreshTimer)
+    }
+  }, [])
+
+  useEffect(() => {
+    const refreshTimer = window.setInterval(onRefreshNotifications, 30_000)
+    return () => window.clearInterval(refreshTimer)
+  }, [onRefreshNotifications])
+
+  useEffect(() => {
+    const handleScroll = (event?: Event) => {
+      const scrollTarget = event?.target instanceof HTMLElement ? event.target : null
+      const currentScrollY = scrollTarget?.scrollTop ?? Math.max(window.scrollY, document.documentElement.scrollTop)
+      const isAtPageTop = window.scrollY <= 8 && document.documentElement.scrollTop <= 8
+      setIsHeaderVisible(isAtPageTop || currentScrollY <= 8)
+    }
+
+    handleScroll()
+    window.addEventListener("scroll", handleScroll, { capture: true, passive: true })
+    return () => window.removeEventListener("scroll", handleScroll, true)
+  }, [])
+
+  return (
+    <>
+      {showLogoutModal && (
+        <LogoutModal onConfirm={() => { setShowLogoutModal(false); onLogout() }} onCancel={() => setShowLogoutModal(false)} />
+      )}
+      <header
+        style={{
+          background: "rgba(8, 12, 18, 0.8)",
+          backdropFilter: "blur(18px)",
+          borderBottom: "1px solid var(--border)",
+          padding: "12px 24px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          position: "sticky",
+          top: 0,
+          zIndex: 100,
+          boxShadow: "0 14px 36px rgba(2, 6, 23, 0.22)",
+          transform: isHeaderVisible ? "translateY(0)" : "translateY(-110%)",
+          transition: "transform 0.24s ease",
+        }}
+      >
+        <button onClick={() => setView("forum")} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center" }}>
+          <Logo size="sm" />
+        </button>
+
+        <nav className="header-nav" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div className="header-primary-links">
+            <button
+              className={`header-primary-link ${view === "forum" ? "is-active" : ""}`}
+              onClick={() => setView("forum")}
+              style={{ ...navBtn, color: "var(--text-dim)", background: "transparent", padding: "10px 22px" }}
+            >
+              FORO
+            </button>
+
+            <button
+              className={`header-primary-link header-store-link ${view === "store" ? "is-active" : ""}`}
+              onClick={() => setView("store")}
+              style={{ ...navBtn, color: "var(--text-dim)", background: "transparent", padding: "10px 22px" }}
+            >
+              TIENDA
+            </button>
+            <button
+              className={`header-primary-link ${view === "members" ? "is-active" : ""}`}
+              onClick={() => setView("members")}
+              style={{ ...navBtn, color: "var(--text-dim)", background: "transparent", padding: "10px 22px" }}
+            >
+              MIEMBROS
+            </button>
+            <button
+              className={`header-primary-link ${view === "server" ? "is-active" : ""}`}
+              onClick={() => setView("server")}
+              style={{ ...navBtn, color: "var(--text-dim)", background: "transparent", padding: "10px 22px" }}
+            >
+              SERVIDOR
+            </button>
+
+            <div className="header-account-menu" onMouseEnter={onRefreshNotifications}>
+              <button className="header-account-trigger" onClick={() => onOpenProfile(currentUser)} aria-haspopup="true" title="Notificaciones y cuenta">
+                <span className="header-account-copy">
+                  <strong>{currentUser.username}</strong>
+                </span>
+                {unreadNotifications.length > 0 && <span className="header-account-count">{unreadNotifications.length}</span>}
+              </button>
+
+              <div className="header-account-dropdown">
+                <div className="header-account-heading">CENTRO DE CUENTA</div>
+                {unreadNotifications.length > 0 && <div className="header-account-alert">Tienes {unreadNotifications.length} {unreadNotifications.length === 1 ? "notificación sin leer" : "notificaciones sin leer"}</div>}
+                <button className="header-account-item" onClick={() => onOpenProfile(currentUser)}><span>◉</span> Mi perfil</button>
+                <button className="header-account-item" onClick={onOpenControl}><span>▦</span> Panel de control</button>
+                <div className="header-account-notifications">
+                  <div className="header-account-section-title"><span>Notificaciones</span>{notifications.length > 0 && <button onClick={onClearNotifications}>Limpiar</button>}</div>
+                  {notifications.length === 0 ? <div className="header-account-empty">No tienes notificaciones.</div> : notifications.slice(0, 5).map((item) => {
+                    const timeAgo = new Date().getTime() - new Date(item.createdAt).getTime()
+                    const minutes = Math.floor(timeAgo / 60000)
+                    const hours = Math.floor(timeAgo / 3600000)
+                    const days = Math.floor(timeAgo / 86400000)
+                    let timeStr = "hace poco"
+                    if (days > 0) timeStr = `hace ${days}d`
+                    else if (hours > 0) timeStr = `hace ${hours}h`
+                    else if (minutes > 0) timeStr = `hace ${minutes}m`
+                    
+                    let icon = "🔔"
+                    if (item.text.includes("respondió")) icon = "💬"
+                    else if (item.text.includes("mencionó")) icon = "@"
+                    else if (item.text.includes("siguiendo")) icon = "👁"
+                    
+                    return (
+                      <div key={item.id} className={`header-account-notification ${!item.read ? "unread" : ""}`}>
+                        <div className="notification-header">
+                          <span className="notification-icon">{icon}</span>
+                          <span className="notification-time">{timeStr}</span>
+                        </div>
+                        <div className="notification-text">{item.text}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <button className="header-account-logout" onClick={() => setShowLogoutModal(true)}><span>↪</span> Cerrar sesión</button>
+              </div>
+            </div>
+          </div>
+
+          <div className="discord-invite-wrap">
+            <a className="discord-invite-trigger" href="https://discord.gg/jFy8fkXymk" target="_blank" rel="noreferrer" aria-label="Unirte al servidor de Discord">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 5.4A16.2 16.2 0 0 0 15.7 4l-.5 1a14.8 14.8 0 0 0-6.4 0l-.5-1a16.2 16.2 0 0 0-3.8 1.4C2.1 9.2 1.4 12.9 1.7 16.5a15.7 15.7 0 0 0 4.7 2.4l1.1-1.5a9.7 9.7 0 0 1-1.7-.8l.4-.3a11.3 11.3 0 0 0 11.6 0l.4.3a10 10 0 0 1-1.7.8l1.1 1.5a15.7 15.7 0 0 0 4.7-2.4c.4-4.2-.7-7.8-2.8-11.1ZM8.5 14.2c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2Zm7 0c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2Z" /></svg>
+            </a>
+            <div className="discord-invite-card" role="tooltip">¡Únete a nuestro servidor de Discord!</div>
+          </div>
+
+          <div className={`header-server-presence ${serverStatus?.online ? "is-online" : ""}`} aria-label={serverStatus?.online ? `${serverStatus.player_count} jugadores conectados` : "Estado del servidor no disponible"}>
+            <span className="header-server-dot" aria-hidden="true" />
+            <span>{serverStatus?.online ? `${serverStatus.player_count} conectados` : "sin datos"}</span>
+          </div>
+
+          {isStaff && (
+            <button onClick={onOpenAdmin} style={{ ...navBtn, color: view === "admin" ? "#f8fafc" : "var(--text-dim)", borderBottom: view === "admin" ? "2px solid #ef4444" : "2px solid transparent", background: view === "admin" ? "rgba(239, 68, 68, 0.08)" : "transparent", padding: "9px 12px" }}>
+              ADMIN
+            </button>
+          )}
+        </nav>
+      </header>
+    </>
+  )
+}
+
+// ─── Forum View ───────────────────────────────────────────────────────────────
+
+const CATEGORIES_ORDER: Category[] = ["normativa", "bugs", "reportes", "historias", "facciones"]
+
+const FORUM_CATEGORY_GROUPS: { title: string; categories: Category[] }[] = [
+  { title: "General", categories: ["normativa", "bugs"] },
+  { title: "Comunidad", categories: ["historias", "facciones"] },
+  { title: "Apelaciones, Reportes y Sanciones", categories: ["reportes"] },
+]
+
+function ThreadRow({
+  thread,
+  users,
+  threads,
+  onClick,
+}: {
+  thread: Thread
+  users: User[]
+  threads?: Thread[]
+  onClick: () => void
+}) {
+  const author = users.find((u) => u.id === thread.authorId)
+  const [hovered, setHovered] = useState(false)
+  const authorBadges = author && threads ? calculateUserBadges(author, threads, users, false) : []
+
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        background: hovered
+          ? "linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.92) 100%)"
+          : "linear-gradient(135deg, rgba(15, 23, 42, 0.65) 0%, rgba(11, 16, 23, 0.88) 100%)",
+        border: "1px solid var(--border)",
+        borderRadius: 18,
+        padding: "16px 18px",
+        cursor: "pointer",
+        display: "grid",
+        gridTemplateColumns: "1fr auto",
+        gap: 14,
+        alignItems: "center",
+        transition: "transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease",
+        boxShadow: hovered ? "0 12px 28px rgba(2, 6, 23, 0.2)" : "0 0 0 rgba(0,0,0,0)",
+        transform: hovered ? "translateY(-1px)" : "translateY(0)",
+      }}
+    >
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+        <Avatar letter={author?.avatar || "?"} role={author?.role || "user"} size={30} imageUrl={author?.avatarUrl} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+            {thread.pinned && (
+              <span style={{ fontSize: 10, color: "#fbbf24", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.04em" }}>
+                📌
+              </span>
+            )}
+            <Badge label={STATUS_LABELS[thread.status]} color={STATUS_COLORS[thread.status]} />
+          </div>
+          <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 500, fontSize: 15, color: "var(--text)", letterSpacing: "0.02em", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <MarkdownText content={thread.title} inline />
+          </div>
+          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+            <span style={{ color: "var(--text-muted)" }}>
+              <span style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "3px 9px",
+                borderRadius: 999,
+                background: "rgba(30, 41, 59, 0.88)",
+                border: "1px solid rgba(148, 163, 184, 0.55)",
+                boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.08), 0 0 8px rgba(52,211,153,0.15)",
+                verticalAlign: "middle",
+              }}>
+                <span style={{
+                  color: authorBadges.includes("most-active") ? "transparent" : "var(--text-muted)",
+                  background: authorBadges.includes("most-active") ? "linear-gradient(90deg, #fff5b0 0%, #f4d35e 15%, #fffef0 32%, #f7ca54 52%, #fef7d9 68%, #d7a82d 84%, #fff0a8 100%)" : undefined,
+                  backgroundSize: authorBadges.includes("most-active") ? "220% 100%" : undefined,
+                  WebkitBackgroundClip: authorBadges.includes("most-active") ? "text" : undefined,
+                  backgroundClip: authorBadges.includes("most-active") ? "text" : undefined,
+                  WebkitTextFillColor: authorBadges.includes("most-active") ? "transparent" : undefined,
+                  animation: authorBadges.includes("most-active") ? "goldTextShift 2.4s ease-in-out infinite" : undefined,
+                  textShadow: authorBadges.includes("most-active") ? "0 0 16px rgba(255,214,102,0.45)" : undefined,
+                }}>
+                  {author?.username}
+                </span>
+                {author && <RoleMark role={author.role} />}
+                {authorBadges.length > 0 && <UserBadges badges={authorBadges} glowTopRank={authorBadges.includes("most-active")} />}
+              </span>
+            </span> · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes
+          </div>
+        </div>
+      </div>
+      <div style={{ textAlign: "right", flexShrink: 0, background: "rgba(15, 23, 42, 0.4)", borderRadius: 12, padding: "8px 10px", border: "1px solid var(--border2)" }}>
+        <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 17, fontWeight: 600, color: "var(--text)" }}>
+          {threadReplyCount(thread)}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CategorySection({
+  category,
+  threads,
+  users,
+  setView,
+  setSelectedThread,
+  currentUser,
+}: {
+  category: Category
+  threads: Thread[]
+  users: User[]
+  setView: (v: View) => void
+  setSelectedThread: (id: string) => void
+  currentUser?: User
+}) {
+  const color = CATEGORY_COLORS[category]
+  const sorted = [...threads].sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1
+    if (!a.pinned && b.pinned) return 1
+    // Historias move a thread up when someone replies to it.
+    if (category === "historias") {
+      return threadLastActivity(b) - threadLastActivity(a)
+    }
+    // Normativa orders oldest first (ascending), others newest first (descending)
+    if (category === "normativa") {
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    }
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  })
+
+  return (
+    <div
+      style={{
+        border: "1px solid #1e2330",
+        borderRadius: 8,
+        overflow: "hidden",
+        marginBottom: 24,
+      }}
+    >
+      {/* Category header */}
+      <div
+        style={{
+          background: `linear-gradient(90deg, ${color}18 0%, #111318 100%)`,
+          borderBottom: "1px solid #1e2330",
+          padding: "14px 20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div
+            style={{
+              width: 3,
+              alignSelf: "stretch",
+              background: color,
+              borderRadius: 2,
+              minHeight: 36,
+            }}
+          />
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 18 }}>{CATEGORY_ICONS[category]}</span>
+              <span
+                style={{
+                  fontFamily: "Oswald, sans-serif",
+                  fontWeight: 700,
+                  fontSize: 17,
+                  letterSpacing: "0.1em",
+                  color: "var(--text)",
+                }}
+              >
+                {category === "bugs" ? "REPORTES DE BUGS" :
+                  category === "reportes" ? "REPORTES DE JUGADORES" :
+                    category === "historias" ? "HISTORIAS DE PERSONAJES" :
+                      category === "facciones" ? "FACCIONES" :
+                        "NORMATIVA"}
+              </span>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>
+              {CATEGORY_DESCRIPTIONS[category]}
+            </div>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div
+            style={{
+              fontFamily: "JetBrains Mono, monospace",
+              fontSize: 12,
+              color: color,
+              background: color + "18",
+              border: `1px solid ${color}33`,
+              borderRadius: 4,
+              padding: "3px 10px",
+            }}
+          >
+            {threads.length} {threads.length === 1 ? "hilo" : "hilos"}
+          </div>
+        </div>
+      </div>
+
+      {/* Thread rows */}
+      {sorted.length === 0 ? (
+        <div style={{ background: "var(--bg)", padding: "24px 20px", textAlign: "center", color: "var(--border3)", fontSize: 13 }}>
+          Sin hilos aún. ¡Sé el primero en publicar.
+        </div>
+      ) : (
+        <div style={{ background: "var(--bg)" }}>
+          {sorted.map((thread) => (
+            <ThreadRow
+              key={thread.id}
+              thread={thread}
+              users={users}
+              threads={threads}
+              onClick={() => { setSelectedThread(thread.id); setView("thread") }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CategoryView({
+  category,
+  threads,
+  users,
+  currentUser,
+  setView,
+  setSelectedThread,
+  onSound,
+  onSelectCategory,
+  onOpenReportStatus,
+  onOpenFactionSubforum,
+  onOpenCharacterSubforum,
+  onOpenProfile,
+}: {
+  category: Category
+  threads: Thread[]
+  users: User[]
+  currentUser: User
+  setView: (v: View) => void
+  setSelectedThread: (id: string) => void
+  onSound: (type: "click" | "select" | "success" | "notification") => void
+  onSelectCategory: (category: Category) => void
+  onOpenReportStatus: (status: ThreadStatus, category?: Category) => void
+  onOpenFactionSubforum: (subforum: ThreadSubforum) => void
+  onOpenCharacterSubforum: (subforum: CharacterSubforum) => void
+  onOpenProfile: (user: User) => void
+}) {
+  const color = CATEGORY_COLORS[category]
+  const [threadPage, setThreadPage] = useState(1)
+  const shouldPaginateThreads = category === "historias" || category === "facciones"
+
+  useEffect(() => {
+    setThreadPage(1)
+  }, [category])
+
+  const sortThreads = (list: Thread[], cat: Category) =>
+    [...list].sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1
+      if (!a.pinned && b.pinned) return 1
+      // Historias move a thread up when someone replies to it.
+      if (cat === "historias") {
+        return threadLastActivity(b) - threadLastActivity(a)
+      }
+      // Normativa orders oldest first (ascending), others newest first (descending)
+      if (cat === "normativa") {
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      }
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    })
+
+  const tabThreads = sortThreads(threads.filter((t) => t.category === category), category)
+  const showThreadStatus = category !== "normativa" && category !== "historias"
+  const factionSubforums: ThreadSubforum[] = ["no_oficial", "oficial"]
+  const factionThreads = tabThreads.filter((t) => t.category === "facciones")
+  const factionFormatThread = factionThreads.find((thread) => thread.id === "t-rules-facciones-formato")
+  const characterThreads = tabThreads.filter((thread) => thread.id !== "t-rules-historias" && thread.status !== "cerrado")
+  const characterRulesThread = tabThreads.find((thread) => thread.id === "t-rules-historias")
+  const closedCharacterThreads = tabThreads.filter((thread) => thread.id !== "t-rules-historias" && thread.status === "cerrado")
+  const latestClosedCharacterThread = closedCharacterThreads[0]
+  const latestClosedCharacterAuthor = latestClosedCharacterThread ? users.find((user) => user.id === (latestClosedCharacterThread.replies[latestClosedCharacterThread.replies.length - 1]?.authorId || latestClosedCharacterThread.authorId)) : undefined
+  const closedCharacterMessageCount = closedCharacterThreads.reduce((total, thread) => total + threadReplyCount(thread), 0)
+  const closedCharacterVisitorCount = closedCharacterThreads.reduce((total, thread) => total + (thread.visitorCount || 0), 0)
+  const latestCharacterThread = characterThreads[0]
+  const latestCharacterAuthor = latestCharacterThread ? users.find((user) => user.id === (latestCharacterThread.replies[latestCharacterThread.replies.length - 1]?.authorId || latestCharacterThread.authorId)) : undefined
+  const characterMessageCount = characterThreads.reduce((total, thread) => total + threadReplyCount(thread), 0)
+  const characterVisitorCount = characterThreads.reduce((total, thread) => total + (thread.visitorCount || 0), 0)
+  const threadPageSize = 10
+  const threadPageCount = Math.max(1, Math.ceil(tabThreads.length / threadPageSize))
+  const visibleThreads = shouldPaginateThreads
+    ? tabThreads.slice((threadPage - 1) * threadPageSize, threadPage * threadPageSize)
+    : tabThreads
+  const paginationItems = threadPageCount <= 7
+    ? Array.from({ length: threadPageCount }, (_, index) => index + 1)
+    : [1, threadPage > 3 ? "..." : 2, ...[threadPage - 1, threadPage, threadPage + 1].filter((value) => value > 1 && value < threadPageCount), threadPage < threadPageCount - 2 ? "..." : threadPageCount - 1, threadPageCount]
+  const reportSections = [
+    { status: "abierto" as ThreadStatus, label: "Activos", description: "Reportes abiertos pendientes de una resolución.", color: "#f59e0b" },
+    { status: "en_revision" as ThreadStatus, label: "En revisión", description: "Reportes que están siendo analizados.", color: "#facc15" },
+    { status: "cerrado" as ThreadStatus, label: "Aceptados", description: "Todos los reportes aceptados y resueltos.", color: "#60a5fa" },
+  ]
+  const reportThreads = tabThreads.filter((thread) => thread.id !== "t-rules-reportes")
+  const reportRulesThread = tabThreads.find((thread) => thread.id === "t-rules-reportes")
+  const bugSections = [
+    { status: "abierto" as ThreadStatus, label: "Activos", description: "Bugs abiertos pendientes de resolución.", color: "#22c55e" },
+    { status: "en_revision" as ThreadStatus, label: "En revisión", description: "Bugs que están siendo analizados.", color: "#facc15" },
+    { status: "cerrado" as ThreadStatus, label: "Cerrados", description: "Bugs resueltos o cerrados.", color: "#ef4444" },
+  ]
+
+  return (
+    <div className="forum-wide-view" style={{ maxWidth: 1360, margin: "0 auto", padding: "18px 14px 40px" }}>
+      {category === "reportes" && (
+        <div className="report-guidance" style={{ background: "rgba(15,23,42,0.7)", border: "1px solid rgba(230,126,34,0.35)", borderRadius: 16, padding: "14px 16px", marginBottom: 16, color: "var(--text-muted)", lineHeight: 1.7 }}>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6, color: "#f59e0b" }}>
+            Guía del staff
+          </div>
+          <div style={{ fontSize: 13 }}>
+            Para abrir un reporte, menciona al menos a un usuario implicado, explica la situación con hechos concretos y añade evidencias si existen.
+          </div>
+        </div>
+      )}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+        <button
+          onClick={() => {
+            setView("forum")
+            onSound("click")
+          }}
+          style={{
+            background: "rgba(15, 23, 32, 0.7)",
+            border: "1px solid var(--border)",
+            borderRadius: 10,
+            color: "var(--text)",
+            cursor: "pointer",
+            padding: "8px 12px",
+            fontSize: 11,
+            fontFamily: "Oswald, sans-serif",
+            letterSpacing: "0.08em",
+          }}
+        >
+          ← VOLVER
+        </button>
+        {(category !== "normativa" || currentUser.role === "admin") && category !== "facciones" && category !== "historias" && (
+          <button
+            className="forum-action forum-action-secondary"
+            onClick={() => {
+              onSelectCategory(category)
+              setView("new_thread")
+              onSound("success")
+            }}
+            style={{
+              background: "linear-gradient(135deg, rgba(168,85,247,0.18), rgba(88,28,135,0.12))",
+              border: "1px solid rgba(249,115,22,0.35)",
+              borderRadius: 10,
+              color: "#fdba74",
+              cursor: "pointer",
+              padding: "10px 14px",
+              fontSize: 11,
+              fontFamily: "Oswald, sans-serif",
+              letterSpacing: "0.08em",
+            }}
+          >
+            {CATEGORY_THREAD_ACTIONS[category]}
+          </button>
+        )}
+      </div>
+
+      {category === "facciones" && (
+        <div className="report-directory faction-directory" style={{ marginBottom: 20, border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
+          <div className="report-directory-head">
+            <span>Foro</span>
+            <span>Temas</span>
+            <span>Mensajes</span>
+            <span>Visitas</span>
+            <span>Último mensaje</span>
+          </div>
+          {factionFormatThread && (
+            <button
+              className="report-directory-row report-directory-pinned"
+              onClick={() => {
+                setSelectedThread(factionFormatThread.id)
+                setView("thread")
+                onSound("select")
+              }}
+              style={{ "--report-color": "#fbbf24" } as React.CSSProperties}
+            >
+              <span className="report-directory-icon">📌</span>
+              <span className="report-directory-copy"><strong>{factionFormatThread.title}</strong><small>Formato fijo para presentar una facción. Solo lectura.</small></span>
+              <span>FIJO</span><span>{threadReplyCount(factionFormatThread)}</span><span>{factionFormatThread.visitorCount || 0}</span>
+              <span className="report-directory-last"><strong>Administración</strong><small>{formatDate(factionFormatThread.createdAt)}</small></span>
+            </button>
+          )}
+          {factionSubforums.map((subforum) => {
+            const threadsForSubforum = factionThreads.filter((thread) => (thread.subforum || "no_oficial") === subforum)
+            const latestThread = [...threadsForSubforum].sort((a, b) => threadLastActivity(b) - threadLastActivity(a))[0]
+            const latestReply = latestThread?.replies[latestThread.replies.length - 1]
+            const latestAuthor = latestThread ? users.find((user) => user.id === (latestReply?.authorId || latestThread.authorId)) : undefined
+            return (
+              <button
+                key={subforum}
+                className="report-directory-row"
+                onClick={() => { onOpenFactionSubforum(subforum); onSound("select") }}
+                style={{ "--report-color": subforum === "oficial" ? "#60a5fa" : "#22c55e" } as React.CSSProperties}
+              >
+                <span className="report-directory-icon">●</span>
+                <span className="report-directory-copy"><strong>{FACTION_SUBFORUM_LABELS[subforum]}</strong><small>{subforum === "no_oficial" ? "Facciones sin aprobación oficial. Los usuarios pueden iniciar hilos aquí." : "Facciones aprobadas. Solo el staff puede mover hilos desde NO OFICIAL."}</small></span>
+                <span>{threadsForSubforum.length}</span>
+                <span>{threadsForSubforum.reduce((total, thread) => total + threadReplyCount(thread), 0)}</span>
+                <span>{threadsForSubforum.reduce((total, thread) => total + (thread.visitorCount || 0), 0)}</span>
+                <span className="report-directory-last">{latestThread ? <><strong>{latestAuthor?.username || "Usuario"}</strong><small>{formatDate(latestReply?.createdAt || latestThread.createdAt)}</small></> : <small>Sin actividad</small>}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {category === "historias" && (
+        <div className="report-directory history-directory" style={{ marginBottom: 20, border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
+          <div className="report-directory-head">
+            <span>Foro</span>
+            <span>Temas</span>
+            <span>Mensajes</span>
+            <span>Visitas</span>
+            <span>Último mensaje</span>
+          </div>
+          {characterRulesThread && (
+            <button
+              className="report-directory-row report-directory-pinned"
+              onClick={() => {
+                setSelectedThread(characterRulesThread.id)
+                setView("thread")
+                onSound("select")
+              }}
+              style={{ "--report-color": "#fbbf24" } as React.CSSProperties}
+            >
+              <span className="report-directory-icon">📌</span>
+              <span className="report-directory-copy">
+                <strong>{characterRulesThread.title}</strong>
+                <small>Plantilla y normas para crear una ficha de personaje.</small>
+              </span>
+              <span>FIJO</span>
+              <span>{threadReplyCount(characterRulesThread)}</span>
+              <span>{characterRulesThread.visitorCount || 0}</span>
+              <span className="report-directory-last"><strong>Administración</strong><small>{formatDate(characterRulesThread.createdAt)}</small></span>
+            </button>
+          )}
+          <button
+            className="report-directory-row"
+            onClick={() => {
+              onOpenCharacterSubforum("fichas")
+              onSound("select")
+            }}
+            style={{ "--report-color": "#a855f7" } as React.CSSProperties}
+          >
+            <span className="report-directory-icon">●</span>
+            <span className="report-directory-copy">
+              <strong>FICHAS DE PERSONAJES</strong>
+              <small>Historias y fichas de los personajes, ordenadas por actividad reciente.</small>
+            </span>
+            <span>{characterThreads.length}</span>
+            <span>{characterMessageCount}</span>
+            <span>{characterVisitorCount}</span>
+            <span className="report-directory-last">
+              {latestCharacterThread ? <><strong>{latestCharacterAuthor?.username || "Usuario"}</strong><small>{formatDate(latestCharacterThread.replies[latestCharacterThread.replies.length - 1]?.createdAt || latestCharacterThread.createdAt)}</small></> : <small>Sin actividad</small>}
+            </span>
+          </button>
+          <button
+            className="report-directory-row"
+            onClick={() => {
+              onOpenCharacterSubforum("cerrados")
+              onSound("select")
+            }}
+            style={{ "--report-color": "#94a3b8" } as React.CSSProperties}
+          >
+            <span className="report-directory-icon">●</span>
+            <span className="report-directory-copy">
+              <strong>CERRADOS</strong>
+              <small>Fichas archivadas por administración. Solo lectura.</small>
+            </span>
+            <span>{closedCharacterThreads.length}</span>
+            <span>{closedCharacterMessageCount}</span>
+            <span>{closedCharacterVisitorCount}</span>
+            <span className="report-directory-last">
+              {latestClosedCharacterThread ? <><strong>{latestClosedCharacterAuthor?.username || "Usuario"}</strong><small>{formatDate(latestClosedCharacterThread.replies[latestClosedCharacterThread.replies.length - 1]?.createdAt || latestClosedCharacterThread.createdAt)}</small></> : <small>Sin actividad</small>}
+            </span>
+          </button>
+        </div>
+      )}
+
+      {category !== "facciones" && category !== "historias" && <main style={{ width: "100%", background: "linear-gradient(180deg, rgba(18, 12, 28, 0.96), rgba(15, 9, 25, 0.9))", border: "1px solid var(--border)", borderRadius: 18, overflow: "hidden", boxShadow: "0 20px 40px rgba(2, 6, 23, 0.18)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px", background: "linear-gradient(90deg, rgba(22,16,31,0.9) 0%, rgba(18,12,28,0.7) 100%)", borderBottom: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
+            <div style={{ width: 5, height: 18, background: color, borderRadius: 999, boxShadow: `0 0 18px ${color}` }} />
+            <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 18, letterSpacing: "0.08em", color: "var(--text)" }}>
+              {category === "bugs" ? "BUGS" : category === "reportes" ? "REPORTES" : category === "historias" ? "HISTORIAS" : category === "facciones" ? "FACCIONES" : "NORMATIVA"}
+            </div>
+          </div>
+        </div>
+
+        {category === "reportes" && (
+          <div className="report-directory">
+            <div className="report-directory-head">
+              <span>Foro</span>
+              <span>Temas</span>
+              <span>Mensajes</span>
+              <span>Visitas</span>
+              <span>Último mensaje</span>
+            </div>
+            {reportRulesThread && (
+              <button
+                className="report-directory-row report-directory-pinned"
+                onClick={() => {
+                  setSelectedThread(reportRulesThread.id)
+                  setView("thread")
+                  onSound("select")
+                }}
+                style={{ "--report-color": "#fbbf24" } as React.CSSProperties}
+              >
+                <span className="report-directory-icon">📌</span>
+                <span className="report-directory-copy">
+                  <strong>{reportRulesThread.title}</strong>
+                  <small>Consulta obligatoria antes de publicar un reporte.</small>
+                </span>
+                <span>FIJO</span>
+                <span>{threadReplyCount(reportRulesThread)}</span>
+                <span>{reportRulesThread.visitorCount || 0}</span>
+                <span className="report-directory-last">
+                  <strong>Administración</strong>
+                  <small>{formatDate(reportRulesThread.createdAt)}</small>
+                </span>
+              </button>
+            )}
+            {reportSections.map((section) => {
+              const sectionThreads = reportThreads.filter((thread) => thread.status === section.status)
+              const latestThread = sectionThreads[0]
+              const latestAuthor = latestThread ? users.find((user) => user.id === latestThread.authorId) : undefined
+              const messageCount = sectionThreads.reduce((total, thread) => total + threadReplyCount(thread), 0)
+              const visitorCount = sectionThreads.reduce((total, thread) => total + (thread.visitorCount || 0), 0)
+              return (
+                <button
+                  key={section.status}
+                  className="report-directory-row"
+                  onClick={() => {
+                    onOpenReportStatus(section.status)
+                    onSound("select")
+                  }}
+                  style={{ "--report-color": section.color } as React.CSSProperties}
+                >
+                  <span className="report-directory-icon">●</span>
+                  <span className="report-directory-copy">
+                    <strong>{section.label}</strong>
+                    <small>{section.description}</small>
+                  </span>
+                  <span>{sectionThreads.length}</span>
+                  <span>{messageCount}</span>
+                  <span>{visitorCount}</span>
+                  <span className="report-directory-last">
+                    {latestThread ? <><strong>{latestAuthor?.username || "Usuario"}</strong><small>{formatDate(latestThread.createdAt)}</small></> : <small>Sin actividad</small>}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {category === "bugs" && (
+          <div className="report-directory" style={{ marginBottom: 18 }}>
+            <div className="report-directory-head"><span>Foro</span><span>Temas</span><span>Mensajes</span><span>Visitas</span><span>Último mensaje</span></div>
+            {bugSections.map((section) => {
+              const sectionThreads = tabThreads.filter((thread) => thread.status === section.status)
+              const latestThread = sectionThreads[0]
+              const latestAuthor = latestThread ? users.find((user) => user.id === latestThread.authorId) : undefined
+              return (
+                <button key={section.status} className="report-directory-row" onClick={() => { onOpenReportStatus(section.status, "bugs"); onSound("select") }} style={{ "--report-color": section.color } as React.CSSProperties}>
+                  <span className="report-directory-icon">●</span>
+                  <span className="report-directory-copy"><strong>{section.label}</strong><small>{section.description}</small></span>
+                  <span>{sectionThreads.length}</span><span>{sectionThreads.reduce((total, thread) => total + threadReplyCount(thread), 0)}</span><span>{sectionThreads.reduce((total, thread) => total + (thread.visitorCount || 0), 0)}</span>
+                  <span className="report-directory-last">{latestThread ? <><strong>{latestAuthor?.username || "Usuario"}</strong><small>{formatDate(latestThread.createdAt)}</small></> : <small>Sin actividad</small>}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        <div style={{ display: category === "reportes" || category === "bugs" ? "none" : "flex", flexDirection: "column" }}>
+          {visibleThreads.length > 0 && (
+            <div className="category-thread-head" style={{ gridTemplateColumns: showThreadStatus ? undefined : "minmax(0, 4.3fr) 0.7fr 0.7fr 1.1fr" }}>
+              <span>Foro</span>
+              <span>Respuestas</span>
+              {showThreadStatus && <span>Estado</span>}
+              <span>Visitas</span>
+              <span>Último mensaje</span>
+            </div>
+          )}
+          {visibleThreads.length === 0 ? (
+            <div style={{ padding: "28px 20px", textAlign: "center", color: "var(--text-dim)" }}>
+              {category === "reportes"
+                ? "No hay reportes en este estado."
+                : "No hay hilos en esta categoría todavía."}
+            </div>
+          ) : (
+            visibleThreads.map((thread) => {
+              const author = users.find((u) => u.id === thread.authorId)
+              const lastReply = thread.replies[thread.replies.length - 1]
+              const lastAuthor = lastReply ? users.find((u) => u.id === lastReply.authorId) : author
+              const isOwnThread = thread.authorId === currentUser.id
+
+              return (
+                <div
+                  key={thread.id}
+                  onClick={() => { setSelectedThread(thread.id); setView("thread") }}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: showThreadStatus ? "minmax(0, 3.5fr) 0.6fr 0.7fr 0.7fr 1.1fr" : "minmax(0, 4.3fr) 0.7fr 0.7fr 1.1fr",
+                    gap: 16,
+                    padding: "14px 18px",
+                    borderBottom: "1px solid var(--border)",
+                    cursor: "pointer",
+                    background: thread.pinned ? "rgba(245,158,11,0.04)" : "transparent",
+                  }}
+                >
+                  <div style={{ display: "flex", gap: 10, minWidth: 0 }}>
+                    <div style={{ width: 10, height: 10, background: color, borderRadius: 999, marginTop: 6, boxShadow: `0 0 18px ${color}` }} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        {thread.pinned && <span style={{ color: "#fbbf24", fontSize: 10 }}>📌</span>}
+                        {isOwnThread && (
+                          <span
+                            style={{
+                              padding: "3px 7px",
+                              borderRadius: 999,
+                              background: "rgba(251,191,36,0.12)",
+                              color: "#fbbf24",
+                              fontSize: 9,
+                              fontFamily: "JetBrains Mono, monospace",
+                              letterSpacing: "0.06em",
+                              border: "1px solid rgba(251,191,36,0.45)",
+                            }}
+                          >
+                            TUYO
+                          </span>
+                        )}
+                        <span style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", letterSpacing: "0.02em" }}><MarkdownText content={thread.title} inline /></span>
+                      </div>
+                      <div style={{ marginTop: 4, fontSize: 11, color: "var(--text-dim)" }}>
+                        por <span style={{ color: "var(--text-muted)" }}>{author?.username}{author && <RoleMark role={author.role} />}</span> · {formatDate(thread.createdAt)}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", textAlign: "center" }}>{threadReplyCount(thread)}</div>
+                  {showThreadStatus && <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", textAlign: "center" }}>{category === "reportes" ? (thread.status === "cerrado" ? "0" : "1") : thread.status}</div>}
+                  <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: "var(--text)", textAlign: "center" }}>{thread.visitorCount || 0}</div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+                    <Avatar letter={lastAuthor?.avatar || author?.avatar || "?"} role={lastAuthor?.role || author?.role || "user"} size={24} imageUrl={lastAuthor?.avatarUrl || author?.avatarUrl} />
+                    <div style={{ textAlign: "right", minWidth: 0 }}>
+                      {lastAuthor ? <button type="button" onClick={(event) => { event.stopPropagation(); onOpenProfile(lastAuthor) }} style={{ border: "none", padding: 0, background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lastAuthor.username}</button> : <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Usuario</div>}
+                      <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace" }}>{lastReply ? formatDate(lastReply.createdAt) : formatDate(thread.createdAt)}</div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+        {shouldPaginateThreads && tabThreads.length > 0 && threadPageCount > 1 && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, marginTop: 18, flexWrap: "wrap" }}>
+            <span style={{ color: "var(--text-muted)", fontSize: 11, marginRight: 6 }}>Páginas ({threadPageCount}):</span>
+            <button onClick={() => setThreadPage((currentPage) => Math.max(1, currentPage - 1))} disabled={threadPage === 1} style={{ ...primaryBtn, width: "auto", padding: "5px 8px", fontSize: 10, opacity: threadPage === 1 ? 0.45 : 1 }}>
+              ← Anterior
+            </button>
+            {paginationItems.map((item, index) => item === "..." ? (
+              <span key={`thread-ellipsis-${index}`} style={{ color: "var(--text-dim)", padding: "5px 3px", fontSize: 11 }}>...</span>
+            ) : (
+              <button key={item} onClick={() => setThreadPage(item)} style={{ ...primaryBtn, width: "auto", minWidth: 28, padding: "5px 7px", fontSize: 10, background: item === threadPage ? "rgba(230,162,60,0.2)" : "transparent", border: `1px solid ${item === threadPage ? "#e6a23c" : "var(--border2)"}`, color: item === threadPage ? "#ffe7a3" : "var(--text-muted)", boxShadow: "none" }}>
+                {item}
+              </button>
+            ))}
+          </div>
+        )}
+      </main>}
+    </div>
+  )
+}
+
+function ReportStatusView({
+  status,
+  category = "reportes",
+  threads,
+  users,
+  setView,
+  setSelectedThread,
+  onOpenStatus,
+  onSound,
+}: {
+  status: ThreadStatus
+  category?: Category
+  threads: Thread[]
+  users: User[]
+  setView: (view: View) => void
+  setSelectedThread: (id: string) => void
+  onOpenStatus: (status: ThreadStatus) => void
+  onSound: (type: "click" | "select" | "success" | "notification") => void
+}) {
+  const statusSection = category === "bugs" ? {
+    cerrado: { label: "Cerrados", description: "Bugs resueltos o cerrados.", color: "#60a5fa" },
+    en_revision: { label: "En revisión", description: "Bugs que están siendo analizados.", color: "#facc15" },
+    abierto: { label: "Activos", description: "Bugs abiertos pendientes de resolución.", color: "#f59e0b" },
+  }[status] : {
+    cerrado: { label: "Aceptados", description: "Reportes aceptados y resueltos.", color: "#60a5fa" },
+    en_revision: { label: "En revisión", description: "Reportes que están siendo analizados.", color: "#facc15" },
+    abierto: { label: "Activos", description: "Reportes abiertos pendientes de resolución.", color: "#f59e0b" },
+  }[status]
+  const directorySections = category === "bugs"
+    ? [
+      { status: "abierto" as ThreadStatus, label: "Activos", color: "#22c55e" },
+      { status: "en_revision" as ThreadStatus, label: "En revisión", color: "#facc15" },
+      { status: "cerrado" as ThreadStatus, label: "Cerrados", color: "#ef4444" },
+    ]
+    : [
+      { status: "abierto" as ThreadStatus, label: "Activos", color: "#22c55e" },
+      { status: "en_revision" as ThreadStatus, label: "En revisión", color: "#facc15" },
+      { status: "cerrado" as ThreadStatus, label: "Cerrados", color: "#ef4444" },
+    ]
+  const statusThreads = threads
+    .filter((thread) => thread.category === category && thread.id !== "t-rules-reportes" && thread.status === status)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  const [page, setPage] = useState(1)
+  const pageSize = 10
+  const pageCount = Math.max(1, Math.ceil(statusThreads.length / pageSize))
+  const visibleThreads = statusThreads.slice((page - 1) * pageSize, page * pageSize)
+  useEffect(() => setPage(1), [status, category])
+
+  return (
+    <div className="forum-wide-view" style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
+      <button
+        onClick={() => {
+          setView("category")
+          onSound("click")
+        }}
+        style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}
+      >
+        ← Volver a {category === "bugs" ? "bugs" : "reportes"}
+      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+        <div style={{ width: 5, height: 26, background: statusSection.color, borderRadius: 999, boxShadow: `0 0 18px ${statusSection.color}` }} />
+        <div>
+          <h2 style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, letterSpacing: "0.08em", color: "var(--text)", margin: 0 }}>{statusSection.label.toUpperCase()}</h2>
+          <div style={{ color: "var(--text-dim)", fontSize: 13 }}>{statusSection.description}</div>
+        </div>
+      </div>
+      <div className="report-directory" style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+        <div className="report-directory-head">
+          <span>Foro</span>
+          <span>Temas</span>
+          <span>Mensajes</span>
+          <span>Visitas</span>
+          <span>Último mensaje</span>
+        </div>
+        {statusThreads.length === 0 ? (
+          <div style={{ padding: "28px 20px", textAlign: "center", color: "var(--text-dim)" }}>No hay {category === "bugs" ? "bugs" : "reportes"} en este estado.</div>
+        ) : (
+          visibleThreads.map((thread) => {
+            const author = users.find((user) => user.id === thread.authorId)
+            const lastReply = thread.replies[thread.replies.length - 1]
+            const lastAuthor = lastReply ? users.find((user) => user.id === lastReply.authorId) : author
+            return (
+              <button
+                key={thread.id}
+                className="report-directory-row"
+                onClick={() => {
+                  setSelectedThread(thread.id)
+                  setView("thread")
+                  onSound("select")
+                }}
+                style={{ "--report-color": statusSection.color } as React.CSSProperties}
+              >
+                <span className="report-directory-icon">●</span>
+                <span className="report-directory-copy">
+                  <strong><MarkdownText content={thread.title} inline /></strong>
+                  <small>por {author?.username || "Usuario"} · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes</small>
+                </span>
+                <span>{threadReplyCount(thread)}</span>
+                <span>{STATUS_LABELS[thread.status]}</span>
+                <span>{thread.visitorCount || 0}</span>
+                <span className="report-directory-last">
+                  <strong>{lastAuthor?.username || "Usuario"}</strong>
+                  <small>{lastReply ? formatDate(lastReply.createdAt) : formatDate(thread.createdAt)}</small>
+                </span>
+              </button>
+            )
+          })
+        )}
+      </div>
+      {pageCount > 1 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 18 }}>
+          <button type="button" onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))} disabled={page === 1} style={{ ...primaryBtn, width: "auto", padding: "6px 10px", fontSize: 10, opacity: page === 1 ? 0.45 : 1 }}>← Anterior</button>
+          <span style={{ color: "var(--text-muted)", fontSize: 11 }}>Página {page} de {pageCount}</span>
+          <button type="button" onClick={() => setPage((currentPage) => Math.min(pageCount, currentPage + 1))} disabled={page === pageCount} style={{ ...primaryBtn, width: "auto", padding: "6px 10px", fontSize: 10, opacity: page === pageCount ? 0.45 : 1 }}>Siguiente →</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FactionSubforumView({
+  subforum,
+  threads,
+  users,
+  setView,
+  setSelectedThread,
+  onSound,
+}: {
+  subforum: ThreadSubforum
+  threads: Thread[]
+  users: User[]
+  setView: (view: View) => void
+  setSelectedThread: (id: string) => void
+  onSound: (type: "click" | "select" | "success" | "notification") => void
+}) {
+  const descriptions: Record<ThreadSubforum, string> = {
+    formato: "Formato fijo para presentar la facción. Solo lectura.",
+    no_oficial: "Facciones sin aprobación oficial. Los usuarios pueden iniciar hilos aquí.",
+    oficial: "Facciones aprobadas por el staff. Solo lectura.",
+  }
+  const subforumThreads = threads
+    .filter((thread) => thread.category === "facciones" && (thread.subforum || "no_oficial") === subforum)
+    .sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1
+      if (!a.pinned && b.pinned) return 1
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    })
+  const isReadOnly = subforum !== "no_oficial"
+
+  return (
+    <div className="forum-wide-view" style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
+      <button
+        onClick={() => {
+          setView("category")
+          onSound("click")
+        }}
+        style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}
+      >
+        ← Volver a facciones
+      </button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 20, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 5, height: 26, background: "#22c55e", borderRadius: 999, boxShadow: "0 0 18px #22c55e" }} />
+          <div>
+            <h2 style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, letterSpacing: "0.08em", color: "var(--text)", margin: 0 }}>{FACTION_SUBFORUM_LABELS[subforum]}</h2>
+            <div style={{ color: "var(--text-dim)", fontSize: 13 }}>{descriptions[subforum]}</div>
+          </div>
+        </div>
+        <button
+          disabled={isReadOnly}
+          onClick={() => {
+            if (isReadOnly) return
+            setView("new_thread")
+            onSound("success")
+          }}
+          style={{ background: isReadOnly ? "rgba(15,23,42,0.25)" : "rgba(34,197,94,0.16)", border: `1px solid ${isReadOnly ? "var(--border)" : "rgba(34,197,94,0.5)"}`, borderRadius: 10, color: isReadOnly ? "var(--text-dim)" : "#86efac", cursor: isReadOnly ? "not-allowed" : "pointer", padding: "9px 13px", fontSize: 11, fontFamily: "Oswald, sans-serif", letterSpacing: "0.08em" }}
+        >
+          {isReadOnly ? "SOLO LECTURA" : "NUEVO HILO"}
+        </button>
+      </div>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+        {subforumThreads.length > 0 && (
+          <div className="faction-thread-head">
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
+            <span>Respuestas</span>
+            <span>Visitas</span>
+          </div>
+        )}
+        {subforumThreads.length === 0 ? (
+          <div style={{ padding: "28px 20px", textAlign: "center", color: "var(--text-dim)" }}>
+            {subforum === "oficial" ? "Todavía no hay facciones oficiales aprobadas." : "No hay hilos en este subforo todavía."}
+          </div>
+        ) : (
+          subforumThreads.map((thread) => {
+            const author = users.find((user) => user.id === thread.authorId)
+            return (
+              <button
+                key={thread.id}
+                onClick={() => {
+                  setSelectedThread(thread.id)
+                  setView("thread")
+                  onSound("select")
+                }}
+                style={{ display: "grid", gridTemplateColumns: "30px minmax(0, 1fr) 110px 110px", alignItems: "center", gap: 14, width: "100%", padding: "15px 18px", background: thread.pinned ? "rgba(245,158,11,0.05)" : "transparent", border: 0, borderBottom: "1px solid var(--border)", color: "var(--text)", cursor: "pointer", textAlign: "left" }}
+              >
+                <span style={{ color: thread.pinned ? "#fbbf24" : "#22c55e", fontSize: 16 }}>{thread.pinned ? "📌" : "●"}</span>
+                <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+                  <strong style={{ fontFamily: "Oswald, sans-serif", fontSize: 16, letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><MarkdownText content={thread.title} inline /></strong>
+                  <small style={{ color: "var(--text-dim)", fontSize: 12 }}>por {author?.username || "Usuario"} · {formatDate(thread.createdAt)} · {thread.visitorCount || 0} visitantes</small>
+                </span>
+                <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, textAlign: "center" }}>{threadReplyCount(thread)}</span>
+                <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, textAlign: "center" }}>{thread.visitorCount || 0}</span>
+              </button>
+            )
+          })
+        )}
+      </div>
+    </div>
+  )
+}
+
+function CharacterSubforumView({
+  subforum,
+  threads,
+  users,
+  setView,
+  setSelectedThread,
+  onOpenProfile,
+  onSound,
+}: {
+  subforum: CharacterSubforum
+  threads: Thread[]
+  users: User[]
+  setView: (view: View) => void
+  setSelectedThread: (id: string) => void
+  onOpenProfile: (user: User) => void
+  onSound: (type: "click" | "select" | "success" | "notification") => void
+}) {
+  const sortCharacterThreads = (items: Thread[]) => [...items].sort((a, b) => threadLastActivity(b) - threadLastActivity(a))
+  const characterThreads = sortCharacterThreads(threads
+    .filter((thread) => thread.category === "historias" && thread.id !== "t-rules-historias")
+    .filter((thread) => subforum === "cerrados" ? thread.status === "cerrado" : thread.status !== "cerrado"))
+  const getPageFromUrl = () => {
+    const value = Number(new URLSearchParams(window.location.search).get("pagina"))
+    return Number.isInteger(value) && value > 0 ? value : 1
+  }
+  const [page, setPage] = useState(getPageFromUrl)
+  const pageSize = 10
+  const pageCount = Math.max(1, Math.ceil(characterThreads.length / pageSize))
+  const visibleThreads = characterThreads.slice((page - 1) * pageSize, page * pageSize)
+
+  useEffect(() => {
+    const nextPage = Math.min(page, pageCount)
+    if (nextPage !== page) {
+      setPage(nextPage)
+      return
+    }
+    const nextPath = `/foro/historias/${subforum}?pagina=${page}`
+    if (`${window.location.pathname}${window.location.search}` !== nextPath) {
+      window.history.pushState({}, "", nextPath)
+    }
+  }, [page, pageCount, subforum])
+
+  useEffect(() => {
+    const handlePopState = () => setPage(getPageFromUrl())
+    window.addEventListener("popstate", handlePopState)
+    return () => window.removeEventListener("popstate", handlePopState)
+  }, [])
+
+  function renderCharacterRows(items: Thread[], emptyMessage: string) {
+    if (items.length === 0) return <div style={{ padding: "28px 20px", textAlign: "center", color: "var(--text-dim)" }}>{emptyMessage}</div>
+
+    return (
+      <>
+        <div className="character-thread-head">
+          <span aria-hidden="true" />
+          <span aria-hidden="true" />
+          <span>Respuestas</span>
+          <span>Visitas</span>
+          <span>Último mensaje</span>
+        </div>
+        {items.map((thread) => {
+          const author = users.find((user) => user.id === thread.authorId)
+          const lastReply = thread.replies[thread.replies.length - 1]
+          const lastAuthor = lastReply ? users.find((user) => user.id === lastReply.authorId) : author
+          return (
+            <button
+              key={thread.id}
+              onClick={() => {
+                setSelectedThread(thread.id)
+                setView("thread")
+                onSound("select")
+              }}
+              style={{ display: "grid", gridTemplateColumns: "30px minmax(0, 1fr) 100px 100px minmax(160px, 220px)", alignItems: "center", gap: 14, width: "100%", padding: "15px 18px", background: thread.status === "cerrado" ? "rgba(127,140,141,0.08)" : "transparent", border: 0, borderBottom: "1px solid var(--border)", color: "var(--text)", cursor: "pointer", textAlign: "left" }}
+            >
+              <span style={{ color: thread.status === "cerrado" ? "#94a3b8" : "#a855f7", fontSize: 16 }}>●</span>
+              <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+                <strong style={{ fontFamily: "Oswald, sans-serif", fontSize: 16, letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><MarkdownText content={thread.title} inline /></strong>
+                <small style={{ color: "var(--text-dim)", fontSize: 12 }}>por {author?.username || "Usuario"} · última actividad: {formatDate(lastReply?.createdAt || thread.createdAt)}</small>
+              </span>
+              <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, textAlign: "center" }}>{threadReplyCount(thread)}</span>
+              <span style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, textAlign: "center" }}>{thread.visitorCount || 0}</span>
+              <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, textAlign: "right" }}>
+                {lastAuthor ? <button type="button" onClick={(event) => { event.stopPropagation(); onOpenProfile(lastAuthor) }} style={{ border: 0, padding: 0, background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "right" }}>{lastAuthor.username}</button> : <strong style={{ color: "var(--text-muted)", fontSize: 11 }}>Usuario</strong>}
+                <small style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "JetBrains Mono, monospace" }}>{formatDate(lastReply?.createdAt || thread.createdAt)}</small>
+              </span>
+            </button>
+          )
+        })}
+      </>
+    )
+  }
+
+  return (
+    <div className="forum-wide-view" style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
+      <button
+        onClick={() => {
+          setView("category")
+          onSound("click")
+        }}
+        style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}
+      >
+        ← Volver a historias
+      </button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 20, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 5, height: 26, background: subforum === "cerrados" ? "#94a3b8" : "#a855f7", borderRadius: 999, boxShadow: `0 0 18px ${subforum === "cerrados" ? "#94a3b8" : "#a855f7"}` }} />
+          <div>
+            <h2 style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, letterSpacing: "0.08em", color: "var(--text)", margin: 0 }}>{subforum === "cerrados" ? "CERRADOS" : "FICHAS DE PERSONAJES"}</h2>
+            <div style={{ color: "var(--text-dim)", fontSize: 13 }}>{subforum === "cerrados" ? "Fichas archivadas por administración." : "Historias de personajes ordenadas por su última actividad."}</div>
+          </div>
+        </div>
+        {subforum === "fichas" && <button
+          onClick={() => {
+            setView("new_thread")
+            onSound("success")
+          }}
+          style={{ background: "rgba(168,85,247,0.16)", border: "1px solid rgba(168,85,247,0.5)", borderRadius: 10, color: "#d8b4fe", cursor: "pointer", padding: "9px 13px", fontSize: 11, fontFamily: "Oswald, sans-serif", letterSpacing: "0.08em" }}
+        >
+          NUEVA FICHA
+        </button>}
+      </div>
+      <section>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+          {renderCharacterRows(visibleThreads, subforum === "cerrados" ? "No hay fichas cerradas." : "No hay fichas de personajes activas.")}
+        </div>
+      </section>
+      {pageCount > 1 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 18, flexWrap: "wrap" }}>
+          <span style={{ color: "var(--text-muted)", fontSize: 11, marginRight: 6 }}>Páginas ({pageCount}):</span>
+          {Array.from({ length: pageCount }, (_, index) => index + 1).map((pageNumber) => (
+            <button key={pageNumber} type="button" onClick={() => setPage(pageNumber)} style={{ ...primaryBtn, width: "auto", minWidth: 28, padding: "5px 7px", fontSize: 10, background: page === pageNumber ? "rgba(168,85,247,0.2)" : "transparent", border: `1px solid ${page === pageNumber ? "#a855f7" : "var(--border2)"}`, color: page === pageNumber ? "#d8b4fe" : "var(--text-muted)", boxShadow: "none" }}>{pageNumber}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ForumView({
+  threads,
+  users,
+  currentUser,
+  setView,
+  setSelectedThread,
+  onSound,
+  selectedCategory,
+  onOpenCategory,
+}: {
+  threads: Thread[]
+  users: User[]
+  currentUser: User
+  setView: (v: View) => void
+  setSelectedThread: (id: string) => void
+  onSound: (type: "click" | "select" | "success" | "notification") => void
+  selectedCategory: Category
+  onOpenCategory: (category: Category) => void
+}) {
+  const [isAccountVerified, setIsAccountVerified] = useState(false)
+  const [isVerificationNoticeDismissed, setIsVerificationNoticeDismissed] = useState(() => window.localStorage.getItem(`verification-notice-dismissed-${currentUser.id}`) === "true")
+
+  useEffect(() => {
+    let mounted = true
+    void supabase
+      .from("player_links")
+      .select("id, pz_username, verified")
+      .eq("forum_user_id", currentUser.id)
+      .eq("verified", true)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (mounted) setIsAccountVerified(Boolean(data))
+      })
+    return () => { mounted = false }
+  }, [currentUser.id])
+
+  const totalMessages = threads.reduce((total, thread) => total + threadReplyCount(thread), 0)
+  const sortedThreads = [...threads].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  const recentThreads = sortedThreads.slice(0, 3)
+
+  return (
+    <div className="forum-shell forum-redesign">
+      <section className="forum-hero">
+        <div className="forum-hero-copy">
+          <span className="forum-hero-kicker">ECLIPSE ORDER / COMUNIDAD RP</span>
+          <h1>Eclipse Order<br /><em>Historias, rol y comunidad</em></h1>
+          <p>Tu historia comienza aquí.</p>
+        </div>
+        <div className="forum-hero-stats">
+          <div><strong>{threads.length}</strong><span>HILOS ABIERTOS</span></div>
+          <div><strong>{totalMessages}</strong><span>MENSAJES</span></div>
+          <div><strong>{users.length}</strong><span>USUARIOS</span></div>
+        </div>
+      </section>
+      <div className="forum-layout">
+        {isAccountVerified && !isVerificationNoticeDismissed ? (
+          <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 10, margin: "0 0 14px", padding: "10px 16px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.55)", borderRadius: 6, color: "#6ee7b7", fontSize: 13 }}>
+            <span aria-hidden="true" style={{ display: "inline-grid", placeItems: "center", width: 20, height: 20, borderRadius: "50%", background: "#16a34a", color: "#fff", fontWeight: 700 }}>✓</span>
+            <strong>Tu cuenta ha sido verificada</strong>
+            <button type="button" aria-label="Ocultar aviso de cuenta verificada" title="Ocultar aviso" onClick={() => { window.localStorage.setItem(`verification-notice-dismissed-${currentUser.id}`, "true"); setIsVerificationNoticeDismissed(true) }} style={{ marginLeft: "auto", border: 0, background: "transparent", color: "#6ee7b7", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
+          </div>
+        ) : !isAccountVerified && !isVerificationNoticeDismissed ? (
+          <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", margin: "0 0 14px", padding: "12px 16px", background: "rgba(192,57,43,0.14)", border: "1px solid rgba(231,76,60,0.7)", borderRadius: 6 }}>
+            <div>
+              <strong style={{ display: "block", color: "#ff8275", fontSize: 14 }}>Verificá tu cuenta</strong>
+              <span style={{ display: "block", marginTop: 4, color: "#f4b4ad", fontSize: 12 }}>Debés ingresar el nombre exacto de la cuenta con la que entrás al servidor. Administración revisará tu solicitud.</span>
+            </div>
+            <button type="button" onClick={() => setView("verification")} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 10, background: "#c0392b", boxShadow: "0 8px 18px rgba(192,57,43,0.25)", whiteSpace: "nowrap" }}>SOLICITAR VERIFICACIÓN</button>
+          </div>
+        ) : null}
+        <main className="forum-directory">
+          <div className="forum-directory-heading">
+            <div><h2>Explora el foro</h2></div>
+          </div>
+          <div className="forum-groups">
+            {FORUM_CATEGORY_GROUPS.map((group) => (
+              <section key={group.title} className="forum-group">
+                <div className="forum-group-heading">
+                  <div>
+                    <h3>{group.title}</h3>
+                    <p>{group.title === "General" ? "Información esencial y soporte del servidor." : group.title === "Comunidad" ? "Historias, facciones y vida de los usuarios." : "Casos, reportes y seguimiento administrativo."}</p>
+                  </div>
+                </div>
+                <div className="forum-group-columns" aria-hidden="true">
+                  <span />
+                  <span>Temas</span>
+                  <span>Mensajes</span>
+                </div>
+                <div className="forum-group-categories">
+                  {group.categories.map((cat) => {
+                    const isActive = cat === selectedCategory
+                    const c = CATEGORY_COLORS[cat]
+                    const categoryThreads = threads.filter((t) => t.category === cat)
+                    const topicCount = categoryThreads.length
+                    const messageCount = categoryThreads.reduce((total, thread) => total + threadReplyCount(thread), 0)
+
+                    return (
+                      <button
+                        key={cat}
+                        className="forum-category-button"
+                        onClick={() => {
+                          onOpenCategory(cat)
+                          onSound("select")
+                        }}
+                        style={{
+                          background: isActive ? `linear-gradient(135deg, ${c}22, rgba(18, 12, 28, 0.9))` : "rgba(18, 12, 28, 0.35)",
+                          border: `1px solid ${isActive ? c : "var(--border)"}`,
+                          borderRadius: 10,
+                          padding: "15px 16px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          cursor: "pointer",
+                          color: isActive ? "var(--text)" : "var(--text-muted)",
+                          textAlign: "left",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                          <span className="forum-category-icon" style={{ color: c }}>{CATEGORY_ICONS[cat]}</span>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 13, letterSpacing: "0.08em", whiteSpace: "nowrap" }}>
+                              {cat === "bugs" ? "BUGS" : cat === "reportes" ? "REPORTES" : cat === "historias" ? "HISTORIAS" : cat === "facciones" ? "FACCIONES" : "NORMATIVA"}
+                            </div>
+                            <small className="forum-category-description">{CATEGORY_DESCRIPTIONS[cat]}</small>
+                          </div>
+                        </div>
+                        <div className="forum-category-stats">
+                          <span><strong>{topicCount}</strong></span>
+                          <span><strong>{messageCount}</strong></span>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        </main>
+        <aside className="forum-side-rail">
+          <section className="forum-side-panel forum-welcome-panel">
+            <span className="forum-section-kicker">PARTICIPACIÓN COMUNITARIA</span>
+            <h2>Tu participación importa.</h2>
+            <p>Consulta las publicaciones recientes, comparte un reporte o presenta tu historia.</p>
+            <button type="button" onClick={() => { setView("forum"); onOpenCategory("historias"); onSound("click") }}>ABRIR HISTORIAS <span>↗</span></button>
+          </section>
+          <section className="forum-side-panel forum-recent-panel">
+            <div className="forum-side-heading"><span className="forum-section-kicker">PUBLICACIONES RECIENTES</span><span>{recentThreads.length.toString().padStart(2, "0")}</span></div>
+            {recentThreads.length === 0 ? <p className="forum-empty-note">Aún no hay transmisiones.</p> : recentThreads.map((thread) => {
+              const author = users.find((user) => user.id === thread.authorId)
+              return (
+                <button type="button" className="forum-recent-item" key={thread.id} onClick={() => { setSelectedThread(thread.id); setView("thread"); onSound("select") }}>
+                  <span><strong>{thread.title}</strong><small>{author?.username || "Superviviente"} / {threadReplyCount(thread)} mensajes</small></span>
+                  <b>↗</b>
+                </button>
+              )
+            })}
+          </section>
+          <section className="forum-side-panel forum-manifesto-panel">
+            <span className="forum-section-kicker">NORMAS DE LA COMUNIDAD</span>
+            <p>Respeta el rol.<br />Cuida la historia.<br /><em>Sobrevive en comunidad.</em></p>
+          </section>
+        </aside>
+      </div>
+    </div>
+  )
+}
+
+function PlayerLinkCard({ userId }: { userId: string }) {
+  type PlayerLink = {
+    id: string
+    forum_user_id: string | null
+    steam_id: string
+    character_name: string
+    server_name: string
+    verified: boolean
+    last_seen: string
+  }
+
+  const [steamId, setSteamId] = useState("")
+  const [link, setLink] = useState<PlayerLink | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState("")
+  const [matchStatus, setMatchStatus] = useState<"idle" | "linked" | "sync-needed" | "not-found">("idle")
+  const [matchedPlayer, setMatchedPlayer] = useState<PlayerLink | null>(null)
+
+  const loadLink = useCallback(async () => {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from("player_links")
+      .select("*")
+      .eq("forum_user_id", userId)
+      .maybeSingle()
+
+    if (!error && data) {
+      setLink(data as PlayerLink)
+      setSteamId(data.steam_id ?? "")
+    } else {
+      setLink(null)
+    }
+
+    setLoading(false)
+  }, [userId])
+
+  useEffect(() => {
+    void loadLink()
+  }, [loadLink])
+
+  const checkSteamId = useCallback(async (value: string) => {
+    const normalized = value.trim()
+    if (!normalized) {
+      setMatchStatus("idle")
+      setMatchedPlayer(null)
+      return
+    }
+
+    const { data, error } = await supabase
+      .from("player_links")
+      .select("*")
+      .eq("steam_id", normalized)
+      .maybeSingle()
+
+    if (error || !data) {
+      setMatchStatus("not-found")
+      setMatchedPlayer(null)
+      return
+    }
+
+    if (data.forum_user_id && data.forum_user_id !== userId) {
+      setMatchStatus("sync-needed")
+      setMatchedPlayer(data as PlayerLink)
+      return
+    }
+
+    if (data.forum_user_id === userId) {
+      setMatchStatus("linked")
+      setMatchedPlayer(data as PlayerLink)
+      return
+    }
+
+    setMatchStatus("sync-needed")
+    setMatchedPlayer(data as PlayerLink)
+  }, [userId])
+
+  useEffect(() => {
+    if (!steamId.trim()) {
+      setMatchStatus("idle")
+      setMatchedPlayer(null)
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      void checkSteamId(steamId)
+    }, 250)
+
+    return () => window.clearTimeout(timeout)
+  }, [steamId, checkSteamId])
+
+  const handleLink = async (event: React.FormEvent) => {
+    event.preventDefault()
+    const normalized = steamId.trim()
+
+    if (!normalized) {
+      setMessage("Ingresá tu Steam ID.")
+      return
+    }
+
+    if (!matchedPlayer || matchedPlayer.steam_id !== normalized) {
+      setMessage("Sincronizá primero ese Steam ID con el servidor.")
+      return
+    }
+
+    setSaving(true)
+    setMessage("")
+
+    const { error } = await supabase
+      .from("player_links")
+      .update({
+        forum_user_id: userId,
+        verified: true,
+        last_seen: new Date().toISOString(),
+      })
+      .eq("steam_id", normalized)
+
+    if (error) {
+      setMessage("No se pudo vincular la cuenta.")
+      setSaving(false)
+      return
+    }
+
+    setMessage("Vinculado correctamente.")
+    setMatchStatus("linked")
+    await loadLink()
+    setSaving(false)
+  }
+
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-neutral-700 bg-neutral-900/80 p-4 text-sm text-neutral-300">
+        Cargando vinculación de personaje...
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-xl border border-neutral-700 bg-neutral-900/80 p-4" style={{ marginBottom: 18 }}>
+      <div className="mb-3 flex items-center justify-between" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <h3 className="text-lg font-semibold text-white" style={{ margin: 0, color: "#fff", fontSize: 18, fontWeight: 700 }}>
+          Vínculo con Project Zomboid
+        </h3>
+        {link ? (
+          <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-xs font-medium text-emerald-300" style={{ borderRadius: 999, background: "rgba(16,185,129,0.12)", color: "#6ee7b7", fontSize: 11, padding: "4px 8px" }}>
+            Verificado
+          </span>
+        ) : (
+          <span className="rounded-full bg-amber-500/15 px-2 py-1 text-xs font-medium text-amber-300" style={{ borderRadius: 999, background: "rgba(245,158,11,0.12)", color: "#fbbf24", fontSize: 11, padding: "4px 8px" }}>
+            Pendiente
+          </span>
+        )}
+      </div>
+
+      {link ? (
+        <div className="space-y-2 text-sm text-neutral-200" style={{ display: "grid", gap: 8, color: "#e5e7eb", fontSize: 13 }}>
+          <div><span style={{ color: "#9ca3af" }}>Personaje:</span> {link.character_name}</div>
+          <div><span style={{ color: "#9ca3af" }}>Steam ID:</span> {link.steam_id}</div>
+          <div><span style={{ color: "#9ca3af" }}>Servidor:</span> {link.server_name}</div>
+          <div><span style={{ color: "#9ca3af" }}>Última conexión:</span> {new Date(link.last_seen).toLocaleString()}</div>
+        </div>
+      ) : (
+        <form onSubmit={handleLink} className="space-y-3" style={{ display: "grid", gap: 12 }}>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span style={{ fontSize: 13, color: "#d1d5db" }}>Steam ID</span>
+            <input
+              value={steamId}
+              onChange={(event) => setSteamId(event.target.value)}
+              placeholder="76561198000000000"
+              style={{
+                width: "100%",
+                borderRadius: 10,
+                border: "1px solid var(--border)",
+                background: "rgba(2,6,23,0.6)",
+                color: "#fff",
+                padding: "10px 12px",
+                outline: "none",
+              }}
+            />
+          </label>
+
+          {matchStatus === "linked" && matchedPlayer && (
+            <p style={{ margin: 0, fontSize: 13, color: "#6ee7b7" }}>Vinculado correctamente.</p>
+          )}
+
+          {matchStatus === "sync-needed" && matchedPlayer && (
+            <p style={{ margin: 0, fontSize: 13, color: "#fbbf24" }}>
+              Sincronizar primero: {matchedPlayer.steam_id} existe en el servidor.
+            </p>
+          )}
+
+          {matchStatus === "not-found" && steamId.trim() && (
+            <p style={{ margin: 0, fontSize: 13, color: "#fca5a5" }}>
+              Ese Steam ID no está sincronizado con el servidor todavía.
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={saving || matchStatus !== "sync-needed" || !matchedPlayer}
+            style={{
+              width: "auto",
+              borderRadius: 10,
+              background: saving || matchStatus !== "sync-needed" || !matchedPlayer ? "rgba(22,163,74,0.4)" : "#16a34a",
+              border: "none",
+              color: "#fff",
+              padding: "10px 14px",
+              cursor: saving || matchStatus !== "sync-needed" || !matchedPlayer ? "not-allowed" : "pointer",
+              fontWeight: 600,
+            }}
+          >
+            {saving ? "Vinculando..." : "Vincular cuenta"}
+          </button>
+        </form>
+      )}
+
+      {message ? <p style={{ marginTop: 12, color: "#e5e7eb", fontSize: 13 }}>{message}</p> : null}
+    </div>
+  )
+}
+
+// ─── Profile View ─────────────────────────────────────────────────────────────
+
+function ProfileView({
+  currentUser,
+  users,
+  threads,
+  selectedUserId,
+  onSaveProfile,
+  onOpenProfile,
+  onBack,
+}: {
+  currentUser: User
+  users: User[]
+  threads: Thread[]
+  selectedUserId: string
+  onSaveProfile: (userId: string, updates: ProfileUpdates) => Promise<void>
+  onOpenProfile: (user: User) => void
+  onBack: () => void
+}) {
+  const selectedUser = users.find((u) => u.id === selectedUserId) || currentUser
+  const isOwnProfile = currentUser.id === selectedUser.id
+  const [bio, setBio] = useState(selectedUser.bio || "")
+  const [bannerUrl, setBannerUrl] = useState(selectedUser.bannerUrl || DEFAULT_BANNER_URL)
+  const [pendingBannerUrl, setPendingBannerUrl] = useState<string>("")
+  const [avatarUrl, setAvatarUrl] = useState(selectedUser.avatarUrl || "")
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [isEditingProfile, setIsEditingProfile] = useState(false)
+  const [profileSaveMessage, setProfileSaveMessage] = useState("")
+  const [isVerified, setIsVerified] = useState(false)
+  const [userBadges, setUserBadges] = useState<BadgeType[]>([])
+  const [profileVisits, setProfileVisits] = useState<ProfileVisit[]>([])
+  const avatarFileRef = useRef<File | null>(null)
+  const bannerFileRef = useRef<File | null>(null)
+
+  useEffect(() => {
+    setBio(selectedUser.bio || "")
+    setBannerUrl(selectedUser.bannerUrl || DEFAULT_BANNER_URL)
+    setPendingBannerUrl("")
+    setAvatarUrl(selectedUser.avatarUrl || "")
+    setProfileSaveMessage("")
+    setIsEditingProfile(false)
+  }, [selectedUserId, selectedUser.bio, selectedUser.bannerUrl, selectedUser.avatarUrl])
+
+  useEffect(() => {
+    let mounted = true
+    void Promise.all([
+      supabase.from("player_links").select("id, forum_user_id, pz_username, verified").eq("verified", true),
+      supabase.from("player_playtime").select("username, total_seconds").order("total_seconds", { ascending: false }).limit(10),
+    ]).then(([{ data: verifiedLinks }, { data: playtime }]) => {
+      if (!mounted) return
+      const links = (verifiedLinks as PlayerLink[] | null) || []
+      syncServerBadgeData((playtime as PlayerPlaytime[] | null) || [], links)
+      const isVerifiedNow = links.some((link) => link.forum_user_id === selectedUser.id)
+      setIsVerified(isVerifiedNow)
+      setUserBadges(calculateUserBadges(selectedUser, threads, users, isVerifiedNow))
+    })
+    return () => { mounted = false }
+  }, [selectedUser.id, selectedUser, threads, users])
+
+  useEffect(() => {
+    let mounted = true
+
+    async function loadProfileVisits() {
+      if (!isOwnProfile) {
+        await supabase.from("profile_visits").upsert(
+          { profile_id: selectedUser.id, visitor_id: currentUser.id, visited_at: new Date().toISOString() },
+          { onConflict: "profile_id,visitor_id" },
+        )
+      }
+      const { data } = await supabase.from("profile_visits").select("id, visitor_id, visited_at").eq("profile_id", selectedUser.id).order("visited_at", { ascending: false }).limit(20)
+      if (mounted) setProfileVisits((data || []).map((visit) => ({ id: visit.id, visitorId: visit.visitor_id, visitedAt: visit.visited_at })))
+    }
+
+    void loadProfileVisits()
+    return () => { mounted = false }
+  }, [currentUser.id, isOwnProfile, selectedUser.id])
+
+  const bannerBackground = bannerUrl && bannerUrl !== DEFAULT_BANNER_URL
+    ? `url(${bannerUrl}) center/cover no-repeat`
+    : `url(${DEFAULT_BANNER_URL}) center/cover no-repeat`
+
+  const profileUser = {
+    ...selectedUser,
+    avatarUrl,
+    bio,
+    bannerUrl,
+  }
+  const rolePoints = selectedUser.rolePoints || 0
+  const redeemedRolePoints = selectedUser.redeemedRolePoints || 0
+  const canSeeRolePointDetails = isOwnProfile || currentUser.role === "admin"
+  const isTop1Profile = userBadges.includes("most-active")
+
+  function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const imageData = String(ev.target?.result || "")
+      avatarFileRef.current = file
+      setAvatarUrl(imageData)
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ""
+  }
+
+  function handleBannerUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const imageData = String(ev.target?.result || "")
+      bannerFileRef.current = file
+      setPendingBannerUrl(imageData)
+      setBannerUrl(imageData)
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ""
+  }
+
+  async function saveProfile() {
+    if (isSavingProfile) return
+    setIsSavingProfile(true)
+    setProfileSaveMessage("")
+    try {
+      const nextBannerUrl = pendingBannerUrl || (bannerUrl && bannerUrl !== DEFAULT_BANNER_URL ? bannerUrl : null)
+      await onSaveProfile(currentUser.id, {
+        avatarUrl,
+        bio,
+        bannerUrl: nextBannerUrl,
+        avatarFile: avatarFileRef.current || undefined,
+        bannerFile: bannerFileRef.current || undefined,
+      })
+      avatarFileRef.current = null
+      bannerFileRef.current = null
+      setPendingBannerUrl("")
+      setProfileSaveMessage("Perfil guardado correctamente.")
+    } catch (saveError) {
+      setProfileSaveMessage(saveError instanceof Error ? saveError.message : "No se pudo guardar el perfil.")
+    } finally {
+      setIsSavingProfile(false)
+    }
+  }
+
+  if (isOwnProfile && isEditingProfile) {
+    return (
+      <main className="profile-edit-page" style={{ maxWidth: 1160, margin: "0 auto", padding: "30px 20px 50px" }}>
+        <button type="button" className="profile-edit-back" onClick={() => setIsEditingProfile(false)}>← VOLVER AL PERFIL</button>
+        <div className="profile-edit-heading">
+          <div><span>CONFIGURACIÓN DE CUENTA</span><h1>Editar perfil</h1><p>Personaliza la información visible para el resto de la comunidad.</p></div>
+          <div className="profile-edit-status">CAMBIOS LOCALES<br /><strong>LISTOS PARA GUARDAR</strong></div>
+        </div>
+        <div className="profile-edit-layout">
+          <section className="profile-edit-form">
+            <div className="profile-edit-section-title"><span>01 / IDENTIDAD VISUAL</span><small>IMÁGENES</small></div>
+            <div className="profile-upload-grid">
+              <label className="profile-upload-box"><span className="profile-upload-icon">+</span><strong>Avatar</strong><small>Imagen cuadrada recomendada</small><input type="file" accept="image/*" onChange={handleImageUpload} /></label>
+              <label className="profile-upload-box"><span className="profile-upload-icon">+</span><strong>Banner</strong><small>Imagen panorámica recomendada</small><input type="file" accept="image/*" onChange={handleBannerUpload} /></label>
+            </div>
+            <div className="profile-edit-section-title"><span>02 / PRESENTACIÓN</span><small>DESCRIPCIÓN</small></div>
+            <label className="profile-edit-label">Biografía<textarea value={bio} onChange={(event) => setBio(event.target.value)} placeholder="Cuéntanos quién eres dentro del servidor..." /></label>
+            <div className="profile-edit-actions">
+              <button type="button" className="profile-edit-cancel" onClick={() => setIsEditingProfile(false)}>CANCELAR</button>
+              <button type="button" className="profile-edit-save" onClick={() => void saveProfile()} disabled={isSavingProfile}>{isSavingProfile ? "GUARDANDO..." : "GUARDAR PERFIL"}</button>
+            </div>
+            {profileSaveMessage && <div className={profileSaveMessage === "Perfil guardado correctamente." ? "profile-save-success" : "profile-save-error"}>{profileSaveMessage}</div>}
+          </section>
+          <aside className="profile-edit-preview">
+            <span className="profile-edit-preview-kicker">VISTA PREVIA</span>
+            <div className="profile-preview-banner" style={{ background: bannerBackground }}><span>IDENTIDAD DE USUARIO</span></div>
+            <div className="profile-preview-body"><Avatar letter={profileUser.avatar} role={profileUser.role} size={64} imageUrl={profileUser.avatarUrl} /><div><h2>{profileUser.username}</h2><span>{roleLabel(profileUser.role)}</span></div><p>{bio || "La biografía aparecerá aquí."}</p></div>
+          </aside>
+        </div>
+      </main>
+    )
+  }
+
+
+  return (
+    <div className="profile-view profile-redesign" style={{ maxWidth: 1100, margin: "0 auto", padding: "30px 20px 40px" }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
+        ← Volver al foro
+      </button>
+      <div className="profile-page-heading">
+        <div><span>ARCHIVO DE USUARIO</span><h1>Perfil</h1><p>Configura la identidad con la que te reconocerá la comunidad.</p></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {isOwnProfile && <button type="button" className="profile-edit-toggle" onClick={() => setIsEditingProfile(true)}>Editar perfil</button>}
+          <div className="profile-page-mark">PERFIL DE USUARIO</div>
+        </div>
+      </div>
+      <section className="profile-main" style={{ background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", borderRadius: 18, overflow: "visible" }}>
+        <div style={{ height: 120, background: bannerBackground, position: "relative", borderBottom: "1px solid var(--border)" }}>
+          <div className="profile-identity" style={{ position: "absolute", left: 24, bottom: -28, display: "flex", alignItems: "center", gap: 16 }}>
+            <Avatar letter={profileUser.avatar} role={profileUser.role} size={72} imageUrl={profileUser.avatarUrl} />
+            <div><div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "Oswald, sans-serif", fontSize: 26, letterSpacing: "0.06em", color: isTop1Profile ? "#f4d35e" : "#fff" }}>{profileUser.username}<RoleMark role={profileUser.role} /><UserBadges badges={userBadges} glowTopRank={isTop1Profile} /></div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.8)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>{roleLabel(profileUser.role)}</div></div>
+          </div>
+        </div>
+        <div className="profile-main-body profile-public-body" style={{ padding: "42px 22px 22px" }}>
+          <article className="profile-presentation-block">
+            <div className="profile-section-heading"><span>Presentación</span><small>IDENTIDAD DE USUARIO</small></div>
+            <div style={{ color: "var(--text-muted)", lineHeight: 1.8, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{selectedUser.bio || "Este usuario aún no ha escrito una descripción."}</div>
+          </article>
+          <aside className="profile-points profile-points-minimal">
+            <div className="profile-points-heading"><span className="role-points-title">PUNTOS DE ROL</span><span className="profile-points-status">ACTIVO</span></div>
+            <div className="profile-points-main"><strong>{rolePoints}</strong><span>disponibles</span></div>
+            <div className="profile-points-meter"><span style={{ width: `${Math.min(100, Math.max(8, rolePoints > 0 ? 42 : 8))}%` }} /></div>
+            {canSeeRolePointDetails && redeemedRolePoints > 0 && <div className="profile-points-used"><span>Utilizados</span><strong>{redeemedRolePoints}</strong></div>}
+          </aside>
+        </div>
+        {
+          <section style={{ margin: "0 22px 18px", padding: "12px 14px", background: "rgba(2,6,23,0.28)", border: "1px solid var(--border)", borderRadius: 8 }}>
+            <div className="profile-section-heading" style={{ marginBottom: 6 }}><span>Últimos visitantes</span><small>{profileVisits.length}</small></div>
+            {profileVisits.length === 0 ? (
+              <div style={{ color: "var(--text-dim)", fontSize: 13 }}>Todavía no hay visitas a tu perfil.</div>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, overflowX: "auto", paddingBottom: 2 }}>
+                {profileVisits.map((visit) => {
+                  const visitor = users.find((user) => user.id === visit.visitorId)
+                  return <span key={visit.id} style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0, color: "var(--text-muted)", fontSize: 11 }}><button type="button" onClick={() => visitor && onOpenProfile(visitor)} style={{ padding: 0, border: 0, background: "transparent", color: visitor?.role === "admin" ? "#fbbf24" : "var(--text)", cursor: visitor ? "pointer" : "default", fontWeight: 700 }}>{visitor?.username || "Usuario"}</button><time style={{ color: "var(--text-dim)" }}>({new Date(visit.visitedAt).toLocaleString("es-AR")})</time></span>
+                })}
+              </div>
+            )}
+          </section>
+        }
+      </section>
+    </div>
+  )
+}
+
+function MembersView({ users, onOpenProfile, onLoadMemberAvatars, onBack }: {
+  users: User[]
+  onOpenProfile: (user: User) => void
+  onLoadMemberAvatars: (userIds: string[]) => Promise<void>
+  onBack: () => void
+}) {
+  const [search, setSearch] = useState("")
+  const getPageFromUrl = () => {
+    const value = Number(new URLSearchParams(window.location.search).get("pagina"))
+    return Number.isInteger(value) && value > 0 ? value : 1
+  }
+  const [page, setPage] = useState(getPageFromUrl)
+  const filteredUsers = users.filter((user) => user.username.toLowerCase().includes(search.toLowerCase()))
+  const pageSize = 10
+  const pageCount = Math.max(1, Math.ceil(filteredUsers.length / pageSize))
+  const visibleUsers = filteredUsers.slice((page - 1) * pageSize, page * pageSize)
+  const loadedAvatarIdsRef = useRef(new Set<string>())
+
+  useEffect(() => {
+    const nextPage = Math.min(page, pageCount)
+    if (nextPage !== page) {
+      setPage(nextPage)
+      return
+    }
+    const nextUrl = `/miembros${page > 1 ? `?pagina=${page}` : ""}`
+    if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
+      window.history.pushState({}, "", nextUrl)
+    }
+  }, [page, pageCount])
+
+  useEffect(() => {
+    const handlePopState = () => setPage(getPageFromUrl())
+    window.addEventListener("popstate", handlePopState)
+    return () => window.removeEventListener("popstate", handlePopState)
+  }, [])
+
+  useEffect(() => {
+    const usersWithoutAvatars = visibleUsers.filter((user) => !user.avatarUrl && !loadedAvatarIdsRef.current.has(user.id)).map((user) => user.id)
+    if (usersWithoutAvatars.length > 0) void onLoadMemberAvatars(usersWithoutAvatars)
+    usersWithoutAvatars.forEach((userId) => loadedAvatarIdsRef.current.add(userId))
+  }, [onLoadMemberAvatars, visibleUsers.map((user) => user.id).join(",")])
+
+  function handleSearch(value: string) {
+    setSearch(value)
+    setPage(1)
+  }
+
+  const paginationItems = pageCount <= 7
+    ? Array.from({ length: pageCount }, (_, index) => index + 1)
+    : [1, page > 3 ? "..." : 2, ...[page - 1, page, page + 1].filter((value) => value > 1 && value < pageCount), page < pageCount - 2 ? "..." : pageCount - 1, pageCount]
+
+  return (
+    <main className="members-view directory-view" style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 20px 50px" }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
+        ← Volver al foro
+      </button>
+      <div className="profile-page-heading">
+        <div>
+          <span>COMUNIDAD ECLIPSE ORDER</span>
+          <h1>Miembros</h1>
+          <p>Conoce a los usuarios que forman parte de la comunidad.</p>
+        </div>
+        <div className="profile-page-mark">{users.length} PERFILES</div>
+      </div>
+      <div className="members-toolbar">
+        <span className="members-toolbar-label">DIRECTORIO DE MIEMBROS</span>
+        <input value={search} onChange={(event) => handleSearch(event.target.value)} placeholder="Buscar usuario..." style={{ ...inputStyle, maxWidth: 280 }} />
+      </div>
+      <div className="members-grid" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {visibleUsers.map((user) => (
+          <button key={user.id} className="member-card" onClick={() => onOpenProfile(user)}>
+            <Avatar letter={user.avatar} role={user.role} size={52} imageUrl={user.avatarUrl} />
+            <span className="member-card-copy">
+              <strong>{user.username}<RoleMark role={user.role} /></strong>
+              <small>{roleLabel(user.role)}</small>
+              <span>{user.bio || "Usuario de Eclipse Order"}</span>
+            </span>
+            <span className="member-card-arrow">→</span>
+          </button>
+        ))}
+      </div>
+      {filteredUsers.length === 0 && <div className="members-empty">No se encontraron miembros.</div>}
+      {filteredUsers.length > 0 && pageCount > 1 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, marginTop: 20, flexWrap: "wrap" }}>
+          <span style={{ color: "var(--text-muted)", fontSize: 11, marginRight: 6 }}>Páginas ({pageCount}):</span>
+          <button onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))} disabled={page === 1} style={{ ...primaryBtn, width: "auto", padding: "5px 8px", fontSize: 10, opacity: page === 1 ? 0.45 : 1 }}>
+            ← Anterior
+          </button>
+          {paginationItems.map((item, index) => item === "..." ? (
+            <span key={`ellipsis-${index}`} style={{ color: "var(--text-dim)", padding: "5px 3px", fontSize: 11 }}>...</span>
+          ) : (
+            <button key={item} onClick={() => setPage(item)} style={{ ...primaryBtn, width: "auto", minWidth: 28, padding: "5px 7px", fontSize: 10, background: item === page ? "rgba(230,162,60,0.2)" : "transparent", border: `1px solid ${item === page ? "#e6a23c" : "var(--border2)"}`, color: item === page ? "#ffe7a3" : "var(--text-muted)", boxShadow: "none" }}>
+              {item}
+            </button>
+          ))}
+        </div>
+      )}
+    </main>
+  )
+}
+
+function ServerView({ users, onOpenProfile, onBack }: { users: User[]; onOpenProfile: (user: User) => void; onBack: () => void }) {
+  const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null)
+  const [serverPlayers, setServerPlayers] = useState<ServerPlayer[]>([])
+  const [playerPlaytime, setPlayerPlaytime] = useState<PlayerPlaytime[]>([])
+  const [serverActivity, setServerActivity] = useState<ServerActivityItem[]>([])
+  const [verifiedPlayerLinks, setVerifiedPlayerLinks] = useState<PlayerLink[]>([])
+
+  async function openVerifiedProfile(username: string) {
+    const { data, error } = await supabase
+      .from("player_links")
+      .select("forum_user_id")
+      .eq("pz_username", username)
+      .eq("verified", true)
+      .maybeSingle()
+    if (error || !data) return
+    const profileUser = users.find((user) => user.id === data.forum_user_id)
+    if (profileUser) onOpenProfile(profileUser)
+  }
+  const [isLoadingPresence, setIsLoadingPresence] = useState(true)
+
+  useEffect(() => {
+    let mounted = true
+
+    async function loadServerPresence() {
+      setIsLoadingPresence(true)
+      const [{ data: status }, { data: players }, { data: playtime }, { data: activity }, { data: links }] = await Promise.all([
+        supabase.from("server_status").select("online, player_count, peak_player_count, online_since, checked_at").eq("id", "main").maybeSingle(),
+        supabase.from("server_players").select("username").order("username", { ascending: true }),
+        supabase.from("player_playtime").select("username, total_seconds").order("total_seconds", { ascending: false }).limit(10),
+        supabase.from("server_activity").select("id, type, title, message, username, metadata, created_at").order("created_at", { ascending: false }).limit(8),
+        supabase.from("player_links").select("id, forum_user_id, pz_username, verified").eq("verified", true),
+      ])
+
+      if (!mounted) return
+      setServerStatus((status as ServerStatus | null) || null)
+      setServerPlayers((players as ServerPlayer[] | null) || [])
+      setPlayerPlaytime((playtime as PlayerPlaytime[] | null) || [])
+      setServerActivity((activity as ServerActivityItem[] | null) || [])
+      setVerifiedPlayerLinks((links as PlayerLink[] | null) || [])
+      setIsLoadingPresence(false)
+    }
+
+    void loadServerPresence()
+    const refreshTimer = window.setInterval(loadServerPresence, 30_000)
+    return () => {
+      mounted = false
+      window.clearInterval(refreshTimer)
+    }
+  }, [])
+
+  return (
+    <main className="members-view server-view server-redesign" style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 20px 50px" }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
+        ← Volver al foro
+      </button>
+      <div className="profile-page-heading">
+        <div>
+          <span>PROJECT ZOMBOID / ECLIPSE ORDER</span>
+          <h1>Servidor</h1>
+          <p>Estado, actividad y estadísticas en tiempo real del servidor.</p>
+        </div>
+        <div className="profile-page-mark">{serverStatus?.online ? "EN LÍNEA" : "SIN DATOS"}</div>
+      </div>
+      <section className="server-overview" aria-label="Estadísticas del servidor">
+        <div className="server-overview-heading">
+          <div>
+            <div className="server-kicker">SERVIDOR PROJECT ZOMBOID</div>
+            <strong className="server-player-count">
+              {serverStatus?.online ? `${serverStatus.player_count} jugadores conectados` : "Servidor sin datos recientes"}
+            </strong>
+          </div>
+          <span className={`server-live-status ${serverStatus?.online ? "is-online" : ""}`}>
+            {serverStatus?.online ? "● EN LÍNEA" : "● FUERA DE LÍNEA"}
+          </span>
+        </div>
+        <div className="server-stats-grid">
+          <div><span>RÉCORD ONLINE</span><strong>{serverStatus?.peak_player_count ?? 0}</strong><small>máximo registrado</small></div>
+          <div><span>TIEMPO ONLINE</span><strong>{serverStatus?.online ? formatServerUptime(serverStatus.online_since) : "No disponible"}</strong><small>sesión actual</small></div>
+          <div><span>ÚLTIMO REINICIO</span><strong>{serverStatus?.online_since ? formatDate(serverStatus.online_since) : "No disponible"}</strong></div>
+        </div>
+      </section>
+      <section className="server-roster" aria-label="Jugadores conectados">
+        <div className="server-roster-heading"><div><span className="server-kicker">PRESENCIA EN TIEMPO REAL</span><h2>Jugadores conectados</h2></div><small>{serverPlayers.length} ONLINE</small></div>
+        {isLoadingPresence ? (
+          <div className="members-empty">Cargando jugadores conectados...</div>
+        ) : serverPlayers.length > 0 ? (
+          <div className="server-player-list">
+            {serverPlayers.map((player) => <span className="server-player-chip" key={player.username}><i aria-hidden="true" />{player.username}</span>)}
+          </div>
+        ) : <div className="members-empty">No hay jugadores conectados.</div>}
+      </section>
+      <section className="server-roster" aria-label="Top histórico de tiempo de juego" style={{ marginTop: 28 }}>
+        <div className="server-roster-heading">
+          <div>
+            <span className="server-kicker">ACTIVIDAD ACUMULADA</span>
+            <h2 className="server-ranking-title">Top histórico</h2>
+          </div>
+          <small>TOP {playerPlaytime.length}</small>
+        </div>
+        {isLoadingPresence ? (
+          <div className="members-empty">Cargando top histórico...</div>
+        ) : playerPlaytime.length > 0 ? (
+          <div className="server-ranking-list" style={{ display: "grid", gap: 8 }}>
+            {playerPlaytime.map((player, index) => (
+              <div className={`server-ranking-row ${index === 0 ? "is-first" : ""}`} key={player.username} style={{ display: "grid", gridTemplateColumns: "32px minmax(0, 1fr) auto", alignItems: "center", gap: 10, padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 8, background: index === 0 ? "rgba(230,162,60,0.1)" : "rgba(10,14,23,0.45)" }}>
+                <strong style={{ color: index === 0 ? "#f3d38a" : "var(--text-muted)", fontFamily: "JetBrains Mono, monospace" }}>#{index + 1}</strong>
+                {(() => {
+                  const linkedUser = verifiedPlayerLinks.find((link) => link.pz_username === player.username)
+                  const profileUser = linkedUser ? users.find((user) => user.id === linkedUser.forum_user_id) : undefined
+                  return profileUser ? (
+                    <button type="button" onClick={() => void openVerifiedProfile(player.username)} title="Ver perfil verificado" style={{ border: 0, background: "transparent", color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left", padding: 0, cursor: "pointer", fontWeight: 700 }}>{player.username}</button>
+                  ) : (
+                    <span style={{ color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{player.username}</span>
+                  )
+                })()}
+                <strong style={{ color: "#f3d38a", fontFamily: "JetBrains Mono, monospace", fontSize: 12 }}>{formatPlaytime(player.total_seconds)}</strong>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="members-empty">Todavía no hay tiempo de juego registrado.</div>
+        )}
+      </section>
+      <section className="server-roster" aria-label="Actividad reciente del servidor" style={{ marginTop: 28 }}>
+        <div className="server-roster-heading">
+          <div>
+            <span className="server-kicker">REGISTRO DE ACTIVIDAD</span>
+            <h2>Eventos del servidor</h2>
+          </div>
+          <small>{serverActivity.length} REGISTROS</small>
+        </div>
+        {isLoadingPresence ? (
+          <div className="members-empty">Cargando eventos del servidor...</div>
+        ) : serverActivity.length > 0 ? (
+          <div className="server-activity-list" style={{ display: "grid", gap: 10 }}>
+            {serverActivity.map((activity) => (
+              <div className="server-activity-item" key={activity.id} style={{ border: "1px solid var(--border)", borderRadius: 14, background: "rgba(10, 14, 23, 0.7)", padding: "14px 16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <strong style={{ color: "#f3d38a", fontSize: 13 }}>{activity.title}</strong>
+                  <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{formatDate(activity.created_at)}</span>
+                </div>
+                <p style={{ margin: "8px 0 0", color: "var(--text)", fontSize: 13, lineHeight: 1.5 }}>{activity.message}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="members-empty">Todavía no hay eventos registrados en el servidor.</div>
+        )}
+      </section>
+    </main>
+  )
+}
+
+function PlayerLinkRequestCard({ userId }: { userId: string }) {
+  const [pzUsername, setPzUsername] = useState("")
+  const [request, setRequest] = useState<PlayerLinkRequest | null>(null)
+  const [link, setLink] = useState<PlayerLink | null>(null)
+  const [message, setMessage] = useState("")
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSending, setIsSending] = useState(false)
+
+  const loadRequest = useCallback(async () => {
+    setIsLoading(true)
+    const [{ data: linkRow }, { data: requestRows }] = await Promise.all([
+      supabase.from("player_links").select("*").eq("forum_user_id", userId).maybeSingle(),
+      supabase.from("player_link_requests").select("*").eq("forum_user_id", userId).order("created_at", { ascending: false }).limit(1),
+    ])
+    setLink((linkRow as PlayerLink | null) || null)
+    setRequest((requestRows?.[0] as PlayerLinkRequest | undefined) || null)
+    setIsLoading(false)
+  }, [userId])
+
+  useEffect(() => {
+    void loadRequest()
+  }, [loadRequest])
+
+  async function handleRequest(event: React.FormEvent) {
+    event.preventDefault()
+    const normalizedUsername = pzUsername.trim()
+    if (!normalizedUsername) {
+      setMessage("Escribí el nombre exacto de tu cuenta del servidor.")
+      return
+    }
+
+    setIsSending(true)
+    setMessage("")
+    const { data: player, error: playerError } = await supabase
+      .from("player_playtime")
+      .select("username")
+      .eq("username", normalizedUsername)
+      .maybeSingle()
+
+    if (playerError || !player) {
+      setMessage("No encontramos ese nombre en el historial del servidor. Revisá mayúsculas, minúsculas, espacios y símbolos.")
+      setIsSending(false)
+      return
+    }
+
+    const { error } = await supabase.from("player_link_requests").insert({
+      forum_user_id: userId,
+      pz_username: player.username,
+      status: "pending",
+    })
+
+    if (error) {
+      setMessage(error.code === "23505" ? "Ya existe una solicitud para ese nombre." : "No se pudo enviar la solicitud.")
+    } else {
+      setPzUsername("")
+      setMessage("Solicitud enviada a administración.")
+      await loadRequest()
+    }
+    setIsSending(false)
+  }
+
+  if (isLoading) return <section className="control-panel-card">Cargando vinculación con Project Zomboid...</section>
+
+  return (
+    <section className="control-panel-card" style={{ gridColumn: "1 / -1" }}>
+      <div className="profile-section-heading"><span>Vinculación con Project Zomboid</span><small>{link ? "VERIFICADA" : "PENDIENTE"}</small></div>
+      {link ? (
+        <p style={{ margin: 0, color: "#6ee7b7", fontSize: 13 }}>Tu cuenta está vinculada al jugador <strong>{link.pz_username}</strong>.</p>
+      ) : request?.status === "pending" ? (
+        <p style={{ margin: 0, color: "#fbbf24", fontSize: 13 }}>Solicitud <strong>en revisión</strong> para <strong>{request.pz_username}</strong>. Administración revisará tu identidad.</p>
+      ) : request?.status === "rejected" ? (
+        <form onSubmit={handleRequest} style={{ display: "grid", gap: 10, maxWidth: 620 }}>
+          <p style={{ margin: 0, color: "#fca5a5", fontSize: 13 }}>Tu solicitud fue rechazada. <strong>Motivo:</strong> {request.rejection_reason || "Administración no indicó un motivo."}</p>
+          <label style={labelStyle}>Nombre exacto de la cuenta<input value={pzUsername} onChange={(event) => setPzUsername(event.target.value)} placeholder="Ejemplo: Tynek" required style={inputStyle} /></label>
+          {message && <p style={{ margin: 0, color: message.includes("enviada") ? "#6ee7b7" : "#fca5a5", fontSize: 12 }}>{message}</p>}
+          <button type="submit" disabled={isSending} style={{ ...primaryBtn, width: "auto", justifySelf: "start", opacity: isSending ? 0.6 : 1 }}>{isSending ? "CONSULTANDO..." : "REENVIAR SOLICITUD"}</button>
+        </form>
+      ) : (
+        <form onSubmit={handleRequest} style={{ display: "grid", gap: 10, maxWidth: 620 }}>
+          <p style={{ margin: 0, color: "var(--text-dim)", fontSize: 13, lineHeight: 1.5 }}>Ingresá exactamente el nombre de la cuenta con la que entrás al servidor. La consulta distingue mayúsculas, minúsculas, espacios y símbolos.</p>
+          <label style={labelStyle}>Nombre exacto del servidor<input value={pzUsername} onChange={(event) => setPzUsername(event.target.value)} placeholder="Ejemplo: Tynek" required style={inputStyle} /></label>
+          {message && <p style={{ margin: 0, color: message.includes("enviada") ? "#6ee7b7" : "#fca5a5", fontSize: 12 }}>{message}</p>}
+          <button type="submit" disabled={isSending} style={{ ...primaryBtn, width: "auto", justifySelf: "start", opacity: isSending ? 0.6 : 1 }}>{isSending ? "CONSULTANDO..." : "ENVIAR SOLICITUD"}</button>
+        </form>
+      )}
+    </section>
+  )
+}
+
+function VerificationView({ currentUser, onBack }: { currentUser: User; onBack: () => void }) {
+  return (
+    <main className="control-panel-view" style={{ maxWidth: 820, margin: "0 auto", padding: "30px 20px 50px" }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
+        ← Volver al foro
+      </button>
+      <div className="profile-page-heading">
+        <div>
+          <span>CUENTA / PROJECT ZOMBOID</span>
+          <h1>Verificación de cuenta</h1>
+          <p>Solicitá a administración la vinculación de tu cuenta del foro con tu nombre de acceso al servidor.</p>
+        </div>
+        <div className="profile-page-mark">VERIFICACIÓN</div>
+      </div>
+      <figure style={{ margin: "0 0 18px", padding: 12, background: "rgba(15,23,32,0.7)", border: "1px solid var(--border)", borderRadius: 8 }}>
+        <img src="https://axdkcuqpwlzxltyfroxo.supabase.co/storage/v1/object/public/publico/server-guide.png" alt="Pantalla del servidor donde aparece resaltado el nombre de la cuenta" style={{ display: "block", width: "100%", height: "auto", borderRadius: 4 }} />
+        <figcaption style={{ marginTop: 8, color: "var(--text-dim)", fontSize: 12 }}>Usá el nombre resaltado de tu cuenta, no el nombre del personaje.</figcaption>
+      </figure>
+      <PlayerLinkRequestCard userId={currentUser.id} />
+    </main>
+  )
+}
+
+function ControlPanelView({ currentUser, onSaveAccount, onBack }: {
+  currentUser: User
+  onSaveAccount: (updates: { username?: string; firstName: string; lastName: string; password: string }) => Promise<void>
+  onBack: () => void
+}) {
+  const [firstName, setFirstName] = useState("")
+  const [lastName, setLastName] = useState("")
+  const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
+  const [isVerified, setIsVerified] = useState(false)
+  const [message, setMessage] = useState("")
+  const [error, setError] = useState("")
+  const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    let mounted = true
+    void supabase.auth.getUser().then(({ data }) => {
+      if (!mounted) return
+      const savedFirstName = data.user?.user_metadata?.first_name || currentUser.username.split(" ")[0] || ""
+      const savedLastName = data.user?.user_metadata?.last_name || currentUser.username.split(" ").slice(1).join(" ") || ""
+      setFirstName(savedFirstName)
+      setLastName(savedLastName)
+    })
+    return () => { mounted = false }
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+    void supabase.from("player_links").select("id").eq("forum_user_id", currentUser.id).eq("verified", true).maybeSingle().then(({ data }) => {
+      if (mounted) setIsVerified(Boolean(data))
+    })
+    return () => { mounted = false }
+  }, [currentUser.id])
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    setMessage("")
+    setError("")
+    if (!isVerified && (!firstName.trim() || !lastName.trim())) {
+      setError("Debes indicar tu nombre y apellido para continuar.")
+      return
+    }
+    const username = isVerified ? firstName.trim() : undefined
+    if (isVerified && (!username || username.length < 3)) {
+      setError("El nombre de usuario debe tener al menos 3 caracteres.")
+      return
+    }
+    if (password && password.length < 6) {
+      setError("La contraseña debe tener al menos 6 caracteres.")
+      return
+    }
+    if (password !== confirmPassword) {
+      setError("Las contraseñas no coinciden.")
+      return
+    }
+    setIsSaving(true)
+    try {
+      await onSaveAccount({ username, firstName: firstName.trim(), lastName: lastName.trim(), password })
+      setPassword("")
+      setConfirmPassword("")
+      setMessage("Cambios guardados correctamente.")
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "No se pudieron guardar los cambios.")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <main className="control-panel-view" style={{ maxWidth: 1120, margin: "0 auto", padding: "30px 20px 50px" }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
+        ← Volver al foro
+      </button>
+      <div className="profile-page-heading">
+        <div>
+          <span>CONFIGURACIÓN PERSONAL</span>
+          <h1>Panel de control</h1>
+          <p>Administra tus datos, seguridad y actividad dentro de la comunidad.</p>
+        </div>
+        <div className="profile-page-mark">CUENTA / {roleLabel(currentUser.role)}</div>
+      </div>
+      <div className="control-panel-layout">
+        <form className="control-panel-card" onSubmit={handleSubmit}>
+          <div className="profile-section-heading"><span>Datos personales</span><small>IDENTIDAD</small></div>
+          <div className="control-current-name"><span>Nombre actual</span><strong>{currentUser.username}</strong></div>
+          {isVerified ? (
+            <label style={labelStyle}>Nombre de usuario<input value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="Tu nombre de usuario" required style={inputStyle} /></label>
+          ) : (
+            <div className="control-panel-form-grid">
+              <label style={labelStyle}>Nombre<input value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="Tu nombre" required style={inputStyle} /></label>
+              <label style={labelStyle}>Apellido<input value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Tu apellido" required style={inputStyle} /></label>
+            </div>
+          )}
+              <div className="profile-section-heading control-panel-section-heading"><span>Seguridad</span></div>
+              {!isChangingPassword ? (
+                <button type="button" onClick={() => setIsChangingPassword(true)} style={{ ...primaryBtn, width: "auto", alignSelf: "flex-start", background: "transparent", border: "1px solid var(--border-strong)", color: "var(--text)" }}>
+                  CAMBIAR CONTRASEÑA
+                </button>
+              ) : (
+                <div style={{ display: "grid", gap: 12 }}>
+                  <label style={labelStyle}>Nueva contraseña<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo 6 caracteres" style={inputStyle} autoFocus /></label>
+                  <label style={labelStyle}>Repetir contraseña<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repite la nueva contraseña" style={inputStyle} /></label>
+                </div>
+              )}
+          {error && <div className="profile-save-error">{error}</div>}
+          {message && <div className="profile-save-success">{message}</div>}
+          <button type="submit" disabled={isSaving} style={{ ...primaryBtn, width: "auto", alignSelf: "flex-start", opacity: isSaving ? 0.65 : 1, cursor: isSaving ? "wait" : "pointer" }}>
+            {isSaving ? "GUARDANDO..." : "GUARDAR CAMBIOS"}
+          </button>
+        </form>
+        <section className="control-panel-card">
+          <div className="profile-section-heading"><span>Historial de notificaciones</span><small>{currentUser.notifications?.length || 0} REGISTROS</small></div>
+          <div className="control-notification-history">
+            {(currentUser.notifications || []).map((notification) => (
+              <article key={notification.id} className={`control-notification-entry ${notification.read ? "" : "is-unread"}`}>
+                <div><strong>{notification.read ? "Leída" : "Sin leer"}</strong><time>{formatDate(notification.createdAt)}</time></div>
+                <p>{notification.text}</p>
+              </article>
+            ))}
+            {(!currentUser.notifications || currentUser.notifications.length === 0) && <div className="header-account-empty">Aún no tienes notificaciones.</div>}
+          </div>
+        </section>
+      </div>
+    </main>
+  )
+}
+
+// ─── New Thread View ──────────────────────────────────────────────────────────
+
+function NewThreadView({
+  currentUser,
+  users,
+  onSubmit,
+  goBack,
+  initialCategory,
+}: {
+  currentUser: User
+  users: User[]
+  onSubmit: (t: Thread, mentionedUserIds?: string[]) => Promise<void> | void
+  goBack: () => void
+  initialCategory?: Category
+}) {
+  const [category, setCategory] = useState<Category>(initialCategory || "reportes")
+  const [title, setTitle] = useState(() => {
+    const savedDraft = readDraft<ThreadDraft>(getThreadDraftKey(currentUser.id, initialCategory || "reportes"))
+    return savedDraft?.title || ""
+  })
+  const [content, setContent] = useState("")
+  const [contentText, setContentText] = useState("")
+  const isReportMode = initialCategory === "reportes" || category === "reportes"
+  const formCopy: Record<Category, { title: string; description: string }> = {
+    bugs: {
+      title: "Resume el fallo encontrado",
+      description: "Explica qué ocurrió, cómo reproducirlo, dónde sucedió y qué esperabas que pasara.",
+    },
+    reportes: {
+      title: "Indica el motivo del reporte",
+      description: "Describe la situación con hechos concretos y añade evidencias si las tienes.",
+    },
+    historias: {
+      title: "Título de la historia de tu personaje",
+      description: "Cuenta el pasado, las motivaciones o un momento importante de tu personaje.",
+    },
+    facciones: {
+      title: "Nombre de la facción o propuesta",
+      description: "Presenta la idea, objetivos, integrantes y forma de participar en la facción.",
+    },
+    normativa: {
+      title: "Título de la norma o consulta",
+      description: "Explica la norma, el contexto y cualquier detalle que deba conocer la comunidad.",
+    },
+  }
+  const [error, setError] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState("")
+  const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([])
+  const contentRef = useRef<HTMLDivElement>(null)
+  const hasRestoredThreadDraftRef = useRef(false)
+  const draftKey = getThreadDraftKey(currentUser.id, category)
+
+  useEffect(() => {
+    const savedDraft = readDraft<ThreadDraft>(draftKey)
+    if (savedDraft) {
+      setTitle(savedDraft.title)
+      setContent(savedDraft.content)
+      setContentText(savedDraft.contentText)
+      setMentionedUserIds(savedDraft.mentionedUserIds || [])
+      if (contentRef.current && savedDraft.content && contentRef.current.innerHTML === "") {
+        contentRef.current.innerHTML = savedDraft.content
+      }
+    } else {
+      setTitle("")
+      setContent("")
+      setContentText("")
+      setMentionedUserIds([])
+      if (contentRef.current) contentRef.current.innerHTML = ""
+    }
+    hasRestoredThreadDraftRef.current = true
+  }, [draftKey])
+
+  useEffect(() => {
+    if (!hasRestoredThreadDraftRef.current) return
+    persistDraft(draftKey, {
+      title,
+      category,
+      content,
+      contentText,
+      mentionedUserIds,
+      updatedAt: new Date().toISOString(),
+    })
+  }, [category, content, contentText, draftKey, mentionedUserIds, title])
+
+  const mentionList = users.filter((user) =>
+    user.id !== currentUser.id &&
+    user.username.toLowerCase().includes(mentionQuery.toLowerCase())
+  )
+
+  function toggleMention(userId: string) {
+    setMentionedUserIds((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    )
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (isSubmitting) return
+    if (title.trim().length < 5) { setError("El título debe tener al menos 5 caracteres."); return }
+    if (contentText.trim().length < 20) { setError("Añade una descripción de al menos 20 caracteres."); return }
+    if (category === "reportes" && mentionedUserIds.length === 0) {
+      setError("Debes mencionar al menos a un usuario para crear este reporte.")
+      return
+    }
+    const mentionText = mentionedUserIds
+      .map((id) => {
+        const user = users.find((u) => u.id === id)
+        return user ? `@${user.username}` : ""
+      })
+      .filter(Boolean)
+      .join(" ")
+
+    const finalContent = [content.trim(), mentionText].filter(Boolean).join("\n\n")
+
+    const t: Thread = {
+      id: uid(),
+      title: title.trim(),
+      category,
+      authorId: currentUser.id,
+      content: finalContent,
+      status: "abierto",
+      createdAt: new Date().toISOString(),
+      replies: [],
+      subforum: category === "facciones" ? "no_oficial" : undefined,
+    }
+    persistDraft(draftKey, null)
+    setIsSubmitting(true)
+    setError("")
+    try {
+      await onSubmit(t, mentionedUserIds)
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "No se pudo publicar el hilo.")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+    {isSubmitting && <PostingOverlay />}
+    <div className="forum-wide-view" style={{ maxWidth: 1050, margin: "0 auto", padding: "32px 20px" }}>
+      <button onClick={goBack} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 13, marginBottom: 24, display: "flex", alignItems: "center", gap: 6 }}>
+        ← Volver al foro
+      </button>
+
+      <h2 style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, fontWeight: 700, letterSpacing: "0.08em", color: "var(--text)", marginBottom: 24 }}>
+        {initialCategory ? CATEGORY_THREAD_ACTIONS[initialCategory] : "NUEVO REPORTE"}
+      </h2>
+
+      {error && (
+        <div style={{ background: "#c0392b18", border: "1px solid #c0392b55", borderRadius: 4, padding: "10px 14px", color: "#e74c3c", fontSize: 13, marginBottom: 20 }}>
+          {error}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "28px 28px" }}>
+        {!initialCategory && !isReportMode && (
+          <div style={{ marginBottom: 18 }}>
+            <label style={labelStyle}>Categoría</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              {CATEGORIES_ORDER.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setCategory(cat)}
+                  style={{
+                    flex: 1,
+                    background: category === cat ? CATEGORY_COLORS[cat] + "22" : "transparent",
+                    border: `1px solid ${category === cat ? CATEGORY_COLORS[cat] : "var(--border2)"}`,
+                    borderRadius: 4,
+                    color: category === cat ? CATEGORY_COLORS[cat] : "var(--text-muted)",
+                    cursor: "pointer",
+                    padding: "8px 4px",
+                    fontSize: 11,
+                    fontFamily: "JetBrains Mono, monospace",
+                    letterSpacing: "0.04em",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {CATEGORY_LABELS[cat]}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <div style={{ marginBottom: 18 }}>
+          <label style={labelStyle}>Título</label>
+          <input
+            style={inputStyle}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder={formCopy[category].title}
+          />
+        </div>
+        <div style={{ marginBottom: 18 }}>
+          <label style={labelStyle}>Descripción</label>
+          <div className="visual-editor-shell">
+            <VisualEditor editorRef={contentRef} onChange={(html, text) => { setContent(html); setContentText(text) }} onPaste={(event) => pasteImageIntoEditor(event, contentRef, (html, text) => { setContent(html); setContentText(text) })} />
+            <MarkdownToolbar editorRef={contentRef} onInsertImage={(file) => {
+              const reader = new FileReader()
+              reader.onload = () => {
+                contentRef.current?.focus()
+                document.execCommand("insertImage", false, String(reader.result))
+                setContent(contentRef.current?.innerHTML || "")
+              }
+              reader.readAsDataURL(file)
+            }} />
+          </div>
+          <div style={{ marginTop: 7, color: "var(--text-dim)", fontSize: 11 }}>
+            Las imágenes se insertan dentro del texto. Para vídeos, comparte un enlace de YouTube o Imgur.
+          </div>
+        </div>
+
+        {category === "reportes" && (
+          <div style={{ marginBottom: 18, padding: "14px 14px 12px", background: "rgba(15,23,42,0.48)", border: "1px solid rgba(56,189,248,0.25)", borderRadius: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+              <label style={{ ...labelStyle, marginBottom: 0 }}>Mencionar usuarios</label>
+              <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>
+                {mentionedUserIds.length}/1 mínimo
+              </span>
+            </div>
+
+            <input
+              value={mentionQuery}
+              onChange={(e) => setMentionQuery(e.target.value)}
+              placeholder="Buscar personaje o usuario..."
+              style={{ ...inputStyle, marginBottom: 10 }}
+            />
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, minHeight: 38 }}>
+              {mentionList.length === 0 ? (
+                <span style={{ fontSize: 12, color: "var(--text-dim)" }}>No hay coincidencias.</span>
+              ) : (
+                mentionList.slice(0, 8).map((user) => {
+                  const selected = mentionedUserIds.includes(user.id)
+                  return (
+                    <button
+                      key={user.id}
+                      type="button"
+                      onClick={() => toggleMention(user.id)}
+                      style={{
+                        background: selected ? "linear-gradient(135deg, rgba(56,189,248,0.18), rgba(14,165,233,0.08))" : "rgba(15,23,42,0.45)",
+                        border: `1px solid ${selected ? "#38bdf8" : "var(--border)"}`,
+                        borderRadius: 999,
+                        color: selected ? "#e0f2fe" : "var(--text-muted)",
+                        padding: "7px 12px",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        boxShadow: selected ? "0 0 0 1px rgba(56,189,248,0.2)" : "none",
+                      }}
+                    >
+                      @{user.username}
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button type="submit" disabled={isSubmitting} style={{ ...primaryBtn, opacity: isSubmitting ? 0.65 : 1, cursor: isSubmitting ? "wait" : "pointer" }}>
+            {isSubmitting ? "PUBLICANDO..." : isReportMode ? "PUBLICAR REPORTE" : "PUBLICAR HILO"}
+          </button>
+          <button type="button" onClick={goBack} style={{ ...primaryBtn, background: "transparent", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
+            CANCELAR
+          </button>
+        </div>
+      </form>
+    </div>
+    </>
+  )
+}
+
+// ─── Thread View ──────────────────────────────────────────────────────────────
+
+function ThreadView({
+  threadId,
+  threads,
+  users,
+  currentUser,
+  onReply,
+  isSubscribed,
+  onToggleSubscription,
+  onEditThread,
+  onEditReply,
+  onRegisterView,
+  onAddRolePoints,
+  onStatusChange,
+  onPinToggle,
+  onDeleteThread,
+  onDeleteReply,
+  onLoadReplies,
+  onLoadThread,
+  onMoveFactionThread,
+  onAddFactionRolePoints,
+  onClaimFactionRolePoints,
+  onOpenProfile,
+  goBack,
+}: {
+  threadId: string
+  threads: Thread[]
+  users: User[]
+  currentUser: User
+  onReply: (threadId: string, content: string, attachments: Attachment[], mentionedUserIds?: string[]) => Promise<void> | void
+  isSubscribed: boolean
+  onToggleSubscription: (threadId: string) => Promise<void>
+  onEditThread: (threadId: string, title: string, content: string) => void
+  onEditReply: (threadId: string, replyId: string, content: string) => Promise<void> | void
+  onRegisterView: (threadId: string, userId: string) => Promise<boolean>
+  onAddRolePoints: (userId: string, amount: number) => void
+  onStatusChange: (threadId: string, status: ThreadStatus) => void
+  onPinToggle: (threadId: string) => void
+  onDeleteThread: (threadId: string) => void
+  onDeleteReply: (threadId: string, replyId: string) => void
+  onLoadReplies: (threadId: string, before?: string) => Promise<boolean>
+  onLoadThread: (threadId: string) => Promise<void>
+  onMoveFactionThread: (threadId: string, targetSubforum: ThreadSubforum) => void
+  onAddFactionRolePoints: (threadId: string, amount: number) => void
+  onClaimFactionRolePoints: (threadId: string) => void
+  onOpenProfile: (user: User) => void
+  goBack: () => void
+}) {
+  const thread = threads.find((t) => t.id === threadId)
+  const [replyContent, setReplyContent] = useState("")
+  const replyContentRef = useRef<HTMLDivElement>(null)
+  const hasRestoredReplyDraftRef = useRef(false)
+  const [error, setError] = useState("")
+  const [lightbox, setLightbox] = useState<Attachment | null>(null)
+  const [mentionQuery, setMentionQuery] = useState("")
+  const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([])
+  const [isEditing, setIsEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState("")
+  const [editContent, setEditContent] = useState("")
+  const [editError, setEditError] = useState("")
+  const [pointsToAdd, setPointsToAdd] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [editingReplyId, setEditingReplyId] = useState<string | null>(null)
+  const [editReplyContent, setEditReplyContent] = useState("")
+  const [isSavingReply, setIsSavingReply] = useState(false)
+  const [isLoadingReplies, setIsLoadingReplies] = useState(false)
+  const [hasMoreReplies, setHasMoreReplies] = useState(false)
+  const [isLoadingThread, setIsLoadingThread] = useState(false)
+  const replyDraftKey = getReplyDraftKey(currentUser.id, threadId)
+
+  useEffect(() => {
+    const savedDraft = readDraft<ReplyDraft>(replyDraftKey)
+    if (savedDraft) {
+      setReplyContent(savedDraft.content)
+      setMentionedUserIds(savedDraft.mentionedUserIds || [])
+      if (replyContentRef.current && savedDraft.content && replyContentRef.current.innerHTML === "") {
+        replyContentRef.current.innerHTML = savedDraft.content
+      }
+    } else {
+      setReplyContent("")
+      setMentionedUserIds([])
+      if (replyContentRef.current) replyContentRef.current.innerHTML = ""
+    }
+    hasRestoredReplyDraftRef.current = true
+  }, [replyDraftKey, threadId])
+
+  useEffect(() => {
+    if (!hasRestoredReplyDraftRef.current) return
+    persistDraft(replyDraftKey, {
+      content: replyContent,
+      contentText: replyContent.replace(/<[^>]*>/g, "").trim(),
+      mentionedUserIds,
+      updatedAt: new Date().toISOString(),
+    })
+  }, [mentionedUserIds, replyContent, replyDraftKey])
+
+  useEffect(() => {
+    if (!thread) return
+    void onRegisterView(thread.id, currentUser.id)
+  }, [currentUser.id, onRegisterView, thread?.id])
+
+  useEffect(() => {
+    if (!thread || thread.contentLoaded) return
+    setIsLoadingThread(true)
+    void onLoadThread(thread.id).catch(() => undefined).finally(() => setIsLoadingThread(false))
+  }, [onLoadThread, thread?.contentLoaded, thread?.id])
+
+  useEffect(() => {
+    if (!thread || thread.repliesLoaded) return
+    setIsLoadingReplies(true)
+    void onLoadReplies(thread.id)
+      .then((hasMore) => setHasMoreReplies(hasMore))
+      .finally(() => setIsLoadingReplies(false))
+  }, [onLoadReplies, thread?.id, thread?.repliesLoaded])
+
+  if (!thread) return null
+
+  const author = users.find((u) => u.id === thread.authorId)
+  const authorBadges = author ? calculateUserBadges(author, threads, users, false) : []
+  const isStaff = currentUser.role !== "user"
+  const canEditThread = thread.category === "historias" && currentUser.id === thread.authorId
+  const canDeleteThread = currentUser.id === thread.authorId || currentUser.role === "admin"
+  const canAddThreadRolePoints = thread.category === "historias" && currentUser.role === "admin"
+  const isFactionReadOnly = thread.category === "facciones" && (thread.subforum === "formato" || thread.subforum === "oficial")
+  const canReply = !isFactionReadOnly && thread.category !== "normativa" && !thread.adminOnly && (thread.status === "abierto" || thread.status === "en_revision" || isStaff)
+  const canMoveFactionThread = currentUser.role === "admin" && thread.category === "facciones" && thread.subforum !== "oficial"
+  const factionRolePoints = thread.factionRolePoints || 0
+  const canManageFactionPoints = currentUser.role === "admin" && thread.category === "facciones"
+  const canClaimFactionPoints = currentUser.id === thread.authorId && factionRolePoints > 0 && !thread.factionRolePointsClaimed
+
+  function startEditing() {
+    setEditTitle(thread.title)
+    setEditContent(thread.content)
+    setEditError("")
+    setIsEditing(true)
+  }
+
+  function handleEditSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (editTitle.trim().length < 5) {
+      setEditError("El título debe tener al menos 5 caracteres.")
+      return
+    }
+    if (editContent.trim().length < 20 && (!thread.attachments || thread.attachments.length === 0)) {
+      setEditError("La publicación debe tener al menos 20 caracteres o un archivo adjunto.")
+      return
+    }
+
+    onEditThread(thread.id, editTitle.trim(), editContent.trim())
+    setIsEditing(false)
+    setEditError("")
+  }
+
+  function handleAddThreadRolePoints() {
+    const amount = Number(pointsToAdd)
+    if (!Number.isInteger(amount) || amount < 1 || !author) return
+    onAddRolePoints(author.id, amount)
+    setPointsToAdd("")
+  }
+
+  function handleAddFactionRolePoints() {
+    const amount = Number(pointsToAdd)
+    if (!Number.isInteger(amount) || amount < 1) return
+    onAddFactionRolePoints(thread.id, amount)
+    setPointsToAdd("")
+  }
+
+  function startEditingReply(reply: Reply) {
+    setEditingReplyId(reply.id)
+    setEditReplyContent(reply.content)
+  }
+
+  async function handleEditReplySubmit(e: React.FormEvent, replyId: string) {
+    e.preventDefault()
+    if (isSavingReply || editReplyContent.trim().length < 5) return
+    setIsSavingReply(true)
+    try {
+      await onEditReply(thread.id, replyId, editReplyContent.trim())
+      setEditingReplyId(null)
+      setEditReplyContent("")
+    } finally {
+      setIsSavingReply(false)
+    }
+  }
+
+  function toggleMention(userId: string) {
+    setMentionedUserIds((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    )
+  }
+
+  async function handleReply(e: React.FormEvent) {
+    e.preventDefault()
+    if (isSubmitting) return
+    if (thread.category === "normativa") {
+      setError("No se pueden añadir respuestas en la sección de Normativa.")
+      return
+    }
+    if (thread.category === "facciones" && (thread.subforum === "formato" || thread.subforum === "oficial")) {
+      setError("Este subforo es de solo lectura. Para publicar una facción usa el subforo NO OFICIAL.")
+      return
+    }
+    if (replyContent.trim().length < 5) {
+      setError("Escribe al menos un mensaje.")
+      return
+    }
+    if (thread.category === "reportes" && mentionedUserIds.length === 0) {
+      setError("Debes mencionar al menos a un usuario antes de responder este reporte.")
+      return
+    }
+
+    const mentionText = mentionedUserIds
+      .map((id) => {
+        const user = users.find((u) => u.id === id)
+        return user ? `@${user.username}` : ""
+      })
+      .filter(Boolean)
+      .join(" ")
+
+    const finalContent = [replyContent.trim(), mentionText].filter(Boolean).join("\n\n")
+    persistDraft(replyDraftKey, null)
+    setIsSubmitting(true)
+    try {
+      await onReply(thread!.id, finalContent, [], mentionedUserIds)
+      setReplyContent("")
+      if (replyContentRef.current) replyContentRef.current.innerHTML = ""
+      setMentionedUserIds([])
+      setMentionQuery("")
+      setError("")
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "No se pudo publicar la respuesta.")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const statuses: ThreadStatus[] = thread.category === "historias"
+    ? ["abierto", "cerrado"]
+    : ["abierto", "en_revision", "cerrado"]
+  const mentionList = users.filter((user) =>
+    user.id !== currentUser.id &&
+    user.username.toLowerCase().includes(mentionQuery.toLowerCase())
+  )
+
+  return (
+    <>
+    {isSubmitting && <PostingOverlay />}
+    {lightbox && (
+      <div
+        onClick={() => setLightbox(null)}
+        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-out" }}
+      >
+        <img src={lightbox.dataUrl} alt={lightbox.name} style={{ maxWidth: "90vw", maxHeight: "90vh", borderRadius: 6, boxShadow: "0 0 60px rgba(0,0,0,0.8)" }} />
+        <button
+          onClick={() => setLightbox(null)}
+          style={{ position: "fixed", top: 20, right: 24, background: "#c0392b", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", color: "#fff", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          ✕
+        </button>
+      </div>
+    )}
+    <div className="forum-wide-view" style={{ maxWidth: 820, margin: "0 auto", padding: "32px 20px" }}>
+      <button onClick={goBack} className="store-back">
+        ← VOLVER
+      </button>
+
+      {/* Thread header */}
+      <div style={{ background: "var(--surface)", border: "1px solid #1e2330", borderLeft: `4px solid ${CATEGORY_COLORS[thread.category]}`, borderRadius: 8, padding: "24px 24px 20px", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+              <Badge label={CATEGORY_LABELS[thread.category]} color={CATEGORY_COLORS[thread.category]} />
+              <Badge label={STATUS_LABELS[thread.status]} color={STATUS_COLORS[thread.status]} />
+              {canSubscribeToThread(thread) && (
+                <button
+                  type="button"
+                  onClick={() => void onToggleSubscription(thread.id)}
+                  aria-pressed={isSubscribed}
+                  title={isSubscribed ? "Dejar de recibir notificaciones de este hilo" : "Recibir notificaciones de este hilo"}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 7, minHeight: 32, border: `1px solid ${isSubscribed ? "rgba(52,211,153,0.75)" : "rgba(230,162,60,0.7)"}`, borderRadius: 8, background: isSubscribed ? "linear-gradient(135deg, rgba(16,185,129,0.22), rgba(6,95,70,0.16))" : "linear-gradient(135deg, rgba(230,162,60,0.2), rgba(168,85,247,0.12))", color: isSubscribed ? "#86efac" : "#fbd38d", cursor: "pointer", padding: "7px 12px", fontSize: 10, fontWeight: 700, fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.06em", boxShadow: isSubscribed ? "0 0 18px rgba(16,185,129,0.16)" : "0 0 18px rgba(230,162,60,0.14)" }}
+                >
+                  <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1 }}>{isSubscribed ? "✓" : "🔔"}</span>
+                  {isSubscribed ? "SUSCRITO" : "SUSCRIBIRSE"}
+                </button>
+              )}
+            </div>
+            {isEditing ? (
+              <form onSubmit={handleEditSubmit} style={{ marginBottom: 12 }}>
+                {editError && (
+                  <div style={{ background: "#c0392b18", border: "1px solid #c0392b55", borderRadius: 4, padding: "8px 12px", color: "#e74c3c", fontSize: 13, marginBottom: 10 }}>
+                    {editError}
+                  </div>
+                )}
+                <input
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  style={{ ...inputStyle, marginBottom: 10, fontFamily: "Oswald, sans-serif", fontSize: 20 }}
+                />
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  style={{ ...inputStyle, minHeight: 180, resize: "vertical" } as React.CSSProperties}
+                />
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <button type="submit" style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11 }}>
+                    GUARDAR CAMBIOS
+                  </button>
+                  <button type="button" onClick={() => setIsEditing(false)} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11, background: "transparent", border: "1px solid var(--border2)", color: "var(--text-muted)", boxShadow: "none" }}>
+                    CANCELAR
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <h1 style={{ fontFamily: "Oswald, sans-serif", fontSize: 22, fontWeight: 600, letterSpacing: "0.04em", color: "var(--text)", margin: "0 0 12px" }}>
+                <MarkdownText content={thread.title} inline />
+              </h1>
+            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <Avatar letter={author?.avatar || "?"} role={author?.role || "user"} size={28} imageUrl={author?.avatarUrl} />
+              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                {author ? <button type="button" onClick={() => onOpenProfile(author)} style={{ border: "none", padding: 0, background: "transparent", color: "var(--text)", cursor: "pointer", fontWeight: 700 }}>
+                  <span style={{
+                    color: authorBadges.includes("most-active") ? "transparent" : "var(--text)",
+                    background: authorBadges.includes("most-active") ? "linear-gradient(90deg, #fff5b0 0%, #f4d35e 15%, #fffef0 32%, #f7ca54 52%, #fef7d9 68%, #d7a82d 84%, #fff0a8 100%)" : undefined,
+                    backgroundSize: authorBadges.includes("most-active") ? "220% 100%" : undefined,
+                    WebkitBackgroundClip: authorBadges.includes("most-active") ? "text" : undefined,
+                    backgroundClip: authorBadges.includes("most-active") ? "text" : undefined,
+                    WebkitTextFillColor: authorBadges.includes("most-active") ? "transparent" : undefined,
+                    animation: authorBadges.includes("most-active") ? "goldTextShift 2.4s ease-in-out infinite" : undefined,
+                    textShadow: authorBadges.includes("most-active") ? "0 0 16px rgba(255,214,102,0.45)" : undefined,
+                  }}>
+                    {author.username}
+                  </span>
+                  <RoleMark role={author.role} />
+                  {authorBadges.length > 0 && <UserBadges badges={authorBadges} glowTopRank={authorBadges.includes("most-active")} />}
+                </button> : "Usuario"} · {formatDate(thread.createdAt)}
+                {thread.editedAt && <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}> · EDITADO</span>}
+              </div>
+            </div>
+          </div>
+
+          {isStaff && (
+            <div style={{ minWidth: 180, background: "rgba(15,23,42,0.7)", border: "1px solid var(--border)", borderRadius: 14, padding: "12px 12px 10px" }}>
+              <div style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.12em", marginBottom: 8, textTransform: "uppercase" }}>
+                Moderación
+              </div>
+              <div style={{ display: "grid", gap: 6 }}>
+                {statuses.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => onStatusChange(thread.id, s)}
+                    style={{
+                      background: thread.status === s ? STATUS_COLORS[s] + "22" : "transparent",
+                      border: `1px solid ${thread.status === s ? STATUS_COLORS[s] : "var(--border2)"}`,
+                      borderRadius: 8,
+                      color: thread.status === s ? STATUS_COLORS[s] : "var(--text-dim)",
+                      cursor: "pointer",
+                      padding: "6px 10px",
+                      fontSize: 10,
+                      fontFamily: "JetBrains Mono, monospace",
+                      letterSpacing: "0.05em",
+                      textAlign: "left",
+                    }}
+                  >
+                    {STATUS_LABELS[s]}
+                  </button>
+                ))}
+                <button
+                  onClick={() => onPinToggle(thread.id)}
+                  style={{
+                    background: thread.pinned ? "rgba(245,158,11,0.12)" : "transparent",
+                    border: `1px solid ${thread.pinned ? "#f59e0b" : "var(--border2)"}`,
+                    borderRadius: 8,
+                    color: thread.pinned ? "#fbbf24" : "var(--text-dim)",
+                    cursor: "pointer",
+                    padding: "6px 10px",
+                    fontSize: 10,
+                    fontFamily: "JetBrains Mono, monospace",
+                    letterSpacing: "0.05em",
+                    textAlign: "left",
+                  }}
+                >
+                  {thread.pinned ? "DESTACAR: SÍ" : "DESTACAR: NO"}
+                </button>
+                {currentUser.role === "admin" && (
+                  <button
+                    onClick={() => onDeleteThread(thread.id)}
+                    style={{
+                      background: "rgba(239,68,68,0.1)",
+                      border: "1px solid rgba(239,68,68,0.4)",
+                      borderRadius: 8,
+                      color: "#fca5a5",
+                      cursor: "pointer",
+                      padding: "6px 10px",
+                      fontSize: 10,
+                      fontFamily: "JetBrains Mono, monospace",
+                      letterSpacing: "0.05em",
+                      textAlign: "left",
+                    }}
+                  >
+                    ELIMINAR HILO
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {(canEditThread || canAddThreadRolePoints || canDeleteThread || canManageFactionPoints || canClaimFactionPoints) && (
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            {canMoveFactionThread && (
+              <button
+                onClick={() => onMoveFactionThread(thread.id, "oficial")}
+                style={{
+                  ...primaryBtn,
+                  width: "auto",
+                  padding: "8px 12px",
+                  fontSize: 11,
+                  background: "linear-gradient(135deg, rgba(168,85,247,0.18), rgba(88,28,135,0.18))",
+                  border: "1px solid rgba(34,197,94,0.5)",
+                  color: "#86efac",
+                  boxShadow: "none",
+                }}
+              >
+                MOVER A OFICIAL
+              </button>
+            )}
+            {canEditThread && !isEditing && (
+              <button onClick={startEditing} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11 }}>
+                EDITAR PUBLICACIÓN
+              </button>
+            )}
+            {canAddThreadRolePoints && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 11, color: "#fbbf24", fontFamily: "JetBrains Mono, monospace" }}>PUNTOS PARA {author?.username}</span>
+                <input
+                  type="number"
+                  min="1"
+                  value={pointsToAdd}
+                  onChange={(e) => setPointsToAdd(e.target.value)}
+                  placeholder="Cantidad"
+                  style={{ ...inputStyle, width: 100, padding: "8px 9px", fontSize: 11 }}
+                />
+                <button onClick={handleAddThreadRolePoints} disabled={!pointsToAdd} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11, background: "linear-gradient(135deg, #d97706, #92400e)", opacity: pointsToAdd ? 1 : 0.5, cursor: pointsToAdd ? "pointer" : "not-allowed" }}>
+                  AÑADIR PUNTOS
+                </button>
+              </div>
+            )}
+            {canManageFactionPoints && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 11, color: "#72c8bf", fontFamily: "JetBrains Mono, monospace" }}>PDR FACCIONARIO</span>
+                <input type="number" min="1" value={pointsToAdd} onChange={(e) => setPointsToAdd(e.target.value)} placeholder="Cantidad" style={{ ...inputStyle, width: 100, padding: "8px 9px", fontSize: 11 }} />
+                <button onClick={handleAddFactionRolePoints} disabled={!pointsToAdd} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11, background: "linear-gradient(135deg, #a855f7, #7c3aed)", opacity: pointsToAdd ? 1 : 0.5 }}>ASIGNAR AL HILO</button>
+              </div>
+            )}
+            {canClaimFactionPoints && (
+              <button onClick={() => onClaimFactionRolePoints(thread.id)} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11, background: "linear-gradient(135deg, #d97706, #92400e)" }}>
+                RECLAMAR {factionRolePoints} PDR FACCIONARIO
+              </button>
+            )}
+            {canDeleteThread && currentUser.role !== "admin" && (
+              <button onClick={() => onDeleteThread(thread.id)} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 11, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)", color: "#fca5a5", boxShadow: "none" }}>
+                ELIMINAR PUBLICACIÓN
+              </button>
+            )}
+          </div>
+        )}
+
+        <div
+          style={{
+            marginTop: 20,
+            paddingTop: 20,
+            borderTop: "1px solid #1e2330",
+            color: "var(--text-muted)",
+            lineHeight: 1.7,
+            fontSize: 14,
+            whiteSpace: "pre-wrap",
+            overflowWrap: "anywhere",
+            wordBreak: "break-word",
+          }}
+        >
+          {isEditing ? "Revisa el contenido en el formulario superior antes de guardar." : isLoadingThread ? "CARGANDO HILO..." : <MarkdownText content={thread.content} />}
+        </div>
+        {thread.category === "facciones" && (
+          <div style={{ marginTop: 18, padding: "13px 15px", border: "1px solid rgba(168,85,247,0.3)", borderRadius: 10, background: "linear-gradient(135deg, rgba(168,85,247,0.1), rgba(22,16,31,0.7))", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "0.08em" }}>PUNTOS DE ROL FACCIONARIO · SOLO EN ESTE HILO</span>
+            <strong style={{ color: "#8cecf0", fontFamily: "Oswald, sans-serif", fontSize: 18 }}>{factionRolePoints} PDR {thread.factionRolePointsClaimed ? "· RECLAMADOS" : ""}</strong>
+          </div>
+        )}
+
+        {thread.attachments && thread.attachments.length > 0 && (
+          <div style={{ marginTop: 18, display: "grid", gap: 12 }}>
+            {thread.attachments.map((att, idx) =>
+              att.type === "image" ? (
+                <div
+                  key={idx}
+                  onClick={() => setLightbox(att)}
+                  style={{
+                    cursor: "zoom-in",
+                    borderRadius: 12,
+                    overflow: "hidden",
+                    border: "1px solid var(--border)",
+                    background: "rgba(15,23,42,0.45)",
+                    boxShadow: "0 16px 32px rgba(2, 6, 23, 0.18)",
+                  }}
+                >
+                  <img
+                    src={att.dataUrl}
+                    alt={att.name}
+                    style={{
+                      display: "block",
+                      width: "auto",
+                      maxWidth: "100%",
+                      height: "auto",
+                      maxHeight: 520,
+                      objectFit: "contain",
+                      margin: "0 auto",
+                    }}
+                  />
+                </div>
+              ) : (
+                <div
+                  key={idx}
+                  style={{
+                    borderRadius: 12,
+                    overflow: "hidden",
+                    border: "1px solid var(--border)",
+                    background: "rgba(15,23,42,0.45)",
+                  }}
+                >
+                  <video src={att.dataUrl} controls style={{ display: "block", width: "100%", maxHeight: 360 }} />
+                  <div style={{ padding: "7px 10px", fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", background: "rgba(15,23,42,0.6)" }}>
+                    {att.name}
+                  </div>
+                </div>
+              )
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Replies */}
+      {isLoadingReplies && (
+        <div style={{ marginBottom: 12, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", fontSize: 11 }}>
+          CARGANDO RESPUESTAS...
+        </div>
+      )}
+      {thread.repliesLoaded && thread.replies.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em", marginBottom: 10 }}>
+            {thread.replies.length} RESPUESTA{thread.replies.length !== 1 ? "S" : ""}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {thread.replies.map((reply) => {
+              const replyAuthor = users.find((u) => u.id === reply.authorId)
+              const replyAuthorBadges = replyAuthor ? calculateUserBadges(replyAuthor, threads, users, false) : []
+              return (
+                <div
+                  key={reply.id}
+                  style={{
+                    background: reply.isStaff ? "var(--surface2)" : "var(--row-bg)",
+                    border: `1px solid ${reply.isStaff ? "#1a3a5c" : "var(--border)"}`,
+                    borderLeft: `3px solid ${reply.isStaff ? "#2980b9" : "var(--border2)"}`,
+                    borderRadius: 6,
+                    padding: "16px 18px",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                    <Avatar letter={replyAuthor?.avatar || "?"} role={replyAuthor?.role || "user"} size={26} imageUrl={replyAuthor?.avatarUrl} />
+                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                      {replyAuthor ? <button type="button" onClick={() => onOpenProfile(replyAuthor)} style={{ border: "none", padding: 0, background: "transparent", color: reply.isStaff ? "#3498db" : "var(--text)", cursor: "pointer", fontWeight: 700 }}>
+                        <span style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
+                          padding: "3px 9px",
+                          borderRadius: 999,
+                          background: "rgba(30, 41, 59, 0.88)",
+                          border: "1px solid rgba(148, 163, 184, 0.55)",
+                          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.08), 0 0 8px rgba(52,211,153,0.15)",
+                          verticalAlign: "middle",
+                        }}>
+                          <span style={{
+                            color: replyAuthorBadges.includes("most-active") ? "transparent" : reply.isStaff ? "#3498db" : "var(--text)",
+                            background: replyAuthorBadges.includes("most-active") ? "linear-gradient(90deg, #fff5b0 0%, #f4d35e 15%, #fffef0 32%, #f7ca54 52%, #fef7d9 68%, #d7a82d 84%, #fff0a8 100%)" : undefined,
+                            backgroundSize: replyAuthorBadges.includes("most-active") ? "220% 100%" : undefined,
+                            WebkitBackgroundClip: replyAuthorBadges.includes("most-active") ? "text" : undefined,
+                            backgroundClip: replyAuthorBadges.includes("most-active") ? "text" : undefined,
+                            WebkitTextFillColor: replyAuthorBadges.includes("most-active") ? "transparent" : undefined,
+                            animation: replyAuthorBadges.includes("most-active") ? "goldTextShift 2.4s ease-in-out infinite" : undefined,
+                            textShadow: replyAuthorBadges.includes("most-active") ? "0 0 16px rgba(255,214,102,0.45)" : undefined,
+                          }}>
+                            {replyAuthor.username}
+                          </span>
+                          <RoleMark role={replyAuthor.role} />
+                          {replyAuthorBadges.length > 0 && <UserBadges badges={replyAuthorBadges} glowTopRank={replyAuthorBadges.includes("most-active")} />}
+                        </span>
+                      </button> : "Usuario"}
+                      {reply.isStaff && (
+                        <span style={{ marginLeft: 6, fontSize: 10, color: "#3498db", fontFamily: "JetBrains Mono, monospace" }}>
+                          [STAFF]
+                        </span>
+                      )}
+                      {" "}· {formatDate(reply.createdAt)}
+                      {reply.editedAt && <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}> · EDITADO</span>}
+                    </div>
+                    </div>
+                    {reply.authorId === currentUser.id && (
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                        <button onClick={() => startEditingReply(reply)} style={{ ...primaryBtn, width: "auto", background: "transparent", border: "1px solid var(--border2)", color: "var(--text-muted)", boxShadow: "none", padding: "5px 8px", fontSize: 9 }}>
+                          EDITAR
+                        </button>
+                        <button onClick={() => onDeleteReply(thread.id, reply.id)} style={{ background: "transparent", border: "1px solid rgba(239,68,68,0.32)", borderRadius: 6, color: "#fca5a5", cursor: "pointer", padding: "5px 8px", fontSize: 9, fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.06em" }}>
+                          ELIMINAR
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {editingReplyId === reply.id ? (
+                    <form onSubmit={(event) => void handleEditReplySubmit(event, reply.id)} style={{ display: "grid", gap: 8 }}>
+                      <textarea value={editReplyContent} onChange={(event) => setEditReplyContent(event.target.value)} style={{ ...inputStyle, minHeight: 100, resize: "vertical" } as React.CSSProperties} />
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button type="submit" disabled={isSavingReply || editReplyContent.trim().length < 5} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 10, opacity: isSavingReply ? 0.65 : 1 }}>
+                          {isSavingReply ? "GUARDANDO..." : "GUARDAR"}
+                        </button>
+                        <button type="button" onClick={() => setEditingReplyId(null)} disabled={isSavingReply} style={{ ...primaryBtn, width: "auto", padding: "8px 12px", fontSize: 10, background: "transparent", border: "1px solid var(--border2)", color: "var(--text-muted)", boxShadow: "none" }}>
+                          CANCELAR
+                        </button>
+                      </div>
+                    </form>
+                  ) : reply.content && (
+                    <div style={{ color: "var(--text-muted)", lineHeight: 1.7, fontSize: 14, whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                      <MarkdownText content={reply.content} />
+                    </div>
+                  )}
+                  {reply.attachments && reply.attachments.length > 0 && (
+                    <div style={{ marginTop: reply.content ? 12 : 0, display: "grid", gap: 8 }}>
+                      {reply.attachments.map((att, idx) =>
+                        att.type === "image" ? (
+                          <div
+                            key={idx}
+                            onClick={() => setLightbox(att)}
+                            style={{ cursor: "zoom-in", borderRadius: 10, overflow: "hidden", border: "1px solid var(--border)", background: "rgba(15,23,42,0.45)" }}
+                          >
+                            <img
+                              src={att.dataUrl}
+                              alt={att.name}
+                              style={{ display: "block", maxWidth: "100%", width: "auto", height: "auto", maxHeight: 420, objectFit: "contain", margin: "0 auto" }}
+                            />
+                          </div>
+                        ) : (
+                          <div key={idx} style={{ borderRadius: 10, overflow: "hidden", border: "1px solid var(--border)", background: "rgba(15,23,42,0.45)" }}>
+                            <video
+                              src={att.dataUrl}
+                              controls
+                              style={{ display: "block", width: "100%", maxHeight: 280 }}
+                            />
+                            <div style={{ padding: "4px 8px", fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", background: "rgba(15,23,42,0.6)" }}>
+                              {att.name}
+                            </div>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          {hasMoreReplies && (
+            <button
+              onClick={async () => {
+                const oldestReply = thread.replies[0]
+                if (!oldestReply) return
+                setIsLoadingReplies(true)
+                try {
+                  setHasMoreReplies(await onLoadReplies(thread.id, oldestReply.createdAt))
+                } finally {
+                  setIsLoadingReplies(false)
+                }
+              }}
+              disabled={isLoadingReplies}
+              style={{ ...primaryBtn, width: "auto", marginTop: 10, padding: "8px 12px", fontSize: 10, opacity: isLoadingReplies ? 0.6 : 1 }}
+            >
+              {isLoadingReplies ? "CARGANDO..." : "CARGAR RESPUESTAS ANTERIORES"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Reply form */}
+      {canReply ? (
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "20px 24px" }}>
+          <div style={{ fontSize: 12, fontFamily: "Oswald, sans-serif", fontWeight: 500, letterSpacing: "0.06em", color: "var(--text-muted)", marginBottom: 14 }}>
+            AÑADIR RESPUESTA
+          </div>
+          {error && (
+            <div style={{ background: "#c0392b18", border: "1px solid #c0392b55", borderRadius: 4, padding: "8px 12px", color: "#e74c3c", fontSize: 13, marginBottom: 12 }}>
+              {error}
+            </div>
+          )}
+          <form onSubmit={handleReply}>
+            <div className="visual-editor-shell">
+              <VisualEditor
+                editorRef={replyContentRef}
+                placeholder="Escribe tu respuesta..."
+                onChange={(html) => setReplyContent(html)}
+                onPaste={(event) => pasteImageIntoEditor(event, replyContentRef, (html) => setReplyContent(html))}
+              />
+              <MarkdownToolbar
+                editorRef={replyContentRef}
+                onInsertImage={(file) => {
+                  const reader = new FileReader()
+                  reader.onload = () => {
+                    replyContentRef.current?.focus()
+                    document.execCommand("insertImage", false, String(reader.result))
+                    setReplyContent(replyContentRef.current?.innerHTML || "")
+                  }
+                  reader.readAsDataURL(file)
+                }}
+              />
+            </div>
+
+            {thread.category === "reportes" && (
+              <div style={{ marginTop: 12, padding: "14px 14px 12px", background: "rgba(15,23,42,0.48)", border: "1px solid rgba(56,189,248,0.25)", borderRadius: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>Mencionar usuarios</label>
+                  <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.08em" }}>
+                    {mentionedUserIds.length}/1 mínimo
+                  </span>
+                </div>
+
+                <input
+                  value={mentionQuery}
+                  onChange={(e) => setMentionQuery(e.target.value)}
+                  placeholder="Buscar usuario..."
+                  style={{ ...inputStyle, marginBottom: 10 }}
+                />
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {mentionList.length === 0 ? (
+                    <span style={{ fontSize: 12, color: "var(--text-dim)" }}>No hay coincidencias.</span>
+                  ) : (
+                    mentionList.slice(0, 8).map((user) => {
+                      const selected = mentionedUserIds.includes(user.id)
+                      return (
+                        <button
+                          key={user.id}
+                          type="button"
+                          onClick={() => toggleMention(user.id)}
+                          style={{
+                            background: selected ? "linear-gradient(135deg, rgba(168,85,247,0.18), rgba(124,58,237,0.08))" : "rgba(18,12,28,0.45)",
+                            border: `1px solid ${selected ? "#38bdf8" : "var(--border)"}`,
+                            borderRadius: 999,
+                            color: selected ? "#e0f2fe" : "var(--text-muted)",
+                            padding: "7px 12px",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            boxShadow: selected ? "0 0 0 1px rgba(56,189,248,0.2)" : "none",
+                          }}
+                        >
+                          @{user.username}
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <button type="submit" disabled={isSubmitting} style={{ ...primaryBtn, width: "auto", display: "inline-block", opacity: isSubmitting ? 0.65 : 1, cursor: isSubmitting ? "wait" : "pointer" }}>
+                {isSubmitting ? "PUBLICANDO..." : "RESPONDER"}
+              </button>
+              <span style={{ fontSize: 11, color: "var(--text-dim)" }}>Para vídeos, comparte un enlace de YouTube o Imgur.</span>
+            </div>
+          </form>
+        </div>
+      ) : (
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "16px 24px", color: "var(--text-dim)", fontSize: 13, textAlign: "center" }}>
+          {thread.adminOnly ? "Este hilo es informativo y no acepta respuestas." : "Este hilo está cerrado. No se aceptan más respuestas."}
+        </div>
+      )}
+    </div>
+    </>
+  )
+}
+
+// ─── Admin View ───────────────────────────────────────────────────────────────
+
+function PlayerLinksAdminPanel({ users, currentUser }: { users: User[]; currentUser: User }) {
+  const [onlinePlayers, setOnlinePlayers] = useState<ServerPlayer[]>([])
+  const [links, setLinks] = useState<PlayerLink[]>([])
+  const [requests, setRequests] = useState<PlayerLinkRequest[]>([])
+  const [pzUsername, setPzUsername] = useState("")
+  const [forumUserId, setForumUserId] = useState("")
+  const [message, setMessage] = useState("")
+  const [rejectionReasons, setRejectionReasons] = useState<Record<string, string>>({})
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+
+  const loadLinks = useCallback(async () => {
+    setIsLoading(true)
+    const [{ data: players }, { data: linkRows, error }, { data: requestRows }] = await Promise.all([
+      supabase.from("server_players").select("username").order("username", { ascending: true }),
+      supabase.from("player_links").select("*").order("pz_username", { ascending: true }),
+      supabase.from("player_link_requests").select("*").order("created_at", { ascending: false }),
+    ])
+
+    setOnlinePlayers((players as ServerPlayer[] | null) || [])
+    if (!error) setLinks((linkRows as PlayerLink[] | null) || [])
+    setRequests((requestRows as PlayerLinkRequest[] | null) || [])
+    setIsLoading(false)
+  }, [])
+
+  useEffect(() => {
+    if (currentUser.role === "admin") void loadLinks()
+  }, [currentUser.role, loadLinks])
+
+  async function handleLink(event: React.FormEvent) {
+    event.preventDefault()
+    const normalizedUsername = pzUsername.trim()
+    if (!normalizedUsername || !forumUserId) {
+      setMessage("Seleccioná un jugador y una cuenta del foro.")
+      return
+    }
+
+    const existingUsernameLink = links.find((link) => link.pz_username?.toLowerCase() === normalizedUsername.toLowerCase())
+    const existingForumLink = links.find((link) => link.forum_user_id === forumUserId && link.pz_username?.toLowerCase() !== normalizedUsername.toLowerCase())
+    if (existingUsernameLink && existingUsernameLink.forum_user_id !== forumUserId) {
+      setMessage("Ese jugador ya está vinculado a otra cuenta.")
+      return
+    }
+    if (existingForumLink) {
+      setMessage("Esa cuenta del foro ya está vinculada a otro jugador.")
+      return
+    }
+
+    setIsSaving(true)
+    setMessage("")
+    const linkValues = {
+      forum_user_id: forumUserId,
+      pz_username: normalizedUsername,
+      character_name: "",
+      server_name: "Eclipse Order",
+      verified: true,
+      verified_by: currentUser.id,
+      verified_at: new Date().toISOString(),
+      last_seen: new Date().toISOString(),
+    }
+    const { error } = existingUsernameLink
+      ? await supabase.from("player_links").update(linkValues).eq("id", existingUsernameLink.id)
+      : await supabase.from("player_links").insert(linkValues)
+
+    if (error) {
+      setMessage(`No se pudo guardar el vínculo: ${error.message}`)
+    } else {
+      setMessage("Vínculo guardado correctamente.")
+      setPzUsername("")
+      setForumUserId("")
+      await loadLinks()
+    }
+    setIsSaving(false)
+  }
+
+  async function handleUnlink(link: PlayerLink) {
+    const { error } = await supabase.from("player_links").delete().eq("id", link.id)
+    setMessage(error ? "No se pudo quitar el vínculo." : "Vínculo eliminado.")
+    if (!error) await loadLinks()
+  }
+
+  async function reviewRequest(request: PlayerLinkRequest, status: "approved" | "rejected") {
+    const rejectionReason = status === "rejected" ? rejectionReasons[request.id]?.trim() || null : null
+    if (status === "rejected" && !rejectionReason) {
+      setMessage("Escribí un motivo para rechazar la solicitud.")
+      return
+    }
+    if (status === "approved") {
+      const existingLink = links.find((link) => link.pz_username === request.pz_username || link.forum_user_id === request.forum_user_id)
+      if (existingLink) {
+        setMessage("No se puede aprobar: el jugador o la cuenta ya tienen un vínculo.")
+        return
+      }
+      const { error: linkError } = await supabase.from("player_links").insert({
+        forum_user_id: request.forum_user_id,
+        pz_username: request.pz_username,
+        character_name: "",
+        server_name: "Eclipse Order",
+        verified: true,
+        verified_by: currentUser.id,
+        verified_at: new Date().toISOString(),
+        last_seen: new Date().toISOString(),
+      })
+      if (linkError) {
+        setMessage(`No se pudo crear el vínculo aprobado: ${linkError.message}`)
+        return
+      }
+    }
+
+    const { error } = await supabase.from("player_link_requests").update({
+      status,
+      rejection_reason: rejectionReason,
+      reviewed_by: currentUser.id,
+      reviewed_at: new Date().toISOString(),
+    }).eq("id", request.id)
+    if (error) {
+      setMessage(`No se pudo actualizar la solicitud: ${error.message}`)
+      return
+    }
+
+    const notificationText = status === "approved"
+      ? `Tu cuenta fue verificada. Se vinculó el nombre de servidor ${request.pz_username}.`
+      : `Tu solicitud de verificación para ${request.pz_username} fue rechazada. Motivo: ${rejectionReason}`
+    const { error: notificationError } = await supabase.from("notifications").insert({
+      user_id: request.forum_user_id,
+      text: notificationText,
+      read: false,
+    })
+    setMessage(notificationError
+      ? `Solicitud ${status === "approved" ? "aprobada" : "rechazada"}, pero no se pudo enviar la notificación: ${notificationError.message}`
+      : status === "approved" ? "Solicitud aprobada y usuario notificado." : "Solicitud rechazada y usuario notificado.")
+    await loadLinks()
+  }
+
+  if (currentUser.role !== "admin") return null
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "0.08em" }}>SOLICITUDES PENDIENTES · {requests.filter((request) => request.status === "pending").length}</div>
+        {requests.filter((request) => request.status === "pending").length === 0 ? (
+          <div style={{ padding: 18, color: "var(--text-dim)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>No hay solicitudes pendientes.</div>
+        ) : requests.filter((request) => request.status === "pending").map((request) => (
+          <div key={request.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", padding: "12px 14px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+            <div>
+              <strong style={{ color: "var(--text)" }}>{request.pz_username}</strong>
+              <span style={{ color: "var(--text-dim)", fontSize: 12 }}> · {users.find((user) => user.id === request.forum_user_id)?.username || "Cuenta eliminada"}</span>
+              <div style={{ color: "var(--text-dim)", fontSize: 11, marginTop: 3 }}>{formatDate(request.created_at)}</div>
+              <input value={rejectionReasons[request.id] || ""} onChange={(event) => setRejectionReasons((previous) => ({ ...previous, [request.id]: event.target.value }))} placeholder="Motivo si se rechaza" style={{ ...inputStyle, width: 260, padding: "6px 8px", marginTop: 8, fontSize: 11 }} />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" onClick={() => void reviewRequest(request, "approved")} style={{ ...primaryBtn, width: "auto", padding: "6px 10px", fontSize: 10, background: "rgba(16,185,129,0.15)", color: "#6ee7b7", boxShadow: "none" }}>APROBAR</button>
+              <button type="button" onClick={() => void reviewRequest(request, "rejected")} style={{ ...primaryBtn, width: "auto", padding: "6px 10px", fontSize: 10, background: "rgba(239,68,68,0.12)", color: "#fca5a5", boxShadow: "none" }}>RECHAZAR</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <form onSubmit={handleLink} style={{ display: "grid", gap: 12, padding: 18, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+        <div>
+          <h3 style={{ margin: 0, color: "var(--text)", fontFamily: "Oswald, sans-serif", fontSize: 18 }}>Vinculación manual</h3>
+          <p style={{ margin: "5px 0 0", color: "var(--text-dim)", fontSize: 12 }}>Los jugadores conectados provienen de la última consulta RCON.</p>
+        </div>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={labelStyle}>Jugador de Project Zomboid</span>
+          <input list="server-player-names" value={pzUsername} onChange={(event) => setPzUsername(event.target.value)} placeholder="Nombre exacto del jugador" style={inputStyle} />
+          <datalist id="server-player-names">
+            {onlinePlayers.map((player) => <option key={player.username} value={player.username} />)}
+          </datalist>
+        </label>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={labelStyle}>Cuenta del foro</span>
+          <select value={forumUserId} onChange={(event) => setForumUserId(event.target.value)} style={inputStyle}>
+            <option value="">Seleccionar usuario...</option>
+            {users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}
+          </select>
+        </label>
+        <button type="submit" disabled={isSaving} style={{ ...primaryBtn, width: "auto", justifySelf: "start", opacity: isSaving ? 0.6 : 1 }}>
+          {isSaving ? "GUARDANDO..." : "VINCULAR CUENTA"}
+        </button>
+        {message && <p style={{ margin: 0, color: message.includes("correctamente") || message.includes("eliminado") ? "#6ee7b7" : "#fca5a5", fontSize: 12 }}>{message}</p>}
+      </form>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: "0.08em" }}>VÍNCULOS CONFIRMADOS · {links.length}</div>
+        {isLoading ? <div style={{ color: "var(--text-dim)", padding: 18 }}>Cargando vínculos...</div> : links.length === 0 ? (
+          <div style={{ padding: 24, textAlign: "center", color: "var(--text-dim)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>Todavía no hay vínculos confirmados.</div>
+        ) : links.map((link) => (
+          <div key={link.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", padding: "12px 14px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+            <div>
+              <strong style={{ color: "var(--text)" }}>{link.pz_username || "Nombre pendiente"}</strong>
+              <span style={{ color: "var(--text-dim)", fontSize: 12 }}> · {users.find((user) => user.id === link.forum_user_id)?.username || "Cuenta eliminada"}</span>
+            </div>
+            <button type="button" onClick={() => void handleUnlink(link)} style={{ ...primaryBtn, width: "auto", padding: "6px 10px", fontSize: 10, background: "rgba(239,68,68,0.12)", color: "#fca5a5", boxShadow: "none" }}>DESVINCULAR</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function AdminView({
+  threads,
+  users,
+  redemptions,
+  currentUser,
+  onStatusChange,
+  onPinToggle,
+  onDeleteThread,
+  onRoleChange,
+  onAddRolePoints,
+  onContactUser,
+  onToggleSuspend,
+  onDeleteUser,
+  onMarkRedemptionDelivered,
+  setView,
+  setSelectedThread,
+}: {
+  threads: Thread[]
+  users: User[]
+  redemptions: StoreRedemption[]
+  currentUser: User
+  onStatusChange: (threadId: string, status: ThreadStatus) => void
+  onPinToggle: (threadId: string) => void
+  onDeleteThread: (threadId: string) => void
+  onRoleChange: (userId: string, role: Role) => void
+  onAddRolePoints: (userId: string, amount: number) => void
+  onContactUser: (userId: string, message: string) => void
+  onToggleSuspend: (userId: string) => void
+  onDeleteUser: (userId: string) => void
+  onMarkRedemptionDelivered: (redemptionId: string) => Promise<void>
+  setView: (v: View) => void
+  setSelectedThread: (id: string) => void
+}) {
+  const [tab, setTab] = useState<"threads" | "users" | "redemptions" | "player-links">("threads")
+  const [pointsToAdd, setPointsToAdd] = useState<Record<string, string>>({})
+  const [contactMessages, setContactMessages] = useState<Record<string, string>>({})
+  const [userSearch, setUserSearch] = useState("")
+  const filteredUsers = users.filter((user) => user.username.toLowerCase().includes(userSearch.trim().toLowerCase()))
+
+  return (
+    <div className="forum-wide-view" style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 28 }}>
+        <div
+          style={{
+            width: 4,
+            height: 28,
+            background: "linear-gradient(180deg, #a855f7, #6d28d9)",
+            borderRadius: 2,
+          }}
+        />
+        <h2 style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, fontWeight: 700, letterSpacing: "0.1em", color: "var(--text)", margin: 0 }}>
+          PANEL DE ADMINISTRACIÓN
+        </h2>
+      </div>
+
+      <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: "1px solid #1e2330", paddingBottom: 0 }}>
+        {[{ id: "threads", label: "Gestión de Hilos" }, { id: "users", label: "Gestión de Usuarios" }, { id: "redemptions", label: "Canjes" }, ...(currentUser.role === "admin" ? [{ id: "player-links", label: "Vínculos PZ" }] : [])].map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id as "threads" | "users" | "redemptions" | "player-links")}
+            style={{
+              background: "none",
+              border: "none",
+              borderBottom: tab === t.id ? "2px solid #c0392b" : "2px solid transparent",
+              color: tab === t.id ? "var(--text)" : "var(--text-dim)",
+              cursor: "pointer",
+              padding: "10px 16px",
+              fontSize: 13,
+              fontFamily: "Oswald, sans-serif",
+              fontWeight: 600,
+              letterSpacing: "0.06em",
+              marginBottom: -1,
+            }}
+          >
+            {t.label.toUpperCase()}
+          </button>
+        ))}
+      </div>
+
+      {tab === "player-links" && <PlayerLinksAdminPanel users={users} currentUser={currentUser} />}
+
+      {tab === "threads" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {threads.map((thread) => {
+            const author = users.find((u) => u.id === thread.authorId)
+            const availableStatuses: ThreadStatus[] = thread.category === "historias" && thread.status !== "en_revision"
+              ? ["abierto", "cerrado"]
+              : ["abierto", "en_revision", "cerrado"]
+            return (
+              <div
+                key={thread.id}
+                style={{
+                  background: "var(--surface)",
+                  border: "1px solid #1e2330",
+                  borderRadius: 6,
+                  padding: "14px 18px",
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto",
+                  gap: 16,
+                  alignItems: "center",
+                }}
+              >
+                <div>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+                    <Badge label={CATEGORY_LABELS[thread.category]} color={CATEGORY_COLORS[thread.category]} />
+                    <Badge label={STATUS_LABELS[thread.status]} color={STATUS_COLORS[thread.status]} />
+                    {thread.pinned && <Badge label="📌 FIJADO" color="#d4860a" />}
+                  </div>
+                  <div
+                    onClick={() => { setSelectedThread(thread.id); setView("thread") }}
+                    style={{ fontFamily: "Oswald, sans-serif", fontWeight: 500, fontSize: 15, color: "var(--text)", cursor: "pointer", marginBottom: 4 }}
+                  >
+                    <MarkdownText content={thread.title} inline />
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                    {author?.username} · {formatDate(thread.createdAt)} · {threadReplyCount(thread)} respuestas
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <select
+                    value={thread.status}
+                    onChange={(e) => onStatusChange(thread.id, e.target.value as ThreadStatus)}
+                    style={{
+                      background: "var(--bg)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 3,
+                      color: "var(--text)",
+                      padding: "4px 8px",
+                      fontSize: 11,
+                      fontFamily: "JetBrains Mono, monospace",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {availableStatuses.map((s) => (
+                      <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => onPinToggle(thread.id)}
+                    style={{ background: thread.pinned ? "#d4860a22" : "var(--surface)", border: `1px solid ${thread.pinned ? "#d4860a" : "var(--border2)"}`, borderRadius: 3, color: thread.pinned ? "#d4860a" : "var(--text-dim)", cursor: "pointer", padding: "4px 10px", fontSize: 11, fontFamily: "JetBrains Mono, monospace" }}
+                  >
+                    {thread.pinned ? "DESFIJAR" : "FIJAR"}
+                  </button>
+                  {currentUser.role === "admin" && (
+                    <button
+                      onClick={() => onDeleteThread(thread.id)}
+                      style={{ background: "#c0392b18", border: "1px solid #c0392b44", borderRadius: 3, color: "#e74c3c", cursor: "pointer", padding: "4px 10px", fontSize: 11, fontFamily: "JetBrains Mono, monospace" }}
+                    >
+                      ELIMINAR
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {tab === "users" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+            <input
+              value={userSearch}
+              onChange={(event) => setUserSearch(event.target.value)}
+              placeholder="Buscar usuario por nombre..."
+              aria-label="Buscar usuario por nombre"
+              style={{ ...inputStyle, flex: 1, padding: "10px 13px", fontSize: 12 }}
+            />
+            <span style={{ color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", fontSize: 10, whiteSpace: "nowrap" }}>
+              {filteredUsers.length}/{users.length}
+            </span>
+          </div>
+          {filteredUsers.length === 0 ? (
+            <div style={{ padding: "28px 18px", textAlign: "center", color: "var(--text-dim)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+              No se encontraron usuarios con ese nombre.
+            </div>
+          ) : filteredUsers.map((user) => (
+            <div
+              key={user.id}
+              className="admin-user-row"
+              style={{
+                background: "var(--surface)",
+                border: "1px solid #1e2330",
+                borderRadius: 6,
+                padding: "14px 18px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 16,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <Avatar letter={user.avatar} role={user.role} size={36} imageUrl={user.avatarUrl} />
+                <div>
+                  <div style={{ fontFamily: "Oswald, sans-serif", fontWeight: 500, fontSize: 15, color: "var(--text)" }}>
+                    {user.username}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace" }}>
+                    Registrado: {user.joinedAt} · Puntos de rol: {user.rolePoints || 0} · {user.suspended ? "CUENTA SUSPENDIDA" : "CUENTA ACTIVA"}
+                  </div>
+                </div>
+              </div>
+              <div className="admin-user-actions" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", minWidth: 0 }}>
+                <Badge
+                  label={roleLabel(user.role)}
+                  color={user.role === "admin" ? "#e74c3c" : user.role === "moderator" ? "#3498db" : "var(--text-muted)"}
+                />
+                {currentUser.role === "admin" && user.id !== currentUser.id && (
+                  <>
+                    <select
+                      value={user.role}
+                      onChange={(e) => onRoleChange(user.id, e.target.value as Role)}
+                      style={{
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 3,
+                        color: "var(--text)",
+                        padding: "4px 8px",
+                        fontSize: 11,
+                        fontFamily: "JetBrains Mono, monospace",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <option value="user">Usuario</option>
+                      <option value="moderator">Moderador</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="Puntos"
+                      value={pointsToAdd[user.id] || ""}
+                      onChange={(e) => setPointsToAdd((prev) => ({ ...prev, [user.id]: e.target.value }))}
+                      style={{ ...inputStyle, width: 86, padding: "5px 7px", fontSize: 11 }}
+                    />
+                    <button
+                      onClick={() => {
+                        const amount = Number(pointsToAdd[user.id])
+                        if (!Number.isInteger(amount) || amount < 1) return
+                        onAddRolePoints(user.id, amount)
+                        setPointsToAdd((prev) => ({ ...prev, [user.id]: "" }))
+                      }}
+                      style={{ ...primaryBtn, width: "auto", padding: "6px 9px", fontSize: 10, boxShadow: "none" }}
+                    >
+                      AÑADIR
+                    </button>
+                    <input
+                      type="text"
+                      placeholder="Mensaje para el usuario"
+                      value={contactMessages[user.id] || ""}
+                      onChange={(e) => setContactMessages((prev) => ({ ...prev, [user.id]: e.target.value }))}
+                      style={{ ...inputStyle, width: 180, padding: "5px 7px", fontSize: 11 }}
+                    />
+                    <button
+                      onClick={() => {
+                        const message = contactMessages[user.id]?.trim()
+                        if (!message) return
+                        onContactUser(user.id, message)
+                        setContactMessages((prev) => ({ ...prev, [user.id]: "" }))
+                      }}
+                      disabled={!contactMessages[user.id]?.trim()}
+                      style={{ ...primaryBtn, width: "auto", padding: "6px 9px", fontSize: 10, boxShadow: "none", background: "linear-gradient(135deg, #a855f7, #7c3aed)", opacity: contactMessages[user.id]?.trim() ? 1 : 0.45, cursor: contactMessages[user.id]?.trim() ? "pointer" : "not-allowed" }}
+                    >
+                      CONTACTAR
+                    </button>
+                    <button
+                      onClick={() => onToggleSuspend(user.id)}
+                      style={{ ...primaryBtn, width: "auto", padding: "6px 9px", fontSize: 10, boxShadow: "none", background: user.suspended ? "rgba(39,174,96,0.16)" : "rgba(245,158,11,0.16)", border: `1px solid ${user.suspended ? "#27ae60" : "#f59e0b"}`, color: user.suspended ? "#86efac" : "#fbbf24" }}
+                    >
+                      {user.suspended ? "REACTIVAR" : "SUSPENDER"}
+                    </button>
+                    <button
+                      onClick={() => onDeleteUser(user.id)}
+                      className="admin-delete-user"
+                      style={{ ...primaryBtn, width: "auto", maxWidth: "100%", padding: "6px 9px", fontSize: 10, boxShadow: "none", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)", color: "#fca5a5", whiteSpace: "normal" }}
+                    >
+                      ELIMINAR CUENTA
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "redemptions" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {redemptions.length === 0 ? (
+            <div style={{ padding: "30px 18px", textAlign: "center", color: "var(--text-dim)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+              Todavía no hay productos canjeados.
+            </div>
+          ) : [...redemptions].reverse().map((redemption) => (
+            <div key={redemption.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto auto auto", alignItems: "center", gap: 18, padding: "15px 18px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: "var(--text)", fontFamily: "Oswald, sans-serif", fontSize: 16, letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{redemption.productTitle}</div>
+                <div style={{ color: "var(--text-dim)", fontSize: 12, marginTop: 3 }}>Comprado por <strong style={{ color: "var(--highlight)" }}>{redemption.username}</strong> · Cantidad: {redemption.quantity || 1}</div>
+              </div>
+              <div style={{ color: "#ffe7a3", fontFamily: "JetBrains Mono, monospace", fontSize: 12, whiteSpace: "nowrap" }}>{redemption.price} PDR</div>
+              <div style={{ color: redemption.status === "delivered" ? "#6ee7b7" : "#fbbf24", fontFamily: "JetBrains Mono, monospace", fontSize: 10, whiteSpace: "nowrap" }}>{redemption.status === "delivered" ? "ENTREGADO" : "PENDIENTE"}</div>
+              <div style={{ color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", fontSize: 10, textAlign: "right", whiteSpace: "nowrap" }}>{formatDate(redemption.createdAt)}</div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (redemption.status === "delivered") return
+                  if (!window.confirm(`¿Marcar como completado el canje de ${redemption.username}?`)) return
+                  void onMarkRedemptionDelivered(redemption.id)
+                }}
+                disabled={redemption.status === "delivered"}
+                style={{
+                  border: redemption.status === "delivered" ? "1px solid rgba(110, 231, 183, 0.45)" : "1px solid rgba(245, 158, 11, 0.45)",
+                  background: redemption.status === "delivered" ? "rgba(16, 185, 129, 0.14)" : "rgba(245, 158, 11, 0.12)",
+                  color: redemption.status === "delivered" ? "#6ee7b7" : "#fbbf24",
+                  borderRadius: 8,
+                  padding: "7px 10px",
+                  fontSize: 10,
+                  fontFamily: "Oswald, sans-serif",
+                  letterSpacing: "0.08em",
+                  cursor: redemption.status === "delivered" ? "default" : "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {redemption.status === "delivered" ? "COMPLETADO" : "COMPLETAR"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Shared styles ────────────────────────────────────────────────────────────
+
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  fontSize: 11,
+  fontFamily: "JetBrains Mono, monospace",
+  letterSpacing: "0.08em",
+  color: "var(--text-muted)",
+  marginBottom: 7,
+  textTransform: "uppercase",
+}
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  background: "var(--input-bg)",
+  border: "1px solid var(--border2)",
+  borderRadius: 12,
+  color: "var(--text)",
+  padding: "12px 14px",
+  fontSize: 14,
+  fontFamily: "Source Sans 3, sans-serif",
+  outline: "none",
+  boxSizing: "border-box",
+  wordBreak: "break-word",
+  overflowWrap: "anywhere",
+  transition: "border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease",
+  boxShadow: "inset 0 1px 2px rgba(2,6,23,0.18)",
+}
+
+const primaryBtn: React.CSSProperties = {
+  width: "100%",
+  background: "linear-gradient(135deg, #ef4444 0%, #991b1b 100%)",
+  border: "none",
+  borderRadius: 12,
+  color: "#fff",
+  cursor: "pointer",
+  padding: "12px 20px",
+  fontSize: 13,
+  fontFamily: "Oswald, sans-serif",
+  fontWeight: 600,
+  letterSpacing: "0.12em",
+  transition: "transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s",
+  boxShadow: "0 14px 30px rgba(239, 68, 68, 0.26)",
+}
+
+const navBtn: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  borderBottom: "2px solid transparent",
+  cursor: "pointer",
+  padding: "7px 10px",
+  fontSize: 11,
+  fontFamily: "Oswald, sans-serif",
+  fontWeight: 600,
+  letterSpacing: "0.08em",
+  transition: "color 0.15s ease, background 0.15s ease",
+  borderRadius: 10,
+}
+
+// ─── App ──────────────────────────────────────────────────────────────────────
+
+export default function App() {
+  const initialRouteRef = useRef<RouteState>(routeFromLocation())
+  const storedVerification = (() => {
+    try {
+      return JSON.parse(sessionStorage.getItem(PENDING_VERIFICATION_STORAGE_KEY) || "null") as { email?: string; type?: "signup" | "email_change" } | null
+    } catch {
+      return null
+    }
+  })()
+  const [users, setUsers] = useState<User[]>([])
+  const [threads, setThreads] = useState<Thread[]>([])
+  const [storeProducts, setStoreProducts] = useState<StoreProduct[]>([])
+  const [redemptions, setRedemptions] = useState<StoreRedemption[]>([])
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const recoveryLinkOpen = window.location.hash.includes("type=recovery") || window.location.search.includes("reset-password=1")
+  const [view, setView] = useState<View>(recoveryLinkOpen ? "reset_password" : storedVerification?.email ? "verify_email" : initialRouteRef.current.view === "forum" ? "login" : initialRouteRef.current.view)
+  const [toasts, setToasts] = useState<Toast[]>([])
+  const [selectedThread, setSelectedThread] = useState<string>(initialRouteRef.current.threadId || "")
+  const [selectedProfileId, setSelectedProfileId] = useState<string>(initialRouteRef.current.profileId || "")
+  const [selectedCategory, setSelectedCategory] = useState<Category>(initialRouteRef.current.category || "reportes")
+  const [selectedReportStatus, setSelectedReportStatus] = useState<ThreadStatus>(initialRouteRef.current.reportStatus || "abierto")
+  const [selectedFactionSubforum, setSelectedFactionSubforum] = useState<ThreadSubforum>(initialRouteRef.current.factionSubforum || "no_oficial")
+  const [selectedCharacterSubforum, setSelectedCharacterSubforum] = useState<CharacterSubforum>(initialRouteRef.current.characterSubforum || "fichas")
+  const [subscribedThreadIds, setSubscribedThreadIds] = useState<string[]>([])
+  const [authReady, setAuthReady] = useState(false)
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState(storedVerification?.email || "")
+  const [pendingVerificationType, setPendingVerificationType] = useState<"signup" | "email_change">(storedVerification?.type || "signup")
+  const pendingVerificationTypeRef = useRef<"signup" | "email_change" | null>(storedVerification?.type || null)
+  const passwordRecoveryPendingRef = useRef(false)
+  const [showWelcome, setShowWelcome] = useState(false)
+    const [operationMessage, setOperationMessage] = useState<string | null>(null)
+  const [threadPendingDeletion, setThreadPendingDeletion] = useState<Thread | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const currentUserRef = useRef<User | null>(null)
+  const notificationIdsRef = useRef<Set<string>>(new Set())
+    const hydratingUserIdRef = useRef<string | null>(null)
+  const notificationCountRef = useRef<{ userId: string; count: number } | null>(null)
+    const welcomePendingUsernameRef = useRef<string | null>(null)
+  const navigationHistoryRef = useRef<NavigationSnapshot[]>([])
+  const lastNavigationRef = useRef<NavigationSnapshot | null>(null)
+  const restoringNavigationRef = useRef(false)
+  const threadLoadPromisesRef = useRef(new Map<string, Promise<void>>())
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const route = routeFromLocation()
+      setView(route.view)
+      setSelectedThread(route.threadId || "")
+      setSelectedProfileId(route.profileId || "")
+      if (route.category) setSelectedCategory(route.category)
+      if (route.reportStatus) setSelectedReportStatus(route.reportStatus)
+      if (route.factionSubforum) setSelectedFactionSubforum(route.factionSubforum)
+      if (route.characterSubforum) setSelectedCharacterSubforum(route.characterSubforum)
+    }
+
+    window.addEventListener("popstate", handlePopState)
+    return () => window.removeEventListener("popstate", handlePopState)
+  }, [])
+
+  useEffect(() => {
+    if (!currentUser) {
+      setSubscribedThreadIds([])
+      return
+    }
+
+    let mounted = true
+    void supabase
+      .from("thread_subscriptions")
+      .select("thread_id")
+      .eq("user_id", currentUser.id)
+      .then(({ data, error }) => {
+        if (!mounted) return
+        if (error) {
+          console.error("Could not load thread subscriptions", error)
+          return
+        }
+        setSubscribedThreadIds((data || []).map((row) => row.thread_id))
+      })
+
+    return () => { mounted = false }
+  }, [currentUser?.id])
+
+  useEffect(() => {
+    if (currentUser?.role !== "admin") return
+    let mounted = true
+    void supabase
+      .from("store_products")
+      .select("id")
+      .limit(1)
+      .then(async ({ data, error }) => {
+        if (!mounted || error || (data && data.length > 0)) return
+        const localProducts = readStoreProducts()
+        if (localProducts.length === 0) return
+        const migratedProducts = await Promise.all(localProducts.map(async (product) => ({
+          ...product,
+          imageUrl: await uploadStoreProductImage(product),
+          imageFile: undefined,
+        })))
+        const { error: migrationError } = await supabase.from("store_products").insert(migratedProducts.map((product) => ({
+          id: product.id,
+          title: product.title,
+          price: product.price,
+          description: product.description,
+          image_url: product.imageUrl || null,
+          kind: product.kind || "personal",
+          created_at: product.createdAt,
+        })))
+        if (migrationError) {
+          console.error("Could not migrate local store products", migrationError)
+          return
+        }
+        if (mounted) {
+          setStoreProducts(migratedProducts)
+          localStorage.setItem(STORE_PRODUCTS_STORAGE_KEY, JSON.stringify(migratedProducts))
+        }
+      })
+    return () => { mounted = false }
+  }, [currentUser?.id, currentUser?.role])
+
+  useEffect(() => {
+    let mounted = true
+
+    async function loadServerPlaytimeData() {
+      const [{ data: playtime }, { data: links }] = await Promise.all([
+        supabase.from("player_playtime").select("username, total_seconds").order("total_seconds", { ascending: false }).limit(10),
+        supabase.from("player_links").select("id, forum_user_id, pz_username, verified").eq("verified", true),
+      ])
+
+      if (!mounted) return
+      syncServerBadgeData((playtime as PlayerPlaytime[] | null) || [], (links as PlayerLink[] | null) || [])
+    }
+
+    void loadServerPlaytimeData()
+    const refreshTimer = window.setInterval(() => { void loadServerPlaytimeData() }, 30_000)
+    return () => {
+      mounted = false
+      window.clearInterval(refreshTimer)
+    }
+  }, [])
+
+  useEffect(() => {
+    const nextPath = pathFromState(view, selectedProfileId, selectedThread, selectedCategory, selectedReportStatus, selectedFactionSubforum, selectedCharacterSubforum)
+    const isCharacterSubforum = view === "character_subforum" && nextPath.startsWith("/foro/historias/")
+    const currentPage = isCharacterSubforum ? new URLSearchParams(window.location.search).get("pagina") || "1" : ""
+    const nextUrl = isCharacterSubforum ? `${nextPath}?pagina=${currentPage}` : nextPath
+    if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
+      window.history.pushState({}, "", nextUrl)
+    }
+  }, [view, selectedProfileId, selectedThread, selectedCategory, selectedReportStatus, selectedFactionSubforum, selectedCharacterSubforum])
+
+  useEffect(() => {
+    if (!authReady) return
+
+    const currentNavigation: NavigationSnapshot = {
+      view,
+      profileId: selectedProfileId || undefined,
+      threadId: selectedThread || undefined,
+      category: selectedCategory,
+      reportStatus: selectedReportStatus,
+      factionSubforum: selectedFactionSubforum,
+      characterSubforum: selectedCharacterSubforum,
+    }
+    const previousNavigation = lastNavigationRef.current
+    if (restoringNavigationRef.current) {
+      restoringNavigationRef.current = false
+    } else if (previousNavigation && previousNavigation.view !== currentNavigation.view) {
+      navigationHistoryRef.current.push(previousNavigation)
+    }
+    lastNavigationRef.current = currentNavigation
+  }, [authReady, view, selectedProfileId, selectedThread, selectedCategory, selectedReportStatus, selectedFactionSubforum, selectedCharacterSubforum])
+
+  const playNotificationSound = useCallback(() => {
+    try {
+      const audio = new Audio("/sounds/notification.mp3")
+      audio.volume = 0.5
+      audio.play().catch(() => {
+        // Fallback to synthesized bell if file fails
+        const AudioCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+        if (!AudioCtor) return
+        const audioCtx = new AudioCtor()
+        const bellDuration = 0.95
+        const bellPartials = [
+          { frequency: 660, volume: 0.028 },
+          { frequency: 1320, volume: 0.018 },
+          { frequency: 1980, volume: 0.009 },
+        ]
+        bellPartials.forEach(({ frequency, volume }) => {
+          const bellOscillator = audioCtx.createOscillator()
+          const bellGain = audioCtx.createGain()
+          bellOscillator.type = "sine"
+          bellOscillator.frequency.value = frequency
+          bellGain.gain.setValueAtTime(0.0001, audioCtx.currentTime)
+          bellGain.gain.linearRampToValueAtTime(volume, audioCtx.currentTime + 0.012)
+          bellGain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + bellDuration)
+          bellOscillator.connect(bellGain)
+          bellGain.connect(audioCtx.destination)
+          bellOscillator.start()
+          bellOscillator.stop(audioCtx.currentTime + bellDuration)
+        })
+        setTimeout(() => void audioCtx.close(), bellDuration * 1000 + 40)
+      })
+    } catch (e) {
+      // Silent fail
+    }
+  }, [])
+
+  const playInteractionSound = useCallback((type: "click" | "select" | "success" | "notification") => {
+    const AudioCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AudioCtor) return
+
+    const audioCtx = new AudioCtor()
+
+    if (type === "notification") {
+      playNotificationSound()
+      return
+    }
+
+    const oscillator = audioCtx.createOscillator()
+    const gainNode = audioCtx.createGain()
+
+    const frequencies = {
+      click: 180,
+      select: 260,
+      success: 420,
+      notification: 620,
+    }
+    const durations = {
+      click: 0.14,
+      select: 0.18,
+      success: 0.2,
+      notification: 0.28,
+    }
+    const duration = durations[type]
+
+    oscillator.type = "sine"
+    oscillator.frequency.value = frequencies[type]
+    gainNode.gain.setValueAtTime(0.0001, audioCtx.currentTime)
+    gainNode.gain.linearRampToValueAtTime(type === "notification" ? 0.026 : type === "success" ? 0.022 : 0.014, audioCtx.currentTime + 0.02)
+
+    oscillator.connect(gainNode)
+    gainNode.connect(audioCtx.destination)
+
+    oscillator.start()
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration)
+    oscillator.stop(audioCtx.currentTime + duration)
+
+    setTimeout(() => audioCtx.close(), duration * 1000 + 30)
+  }, [])
+
+  async function hydrateSession(userId: string) {
+    if (hydratingUserIdRef.current === userId) return
+    hydratingUserIdRef.current = userId
+    setIsLoading(true)
+    try {
+      let { data: profileRow, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, username, role, avatar, bio, role_points, redeemed_role_points, joined_at")
+        .eq("id", userId)
+        .maybeSingle()
+
+      if (profileError && profileError.code !== "PGRST116") {
+        throw profileError
+      }
+
+      if (!profileRow) {
+        const fallbackUsername = `Usuario ${userId.slice(0, 6)}`
+        const insertResult = await supabase
+          .from("profiles")
+          .upsert(
+            {
+              id: userId,
+              username: fallbackUsername,
+              avatar: fallbackUsername.charAt(0).toUpperCase(),
+              role: "user",
+              joined_at: new Date().toISOString(),
+            },
+            { onConflict: "id" },
+          )
+          .select("id, username, role, avatar, bio, role_points, redeemed_role_points, joined_at")
+          .single()
+
+        if (insertResult.error) {
+          throw insertResult.error
+        }
+
+        profileRow = insertResult.data
+      }
+
+      const [forum] = await Promise.all([
+        loadSupabaseForum(userId),
+      ])
+
+      const profile = mapProfile(profileRow as ProfileRow)
+      setUsers(forum.users)
+      setThreads(forum.threads)
+      const hydratedUser = {
+        ...profile,
+        notifications: forum.users.find((user) => user.id === profile.id)?.notifications || [],
+      }
+      notificationIdsRef.current = new Set(hydratedUser.notifications?.map((notification) => notification.id) || [])
+      setCurrentUser(hydratedUser)
+      if (welcomePendingUsernameRef.current === profile.username) {
+        welcomePendingUsernameRef.current = null
+        setShowWelcome(true)
+      }
+      if (!currentUserRef.current) {
+        const route = initialRouteRef.current
+        setSelectedProfileId(route.profileId || profile.id)
+        setSelectedThread(route.threadId || "")
+        if (route.category) setSelectedCategory(route.category)
+        if (route.reportStatus) setSelectedReportStatus(route.reportStatus)
+        if (route.factionSubforum) setSelectedFactionSubforum(route.factionSubforum)
+        if (route.characterSubforum) setSelectedCharacterSubforum(route.characterSubforum)
+        const isAuthRoute = route.view === "login" || route.view === "register" || route.view === "forgot_password" || route.view === "reset_password" || route.view === "verify_email" || route.view === "link_email"
+        setView(isAuthRoute ? "forum" : route.view)
+      }
+    } finally {
+      if (hydratingUserIdRef.current === userId) hydratingUserIdRef.current = null
+      setIsLoading(false)
+    }
+  }
+
+  async function refreshForumState() {
+    const forum = await loadSupabaseForum(currentUserRef.current?.id)
+    setUsers(forum.users)
+    setThreads(forum.threads)
+  }
+
+  async function refreshStoreRedemptions() {
+    const { data, error } = await supabase
+      .from("store_redemptions")
+      .select("id, user_id, username, product_id, product_title, price, quantity, status, created_at")
+      .order("created_at", { ascending: false })
+    if (error) {
+      console.error("Could not load store redemptions", error)
+      return
+    }
+    setRedemptions((data || []).map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      username: row.username,
+      productId: row.product_id,
+      productTitle: row.product_title,
+      price: row.price,
+      quantity: row.quantity,
+      status: row.status,
+      createdAt: row.created_at,
+    })))
+  }
+
+  async function handleMarkRedemptionDelivered(redemptionId: string) {
+    if (currentUser?.role !== "admin") return
+    const { error } = await supabase
+      .from("store_redemptions")
+      .update({ status: "delivered" })
+      .eq("id", redemptionId)
+
+    if (error) {
+      console.error("Could not mark redemption as delivered", error)
+      return
+    }
+
+    setRedemptions((previousRedemptions) => previousRedemptions.map((redemption) => (
+      redemption.id === redemptionId ? { ...redemption, status: "delivered" } : redemption
+    )))
+
+    try {
+      const nextRedemptions = redemptions.map((redemption) => (
+        redemption.id === redemptionId ? { ...redemption, status: "delivered" } : redemption
+      ))
+      localStorage.setItem(STORE_REDEMPTIONS_STORAGE_KEY, JSON.stringify(nextRedemptions))
+    } catch (storageError) {
+      console.error("Could not persist delivered redemption locally", storageError)
+    }
+  }
+
+  async function refreshCurrentUserNotifications() {
+    const userId = currentUserRef.current?.id
+    if (!userId) return
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("id, user_id, text, read, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(50)
+    if (error) {
+      console.error("Could not refresh notifications", error)
+      return
+    }
+    const notifications = ((data || []) as NotificationRow[]).map((row) => ({
+      id: row.id,
+      text: row.text,
+      read: row.read,
+      createdAt: row.created_at,
+    }))
+    const hasNewUnreadNotification = notifications.some((notification) => !notification.read && !notificationIdsRef.current.has(notification.id))
+    if (notificationIdsRef.current.size > 0 && hasNewUnreadNotification) {
+      playInteractionSound("notification")
+      const newNotification = notifications.find((n) => !n.read && !notificationIdsRef.current.has(n.id))
+      if (newNotification) {
+        const notificationText = newNotification.text.substring(0, 80) + (newNotification.text.length > 80 ? "..." : "")
+        showNotificationToast(notificationText, "info")
+      }
+    }
+    notificationIdsRef.current = new Set(notifications.map((notification) => notification.id))
+    setCurrentUser((previousUser) => previousUser ? { ...previousUser, notifications } : previousUser)
+    setUsers((previousUsers) => previousUsers.map((user) => user.id === userId ? { ...user, notifications } : user))
+  }
+
+  const showNotificationToast = useCallback((message: string, type: "success" | "info" | "warning" = "info") => {
+    const id = Math.random().toString(36).substr(2, 9)
+    const toast: Toast = { id, message, type, duration: 5000 }
+    setToasts((prev) => [...prev, toast])
+    if (type !== "warning") {
+      playNotificationSound()
+    }
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id))
+    }, toast.duration)
+  }, [playNotificationSound])
+
+  const handleLoadThread = useCallback((threadId: string) => {
+    const existingRequest = threadLoadPromisesRef.current.get(threadId)
+    if (existingRequest) return existingRequest
+
+    const request = (async () => {
+      const [{ data: threadRow, error: threadError }, { data: attachmentRows, error: attachmentsError }] = await Promise.all([
+        supabase.from("threads").select("id, title, content, edited_at").eq("id", threadId).maybeSingle(),
+        supabase.from("thread_attachments").select("id, thread_id, name, type, data_url, storage_path").eq("thread_id", threadId),
+      ])
+      if (threadError) throw threadError
+      if (attachmentsError) throw attachmentsError
+      const attachments = (attachmentRows || []) as AttachmentRow[]
+      setThreads((previousThreads) => previousThreads.map((thread) => thread.id === threadId ? {
+        ...thread,
+        title: threadRow?.title || thread.title,
+        content: threadRow?.content || "",
+        editedAt: threadRow?.edited_at || undefined,
+        attachments: attachments.map((attachment) => ({ name: attachment.name, type: attachment.type, dataUrl: attachmentUrl(attachment) })),
+        contentLoaded: true,
+      } : thread))
+    })()
+
+    threadLoadPromisesRef.current.set(threadId, request)
+    void request.catch((error) => {
+      threadLoadPromisesRef.current.delete(threadId)
+      console.error("Could not load thread content", error)
+    })
+    return request
+  }, [])
+
+  async function handleLoadReplies(threadId: string, before?: string) {
+    let repliesQuery = supabase
+      .from("replies")
+      .select("id, thread_id, author_id, content, is_staff, created_at, edited_at")
+      .eq("thread_id", threadId)
+      .order("created_at", { ascending: false })
+      .limit(REPLIES_PAGE_SIZE)
+    if (before) repliesQuery = repliesQuery.lt("created_at", before)
+
+    const { data: replyRows, error: repliesError } = await repliesQuery
+    if (repliesError) {
+      console.error("Could not load thread replies", repliesError)
+      return false
+    }
+
+    const rows = (replyRows || []) as ReplyRow[]
+    const replyIds = rows.map((reply) => reply.id)
+    const { data: attachmentRows, error: attachmentsError } = replyIds.length > 0
+      ? await supabase.from("reply_attachments").select("id, reply_id, name, type, storage_path").in("reply_id", replyIds)
+      : { data: [], error: null }
+    if (attachmentsError) {
+      console.error("Could not load reply attachments", attachmentsError)
+      return false
+    }
+
+    const attachments = (attachmentRows || []) as AttachmentRow[]
+    const loadedReplies = rows.map((row) => {
+      const reply = mapReply(row)
+      reply.attachments = attachments
+        .filter((attachment) => attachment.reply_id === reply.id)
+        .map((attachment) => ({ name: attachment.name, type: attachment.type, dataUrl: attachmentUrl(attachment) }))
+      return reply
+    }).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+
+    setThreads((previousThreads) => previousThreads.map((thread) => {
+      if (thread.id !== threadId) return thread
+      const replies = before
+        ? [...loadedReplies, ...thread.replies].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+        : loadedReplies
+      return { ...thread, replies, repliesLoaded: true }
+    }))
+    return rows.length === REPLIES_PAGE_SIZE
+  }
+
+  const handleRegisterView = useCallback(async (threadId: string, userId: string) => {
+    const { data, error } = await supabase.from("thread_views").upsert(
+      { thread_id: threadId, user_id: userId },
+      { onConflict: "thread_id,user_id", ignoreDuplicates: true },
+    ).select("thread_id").maybeSingle()
+    if (error) {
+      console.error("Could not register thread view", error)
+      return false
+    }
+    if (data) {
+      setThreads((previousThreads) => previousThreads.map((thread) => thread.id === threadId ? { ...thread, visitorCount: (thread.visitorCount || 0) + 1 } : thread))
+    }
+    return Boolean(data)
+  }, [])
+
+  useEffect(() => {
+    localStorage.removeItem(LOCAL_USERS_STORAGE_KEY)
+    const localProducts = readStoreProducts()
+    setStoreProducts(localProducts)
+    void supabase
+      .from("store_products")
+      .select("id, title, price, description, image_url, kind, created_at")
+      .order("created_at", { ascending: true })
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("Could not load shared store products", error)
+          return
+        }
+        const sharedProducts = ((data || []) as Array<{ id: string; title: string; price: number; description: string; image_url?: string | null; kind?: "personal" | "faccion" | null; created_at: string }>).map(mapStoreProduct)
+        setStoreProducts(sharedProducts)
+        localStorage.setItem(STORE_PRODUCTS_STORAGE_KEY, JSON.stringify(sharedProducts))
+      })
+    setRedemptions(readStoreRedemptions())
+    void refreshStoreRedemptions()
+    let mounted = true
+    const restoreSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const isPasswordRecovery = recoveryLinkOpen
+        if (session && mounted) {
+          if (isPasswordRecovery) {
+            passwordRecoveryPendingRef.current = true
+            setView("reset_password")
+          }
+          else if (isLegacyAuthEmail(session.user.email)) {
+            await supabase.auth.signOut()
+          }
+          else await hydrateSession(session.user.id)
+        }
+      } catch (sessionError) {
+        console.error("Could not restore Supabase session", sessionError)
+      } finally {
+        if (mounted) setAuthReady(true)
+      }
+    }
+
+    void restoreSession()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return
+      if (_event === "PASSWORD_RECOVERY") {
+        passwordRecoveryPendingRef.current = true
+        setView("reset_password")
+        return
+      }
+      if (recoveryLinkOpen) {
+        passwordRecoveryPendingRef.current = true
+        setView("reset_password")
+        return
+      }
+      if (passwordRecoveryPendingRef.current) return
+      if (!session) {
+        setCurrentUser(null)
+        setUsers([])
+        setThreads([])
+        setView("login")
+      } else if (pendingVerificationTypeRef.current === "email_change") {
+        return
+      } else if (isLegacyAuthEmail(session.user.email) && _event !== "USER_UPDATED") {
+        setView("link_email")
+      } else if (_event !== "USER_UPDATED" && (!currentUserRef.current || currentUserRef.current.id !== session.user.id)) {
+        void hydrateSession(session.user.id).catch((sessionError) => {
+          console.error("Could not load Supabase profile", sessionError)
+        })
+      }
+    })
+
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    currentUserRef.current = currentUser
+  }, [currentUser])
+
+  useEffect(() => {
+    if (!currentUser) {
+      notificationCountRef.current = null
+      return
+    }
+
+    const count = currentUser.notifications?.filter((notification) => !notification.read).length || 0
+    const previous = notificationCountRef.current
+    notificationCountRef.current = { userId: currentUser.id, count }
+
+    if (previous?.userId === currentUser.id && count > previous.count) {
+      playInteractionSound("notification")
+    }
+  }, [currentUser, playInteractionSound])
+
+  useEffect(() => {
+    if (currentUser) {
+      setSelectedProfileId((profileId) => profileId || currentUser.id)
+    }
+  }, [currentUser])
+
+  async function handleLogin(characterName: string, password: string) {
+    const loginInput = characterName.trim()
+    let loginName = loginInput
+    const { data: forumProfile, error: profileLookupError } = await supabase
+      .from("profiles")
+      .select("id, username")
+      .ilike("username", loginInput)
+      .maybeSingle()
+    if (profileLookupError && profileLookupError.code !== "PGRST116") throw new Error(profileLookupError.message)
+
+    if (forumProfile) {
+      loginName = forumProfile.username
+      const { data: verifiedLink, error: linkLookupError } = await supabase
+        .from("player_links")
+        .select("pz_username")
+        .eq("forum_user_id", forumProfile.id)
+        .eq("verified", true)
+        .maybeSingle()
+      if (linkLookupError) throw new Error(linkLookupError.message)
+      if (verifiedLink?.pz_username) loginName = verifiedLink.pz_username
+    }
+
+    const { data: authData, error } = await supabase.auth.signInWithPassword({
+      email: loginInput.includes("@") ? loginInput : authEmailForCharacter(loginName),
+      password,
+    })
+    if (error) throw new Error(error.message)
+
+    if (authData.session?.user?.id) {
+      if (isLegacyAuthEmail(authData.session.user.email)) {
+        setView("link_email")
+        return
+      }
+      setView("forum")
+      await hydrateSession(authData.session.user.id)
+    }
+  }
+
+  async function handleRegister(username: string, email: string, password: string) {
+    welcomePendingUsernameRef.current = username
+    const { data: authData, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { username }, emailRedirectTo: window.location.origin },
+    })
+    if (error) {
+      const errorDetails = `${error.code || ""} ${error.message}`.toLowerCase()
+      if (errorDetails.includes("already registered") || errorDetails.includes("already exists") || errorDetails.includes("user_already_exists") || errorDetails.includes("email_exists")) {
+        throw new Error("Este Gmail ya está en uso. Inicia sesión o recupera tu contraseña.")
+      }
+      throw new Error(error.message)
+    }
+
+    if (authData.user && authData.user.identities?.length === 0) {
+      throw new Error("Este Gmail ya está en uso. Inicia sesión o recupera tu contraseña.")
+    }
+
+    if (authData.session?.user?.id) {
+      pendingVerificationTypeRef.current = null
+      setView("forum")
+      await hydrateSession(authData.session.user.id)
+    } else {
+      pendingVerificationTypeRef.current = "signup"
+      sessionStorage.setItem(PENDING_VERIFICATION_STORAGE_KEY, JSON.stringify({ email, type: "signup" }))
+      setPendingVerificationEmail(email)
+      setPendingVerificationType("signup")
+      setView("verify_email")
+    }
+  }
+
+  async function handleVerifyEmail(code: string) {
+    const { data, error } = await supabase.auth.verifyOtp({ email: pendingVerificationEmail, token: code, type: pendingVerificationType })
+    if (error) throw new Error(error.message)
+    if (!data.user) throw new Error("No se pudo verificar la cuenta.")
+    pendingVerificationTypeRef.current = null
+    sessionStorage.removeItem(PENDING_VERIFICATION_STORAGE_KEY)
+    setView("forum")
+    await hydrateSession(data.user.id)
+  }
+
+  async function handleResendVerification() {
+    const { error } = await supabase.auth.resend({ type: pendingVerificationType === "email_change" ? "email_change" : "signup", email: pendingVerificationEmail })
+    if (error) throw new Error(error.message)
+  }
+
+  async function handleRequestLegacyEmail(email: string) {
+    pendingVerificationTypeRef.current = "email_change"
+    const { error } = await supabase.auth.updateUser({ email }, { emailRedirectTo: window.location.origin })
+    if (error) {
+      pendingVerificationTypeRef.current = null
+      throw new Error(error.message)
+    }
+    sessionStorage.setItem(PENDING_VERIFICATION_STORAGE_KEY, JSON.stringify({ email, type: "email_change" }))
+    setPendingVerificationEmail(email)
+    setPendingVerificationType("email_change")
+    setView("verify_email")
+  }
+
+  async function handleForgotPassword(email: string) {
+    const redirectTo = `${window.location.origin}/?reset-password=1`
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
+    if (error) throw new Error(error.message)
+  }
+
+  async function handleResetPassword(password: string) {
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) throw new Error(error.message)
+    passwordRecoveryPendingRef.current = false
+    window.history.replaceState({}, document.title, window.location.origin)
+    await supabase.auth.signOut()
+    setView("login")
+  }
+
+  async function handleLogout() {
+    const { error } = await supabase.auth.signOut()
+    if (error) console.error("Could not sign out from Supabase", error)
+  }
+
+  async function uploadStoreProductImage(product: StoreProduct) {
+    if (!product.imageFile && !product.imageUrl?.startsWith("data:")) return product.imageUrl || null
+    const blob = product.imageFile
+      ? product.imageFile
+      : await fetch(product.imageUrl as string).then((response) => response.blob())
+    const extension = (product.imageFile?.name.split(".").pop() || blob.type.split("/")[1] || "bin").toLowerCase().replace(/[^a-z0-9]/g, "") || "bin"
+    const path = `products/${product.id}-${crypto.randomUUID()}.${extension}`
+    const { error } = await supabase.storage.from("store-media").upload(path, blob, { contentType: blob.type || "application/octet-stream", upsert: false })
+    if (error) throw new Error(error.message)
+    return supabase.storage.from("store-media").getPublicUrl(path).data.publicUrl
+  }
+
+  async function handleCreateProduct(product: StoreProduct) {
+    if (currentUser?.role !== "admin") return
+    const imageUrl = await uploadStoreProductImage(product)
+    const { error } = await supabase.from("store_products").insert({
+      id: product.id,
+      title: product.title,
+      price: product.price,
+      description: product.description,
+      image_url: imageUrl,
+      kind: product.kind || "personal",
+      created_at: product.createdAt,
+    })
+    if (error) throw new Error(error.message)
+    const persistedProduct = { ...product, imageUrl, imageFile: undefined }
+    const nextProducts = [...storeProducts, persistedProduct]
+    setStoreProducts(nextProducts)
+    localStorage.setItem(STORE_PRODUCTS_STORAGE_KEY, JSON.stringify(nextProducts))
+  }
+
+  async function handleRedeemProduct(product: StoreProduct, quantity: number) {
+    if (!currentUser) return false
+    const { data: verifiedLink, error: verificationError } = await supabase
+      .from("player_links")
+      .select("id")
+      .eq("forum_user_id", currentUser.id)
+      .eq("verified", true)
+      .maybeSingle()
+
+    if (verificationError) {
+      console.error("Could not verify user account", verificationError)
+      return false
+    }
+    if (!verifiedLink) return false
+
+    const balance = Math.max(0, (currentUser.rolePoints || 0) - (currentUser.redeemedRolePoints || 0))
+    const safeQuantity = Math.max(1, Math.min(99, Math.floor(quantity)))
+    const totalPrice = product.price * safeQuantity
+    if (balance < totalPrice) return false
+
+    const updatedRedeemedPoints = (currentUser.redeemedRolePoints || 0) + totalPrice
+    const { error: profileError } = await supabase
+      .from("profiles")
+      .update({ redeemed_role_points: updatedRedeemedPoints })
+      .eq("id", currentUser.id)
+    if (profileError) {
+      console.error("Could not redeem store product", profileError)
+      return false
+    }
+
+    const redemption: StoreRedemption = {
+      id: uid(),
+      userId: currentUser.id,
+      username: currentUser.username,
+      productId: product.id,
+      productTitle: product.title,
+      price: totalPrice,
+      quantity: safeQuantity,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    }
+    const { data: savedRedemption, error: redemptionError } = await supabase.from("store_redemptions").insert({
+      user_id: currentUser.id,
+      username: currentUser.username,
+      product_id: product.id,
+      product_title: product.title,
+      price: totalPrice,
+      quantity: safeQuantity,
+      status: "pending",
+    }).select("id, user_id, username, product_id, product_title, price, quantity, status, created_at").single()
+    if (redemptionError) {
+      await supabase.from("profiles").update({ redeemed_role_points: currentUser.redeemedRolePoints || 0 }).eq("id", currentUser.id)
+      console.error("Could not persist store redemption", redemptionError)
+      return false
+    }
+    redemption.id = savedRedemption.id
+    redemption.status = savedRedemption.status
+    redemption.createdAt = savedRedemption.created_at
+    const nextRedemptions = [...redemptions, redemption]
+    try {
+      localStorage.setItem(STORE_REDEMPTIONS_STORAGE_KEY, JSON.stringify(nextRedemptions))
+    } catch (storageError) {
+      console.error("Could not persist store redemption locally", storageError)
+    }
+    setRedemptions(nextRedemptions)
+    setCurrentUser((previousUser) => previousUser ? { ...previousUser, redeemedRolePoints: updatedRedeemedPoints } : previousUser)
+    setUsers((previousUsers) => previousUsers.map((user) => user.id === currentUser.id ? { ...user, redeemedRolePoints: updatedRedeemedPoints } : user))
+    await refreshForumState()
+    return true
+  }
+
+  function handleToggleSuspend(userId: string) {
+    if (currentUser?.role !== "admin" || userId === currentUser.id) return
+    const user = readLocalUsers().find((item) => item.id === userId)
+    if (!user) return
+    const action = user.suspended ? "reactivar" : "suspender"
+    if (!window.confirm(`¿Seguro que quieres ${action} la cuenta de ${user.username}?`)) return
+    const nextUsers = readLocalUsers().map((item) => item.id === userId ? { ...item, suspended: !item.suspended } : item)
+    localStorage.setItem(LOCAL_USERS_STORAGE_KEY, JSON.stringify(nextUsers))
+    setUsers(nextUsers)
+  }
+
+  function handleDeleteUser(userId: string) {
+    if (currentUser?.role !== "admin" || userId === currentUser.id) return
+    const user = readLocalUsers().find((item) => item.id === userId)
+    if (!user || !window.confirm(`¿Eliminar permanentemente la cuenta de ${user.username}? Esta acción no se puede deshacer.`)) return
+    const nextUsers = readLocalUsers().filter((item) => item.id !== userId)
+    localStorage.setItem(LOCAL_USERS_STORAGE_KEY, JSON.stringify(nextUsers))
+    setUsers(nextUsers)
+    setThreads((previousThreads) => previousThreads.filter((thread) => thread.authorId !== userId).map((thread) => ({ ...thread, replies: thread.replies.filter((reply) => reply.authorId !== userId) })))
+  }
+
+  function notifyUser(userId: string, text: string) {
+    setUsers((prevUsers) =>
+      prevUsers.map((u) => {
+        if (u.id !== userId) return u
+        const nextUser = {
+          ...u,
+          notifications: [
+            ...(u.notifications || []),
+            {
+              id: uid(),
+              text,
+              createdAt: new Date().toISOString(),
+              read: false,
+            },
+          ],
+        }
+
+        if (currentUser && currentUser.id === userId) {
+          setCurrentUser(nextUser)
+        }
+
+        return nextUser
+      })
+    )
+  }
+
+  async function createNotification(userId: string, text: string, threadId?: string) {
+    if (!currentUser || userId === currentUser.id) return
+    const { error } = await supabase.from("notifications").insert({ user_id: userId, thread_id: threadId || null, text, read: false })
+    if (error) console.error("Could not create notification", error)
+  }
+
+  async function createNotifications(userIds: string[], text: string, threadId?: string) {
+    await Promise.all([...new Set(userIds)].map((userId) => createNotification(userId, text, threadId)))
+  }
+
+  async function handleNewThread(thread: Thread, mentionedUserIds: string[] = []) {
+    if (!currentUser) return
+    if (thread.category === "normativa" && currentUser.role !== "admin") return
+    if (thread.category === "facciones") {
+      const subforum = thread.subforum || "no_oficial"
+      if (subforum === "formato" || subforum === "oficial") {
+        throw new Error("No puedes publicar directamente en FORMATO u OFICIAL. Usa NO OFICIAL y luego un administrador puede moverlo.")
+      }
+    }
+    const contentWithUploadedImages = await uploadInlineImages(thread.content, `inline/${currentUser.id}/${crypto.randomUUID()}`)
+    const threadPayload = {
+      title: thread.title,
+      category: thread.category,
+      author_id: currentUser.id,
+      content: contentWithUploadedImages,
+      status: thread.status,
+      pinned: thread.pinned || false,
+      admin_only: thread.adminOnly || false,
+      ...(thread.category === "facciones" ? { subforum: thread.subforum || "no_oficial" } : {}),
+    }
+    const { data: createdThread, error } = await supabase.from("threads").insert(threadPayload).select().single()
+    if (error || !createdThread) {
+      console.error("Could not create thread", error)
+      throw new Error(error?.message || "No se pudo crear el hilo.")
+    }
+
+    const draftKey = getThreadDraftKey(currentUser.id, thread.category)
+    persistDraft(draftKey, null)
+
+    const recipients = [...new Set(mentionedUserIds.filter((userId) => userId !== currentUser.id))]
+    if (recipients.length > 0) {
+      await createNotifications(
+        recipients,
+        `${currentUser.username} te ha mencionado en el hilo: ${thread.title}`,
+      )
+    }
+
+    if (thread.category === "reportes") {
+      await createNotifications(
+        users.filter((user) => user.role !== "user").map((user) => user.id),
+        `${currentUser.username} ha enviado un nuevo reporte: ${thread.title}`,
+      )
+    }
+
+    await refreshForumState()
+    if (thread.category === "reportes") {
+      setSelectedThread(createdThread.id)
+      setView("thread")
+    } else {
+      setView("forum")
+    }
+  }
+
+  async function handleEditThread(threadId: string, title: string, content: string) {
+    if (!currentUser) return
+    const editedAt = new Date().toISOString()
+    const { error } = await supabase.from("threads").update({ title, content, edited_at: editedAt }).eq("id", threadId).eq("author_id", currentUser.id)
+    if (error) {
+      console.error("Could not edit thread", error)
+      return
+    }
+    setThreads((previousThreads) => previousThreads.map((thread) => thread.id === threadId ? { ...thread, title, content, editedAt } : thread))
+  }
+
+  async function handleEditReply(threadId: string, replyId: string, content: string) {
+    if (!currentUser || content.trim().length < 5) return
+    const editedAt = new Date().toISOString()
+    const { error } = await supabase
+      .from("replies")
+      .update({ content: content.trim(), edited_at: editedAt })
+      .eq("id", replyId)
+      .eq("thread_id", threadId)
+      .eq("author_id", currentUser.id)
+    if (error) throw new Error(error.message)
+    setThreads((previousThreads) => previousThreads.map((thread) => thread.id === threadId ? {
+      ...thread,
+      replies: thread.replies.map((reply) => reply.id === replyId ? { ...reply, content: content.trim(), editedAt } : reply),
+    } : thread))
+  }
+
+  async function handleToggleThreadSubscription(threadId: string) {
+    if (!currentUser) return
+    const thread = threads.find((item) => item.id === threadId)
+    if (!thread || !canSubscribeToThread(thread)) return
+    const isSubscribed = subscribedThreadIds.includes(threadId)
+    const result = isSubscribed
+      ? await supabase.from("thread_subscriptions").delete().eq("thread_id", threadId).eq("user_id", currentUser.id)
+      : await supabase.from("thread_subscriptions").insert({ thread_id: threadId, user_id: currentUser.id })
+    if (result.error) {
+      console.error("Could not update thread subscription", result.error)
+      return
+    }
+    setSubscribedThreadIds((previous) => isSubscribed ? previous.filter((id) => id !== threadId) : [...previous, threadId])
+  }
+
+  async function handleReply(threadId: string, content: string, _attachments: Attachment[], mentionedUserIds: string[] = []) {
+    if (!currentUser) return
+    const targetThread = threads.find((thread) => thread.id === threadId)
+    if (!targetThread || targetThread.adminOnly || targetThread.category === "normativa") return
+    if (targetThread.category === "facciones" && (targetThread.subforum === "formato" || targetThread.subforum === "oficial")) return
+    const { data: createdReply, error } = await supabase.from("replies").insert({
+      thread_id: threadId,
+      author_id: currentUser.id,
+      content,
+      is_staff: currentUser.role !== "user",
+    }).select().single()
+    if (error || !createdReply) {
+      console.error("Could not create reply", error)
+      return
+    }
+    const newReply = mapReply(createdReply as ReplyRow)
+    setThreads((previousThreads) => previousThreads.map((thread) => thread.id === threadId ? {
+      ...thread,
+      replies: [...thread.replies, newReply],
+      replyCount: threadReplyCount(thread) + 1,
+      repliesLoaded: true,
+    } : thread))
+
+    const { data: subscriptionRows, error: subscriptionError } = canSubscribeToThread(targetThread)
+      ? await supabase.from("thread_subscriptions").select("user_id").eq("thread_id", threadId)
+      : { data: [], error: null }
+    if (subscriptionError) console.error("Could not load thread subscribers", subscriptionError)
+    const subscriberIds = (subscriptionRows || []).map((row) => row.user_id)
+    const notificationRecipients = [...new Set([
+      targetThread.authorId,
+      ...subscriberIds,
+      ...mentionedUserIds.filter((userId) => userId !== currentUser.id),
+      ...(targetThread.category === "reportes" ? users.filter((user) => user.role !== "user").map((user) => user.id) : []),
+    ])]
+
+    const replyText = targetThread.category === "reportes"
+      ? `${currentUser.username} ha respondido al reporte: ${targetThread.title}`
+      : `${currentUser.username} ha respondido a tu publicación: ${targetThread.title}`
+
+    await createNotifications(
+      notificationRecipients,
+      replyText,
+      threadId,
+    )
+
+    if (mentionedUserIds.length > 0) {
+      await createNotifications(
+        mentionedUserIds.filter((userId) => userId !== currentUser.id),
+        `${currentUser.username} te ha mencionado en la respuesta de "${targetThread.title}".`,
+      )
+    }
+
+    const replyDraftKey = getReplyDraftKey(currentUser.id, threadId)
+    persistDraft(replyDraftKey, null)
+  }
+
+  async function handleStatusChange(threadId: string, status: ThreadStatus) {
+    const thread = threads.find((item) => item.id === threadId)
+    if (!thread) return
+    const { error } = await supabase.from("threads").update({ status }).eq("id", threadId)
+    if (error) console.error("Could not update thread status", error)
+    else {
+      if (thread.authorId !== currentUser?.id) {
+        await createNotifications([thread.authorId], `${currentUser?.username || "Staff"} cambió el estado de tu hilo "${thread.title}" a ${STATUS_LABELS[status]}.`)
+      }
+      await refreshForumState()
+    }
+  }
+
+  async function handleMoveFactionThread(threadId: string, targetSubforum: ThreadSubforum) {
+    const thread = threads.find((item) => item.id === threadId)
+    if (!thread || thread.category !== "facciones") return
+    const { error } = await supabase.from("threads").update({ subforum: targetSubforum }).eq("id", threadId)
+    if (error) console.error("Could not move faction thread", error)
+    else {
+      if (thread.authorId !== currentUser?.id) {
+        await createNotifications([thread.authorId], `${currentUser?.username || "Staff"} movió tu hilo "${thread.title}" a ${FACTION_SUBFORUM_LABELS[targetSubforum]}.`)
+      }
+      await refreshForumState()
+    }
+  }
+
+  async function handleAddFactionRolePoints(threadId: string, amount: number) {
+    if (currentUser?.role !== "admin" || amount < 1) return
+    const thread = threads.find((item) => item.id === threadId)
+    if (!thread || thread.category !== "facciones") return
+    const { error } = await supabase.from("threads").update({ faction_role_points: (thread.factionRolePoints || 0) + amount }).eq("id", threadId)
+    if (error) console.error("Could not add faction role points", error)
+    else await refreshForumState()
+  }
+
+  async function handleClaimFactionRolePoints(threadId: string) {
+    if (!currentUser) return
+    const thread = threads.find((item) => item.id === threadId)
+    if (!thread || thread.category !== "facciones" || thread.authorId !== currentUser.id || thread.factionRolePointsClaimed || !thread.factionRolePoints) return
+    const { error } = await supabase.from("threads").update({ faction_role_points_claimed: true }).eq("id", threadId).eq("author_id", currentUser.id)
+    if (error) console.error("Could not claim faction role points", error)
+    else await refreshForumState()
+  }
+
+  async function handlePinToggle(threadId: string) {
+    const thread = threads.find((item) => item.id === threadId)
+    if (!thread) return
+    const { error } = await supabase.from("threads").update({ pinned: !thread.pinned }).eq("id", threadId)
+    if (error) console.error("Could not pin thread", error)
+    else {
+      if (thread.authorId !== currentUser?.id) {
+        await createNotifications([thread.authorId], `${currentUser?.username || "Staff"} ${thread.pinned ? "quitó" : "marcó"} como destacado tu hilo "${thread.title}".`)
+      }
+      await refreshForumState()
+    }
+  }
+
+  function handleDeleteThread(threadId: string) {
+    const thread = threads.find((item) => item.id === threadId)
+    if (!thread || (currentUser?.role !== "admin" && thread.authorId !== currentUser?.id)) return
+    if (thread.id === "t-rules-historias" || thread.id === "t-rules-reportes" || thread.id === "t-rules-facciones-formato") return
+    setThreadPendingDeletion(thread)
+  }
+
+  async function confirmDeleteThread() {
+    const thread = threadPendingDeletion
+    if (!thread) return
+    setThreadPendingDeletion(null)
+    setOperationMessage("ELIMINANDO PUBLICACIÓN...")
+    try {
+      const { error } = await supabase.from("threads").delete().eq("id", thread.id)
+      if (error) {
+        console.error("Could not delete thread", error)
+        return
+      }
+      await refreshForumState()
+      setView("forum")
+    } finally {
+      setOperationMessage(null)
+    }
+  }
+
+  async function handleDeleteReply(threadId: string, replyId: string) {
+    const thread = threads.find((item) => item.id === threadId)
+    const reply = thread?.replies.find((item) => item.id === replyId)
+    if (!thread || !reply || reply.authorId !== currentUser?.id) return
+    if (!window.confirm("¿Seguro que quieres eliminar esta respuesta? Esta acción no se puede deshacer.")) return
+    setOperationMessage("ELIMINANDO RESPUESTA...")
+    try {
+      const { error } = await supabase
+        .from("replies")
+        .delete()
+        .eq("id", replyId)
+        .eq("thread_id", threadId)
+        .eq("author_id", currentUser.id)
+      if (error) {
+        console.error("Could not delete reply", error)
+        return
+      }
+      setThreads((previousThreads) => previousThreads.map((item) => item.id === threadId ? {
+        ...item,
+        replies: item.replies.filter((entry) => entry.id !== replyId),
+        replyCount: Math.max(0, threadReplyCount(item) - 1),
+      } : item))
+    } finally {
+      setOperationMessage(null)
+    }
+  }
+
+  async function handleRoleChange(userId: string, role: Role) {
+    const { error } = await supabase.from("profiles").update({ role }).eq("id", userId)
+    if (error) console.error("Could not update role", error)
+    else await refreshForumState()
+  }
+
+  async function handleAddRolePoints(userId: string, amount: number) {
+    if (currentUser?.role !== "admin" || amount < 1) return
+    const user = users.find((item) => item.id === userId)
+    if (!user) return
+    const { error } = await supabase.from("profiles").update({ role_points: (user.rolePoints || 0) + amount }).eq("id", userId)
+    if (error) console.error("Could not add role points", error)
+    else await refreshForumState()
+  }
+
+  function handleContactUser(userId: string, message: string) {
+    if (currentUser?.role !== "admin" || !message.trim()) return
+    notifyUser(userId, `Mensaje de ${currentUser.username}: ${message.trim()}`)
+  }
+
+  async function handleRedeemRolePoints(userId: string) {
+    if (!currentUser || currentUser.id !== userId) return
+    const availableRolePoints = (currentUser.rolePoints || 0) - (currentUser.redeemedRolePoints || 0)
+    if (availableRolePoints < ROLE_REDEEM_COST) return
+
+    const { error } = await supabase.from("profiles").update({ redeemed_role_points: (currentUser.redeemedRolePoints || 0) + ROLE_REDEEM_COST }).eq("id", userId)
+    if (error) console.error("Could not redeem role points", error)
+    else await refreshForumState()
+  }
+
+  const handleLoadMemberAvatars = useCallback(async (userIds: string[]) => {
+    if (userIds.length === 0) return
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, avatar_url")
+      .in("id", userIds)
+
+    if (error) {
+      console.error("Could not load member avatars", error)
+      return
+    }
+
+    const avatarsByUserId = new Map((data || []).map((row) => [row.id, row.avatar_url]))
+    setUsers((previousUsers) => previousUsers.map((user) => (
+      avatarsByUserId.has(user.id)
+        ? { ...user, avatarUrl: avatarsByUserId.get(user.id) || undefined }
+        : user
+    )))
+  }, [users])
+
+  async function handleOpenProfile(user: User) {
+    setSelectedProfileId(user.id)
+    setView("profile")
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, username, role, avatar, avatar_url, bio, banner_url, role_points, redeemed_role_points, joined_at")
+      .eq("id", user.id)
+      .maybeSingle()
+    if (error) {
+      console.error("Could not load profile media", error)
+    } else if (data) {
+      const loadedUser = mapProfile(data as ProfileRow)
+      setUsers((previousUsers) => previousUsers.map((item) => item.id === loadedUser.id ? { ...item, ...loadedUser } : item))
+      if (currentUser.id === loadedUser.id) setCurrentUser((previousUser) => previousUser ? { ...previousUser, ...loadedUser } : previousUser)
+    }
+  }
+
+  function handleOpenCategory(category: Category) {
+    setSelectedCategory(category)
+    setView("category")
+  }
+
+  function handleOpenReportStatus(status: ThreadStatus, category: Category = "reportes") {
+    setSelectedReportStatus(status)
+    setSelectedCategory(category)
+    setView("report_status")
+  }
+
+  function handleOpenFactionSubforum(subforum: ThreadSubforum) {
+    setSelectedFactionSubforum(subforum)
+    setSelectedCategory("facciones")
+    setView("faction_subforum")
+  }
+
+  function handleOpenCharacterSubforum(subforum: CharacterSubforum = "fichas") {
+    setSelectedCategory("historias")
+    setSelectedCharacterSubforum(subforum)
+    setView("character_subforum")
+  }
+
+  async function handleSaveProfile(userId: string, updates: ProfileUpdates) {
+    const uploadProfileMedia = async (file: File, kind: "avatar" | "banner") => {
+      const extension = file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "bin"
+      const path = `${userId}/${kind}-${crypto.randomUUID()}.${extension}`
+      const { error: uploadError } = await supabase.storage.from("profile-media").upload(path, file, { contentType: file.type, upsert: false })
+      if (uploadError) throw new Error(uploadError.message)
+      return supabase.storage.from("profile-media").getPublicUrl(path).data.publicUrl
+    }
+
+    const avatarUrl = updates.avatarFile ? await uploadProfileMedia(updates.avatarFile, "avatar") : updates.avatarUrl
+    const bannerUrl = updates.bannerFile ? await uploadProfileMedia(updates.bannerFile, "banner") : updates.bannerUrl
+    const { error } = await supabase.from("profiles").update({
+      avatar_url: avatarUrl,
+      bio: updates.bio,
+      banner_url: bannerUrl,
+    }).eq("id", userId)
+    if (error) throw new Error(error.message)
+    await hydrateSession(userId)
+  }
+
+  async function handleSaveAccount(updates: { username?: string; firstName: string; lastName: string; password: string }) {
+    if (!currentUser) return
+    let nextUsername: string
+    if (updates.username !== undefined) {
+      const { data: verifiedLink, error: linkError } = await supabase.from("player_links").select("id").eq("forum_user_id", currentUser.id).eq("verified", true).maybeSingle()
+      if (linkError) throw new Error(linkError.message)
+      if (!verifiedLink) throw new Error("Solo las cuentas verificadas pueden usar un nombre de usuario libre.")
+      nextUsername = updates.username.trim()
+      if (nextUsername.length < 3) throw new Error("El nombre de usuario debe tener al menos 3 caracteres.")
+    } else {
+      nextUsername = `${updates.firstName.trim()} ${updates.lastName.trim()}`.trim()
+      if (nextUsername.length < 3) throw new Error("Debes indicar tu nombre y apellido.")
+    }
+    const authUpdates: { password?: string; data: { first_name: string; last_name: string } } = {
+      data: { first_name: updates.firstName, last_name: updates.lastName },
+    }
+    if (updates.password) authUpdates.password = updates.password
+    const { error: authError } = await supabase.auth.updateUser(authUpdates)
+    if (authError) throw new Error(authError.message)
+    const { error: profileError } = await supabase.from("profiles").update({ username: nextUsername }).eq("id", currentUser.id)
+    if (profileError) throw new Error(profileError.message)
+    await hydrateSession(currentUser.id)
+  }
+
+  async function handleClearNotifications() {
+    if (!currentUser) return
+    const { error } = await supabase.from("notifications").delete().eq("user_id", currentUser.id)
+    if (error) console.error("Could not clear notifications", error)
+    else {
+      notificationIdsRef.current = new Set()
+      setCurrentUser((previousUser) => previousUser ? { ...previousUser, notifications: [] } : previousUser)
+      setUsers((previousUsers) => previousUsers.map((user) => user.id === currentUser.id ? { ...user, notifications: [] } : user))
+    }
+  }
+
+  function handleGoBack() {
+    const previousNavigation = navigationHistoryRef.current.pop()
+    if (!previousNavigation) {
+      setView("forum")
+      return
+    }
+
+    restoringNavigationRef.current = true
+    setSelectedProfileId(previousNavigation.profileId || "")
+    setSelectedThread(previousNavigation.threadId || "")
+    setSelectedCategory(previousNavigation.category)
+    setSelectedReportStatus(previousNavigation.reportStatus)
+    setSelectedFactionSubforum(previousNavigation.factionSubforum)
+    setSelectedCharacterSubforum(previousNavigation.characterSubforum)
+    setView(previousNavigation.view)
+  }
+
+  if (isLoading) {
+    return <LoadingScreen />
+  }
+
+  if (!authReady) return null
+
+  if (!currentUser) {
+    if (view === "register") {
+      return <RegisterView onRegister={handleRegister} goLogin={() => setView("login")} />
+    }
+    if (view === "verify_email") {
+      return <VerifyEmailView email={pendingVerificationEmail} onVerify={handleVerifyEmail} onResend={handleResendVerification} />
+    }
+    if (view === "link_email") {
+      return <LinkEmailView onRequest={handleRequestLegacyEmail} />
+    }
+    if (view === "forgot_password") {
+      return <ForgotPasswordView onRequest={handleForgotPassword} goLogin={() => setView("login")} />
+    }
+    if (view === "reset_password") {
+      return <ResetPasswordView onReset={handleResetPassword} />
+    }
+    return <LoginView onLogin={handleLogin} goRegister={() => setView("register")} goForgotPassword={() => setView("forgot_password")} />
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
+      <Header
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        setView={setView}
+        view={view}
+        onOpenProfile={handleOpenProfile}
+        onClearNotifications={handleClearNotifications}
+        onRefreshNotifications={() => void refreshCurrentUserNotifications()}
+        onOpenAdmin={() => setView("admin")}
+        onOpenControl={() => setView("control")}
+      />
+
+      <div className="toast-container">
+        {toasts.map((toast) => (
+          <div key={toast.id} className={`toast toast-${toast.type}`}>
+            <div className="toast-content">
+              {toast.type === "success" && <span className="toast-icon">✓</span>}
+              {toast.type === "info" && <span className="toast-icon">🔔</span>}
+              {toast.type === "warning" && <span className="toast-icon">⚠</span>}
+              <span className="toast-message">{toast.message}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {view === "store" && (
+        <StoreView
+          currentUser={currentUser}
+          threads={threads}
+          products={storeProducts}
+          redemptions={redemptions}
+          onCreateProduct={handleCreateProduct}
+          onRedeemProduct={handleRedeemProduct}
+          onBack={handleGoBack}
+        />
+      )}
+      {view === "members" && (
+        <MembersView
+          users={users}
+          onOpenProfile={handleOpenProfile}
+          onLoadMemberAvatars={handleLoadMemberAvatars}
+          onBack={handleGoBack}
+        />
+      )}
+      {view === "server" && <ServerView users={users} onOpenProfile={handleOpenProfile} onBack={handleGoBack} />}
+      {view === "control" && (
+        <ControlPanelView
+          currentUser={currentUser}
+          onSaveAccount={handleSaveAccount}
+          onBack={handleGoBack}
+        />
+      )}
+      {view === "verification" && <VerificationView currentUser={currentUser} onBack={handleGoBack} />}
+      {view === "forum" && (
+        <ForumView
+          threads={threads}
+          users={users}
+          currentUser={currentUser}
+          setView={setView}
+          setSelectedThread={setSelectedThread}
+          onSound={playInteractionSound}
+          selectedCategory={selectedCategory}
+          onOpenCategory={handleOpenCategory}
+          onSelectCategory={(category) => setSelectedCategory(category)}
+        />
+      )}
+      {view === "category" && (
+        <CategoryView
+          category={selectedCategory}
+          threads={threads}
+          users={users}
+          currentUser={currentUser}
+          setView={setView}
+          setSelectedThread={setSelectedThread}
+          onSound={playInteractionSound}
+          onSelectCategory={handleOpenCategory}
+          onOpenReportStatus={handleOpenReportStatus}
+          onOpenFactionSubforum={handleOpenFactionSubforum}
+          onOpenCharacterSubforum={handleOpenCharacterSubforum}
+          onOpenProfile={handleOpenProfile}
+        />
+      )}
+      {view === "report_status" && (
+        <ReportStatusView
+          status={selectedReportStatus}
+          category={selectedCategory}
+          threads={threads}
+          users={users}
+          setView={setView}
+          setSelectedThread={setSelectedThread}
+          onOpenStatus={(nextStatus) => handleOpenReportStatus(nextStatus, selectedCategory)}
+          onSound={playInteractionSound}
+        />
+      )}
+      {view === "faction_subforum" && (
+        <FactionSubforumView
+          subforum={selectedFactionSubforum}
+          threads={threads}
+          users={users}
+          setView={setView}
+          setSelectedThread={setSelectedThread}
+          onSound={playInteractionSound}
+        />
+      )}
+      {view === "character_subforum" && (
+        <CharacterSubforumView
+          subforum={selectedCharacterSubforum}
+          threads={threads}
+          users={users}
+          setView={setView}
+          setSelectedThread={setSelectedThread}
+          onOpenProfile={handleOpenProfile}
+          onSound={playInteractionSound}
+        />
+      )}
+      {view === "thread" && (
+        <ThreadView
+          threadId={selectedThread}
+          threads={threads}
+          users={users}
+          currentUser={currentUser}
+          onReply={handleReply}
+          isSubscribed={subscribedThreadIds.includes(selectedThread)}
+          onToggleSubscription={handleToggleThreadSubscription}
+          onEditThread={handleEditThread}
+          onEditReply={handleEditReply}
+          onRegisterView={handleRegisterView}
+          onAddRolePoints={handleAddRolePoints}
+          onStatusChange={handleStatusChange}
+          onPinToggle={handlePinToggle}
+          onDeleteThread={handleDeleteThread}
+          onDeleteReply={handleDeleteReply}
+          onLoadReplies={handleLoadReplies}
+          onLoadThread={handleLoadThread}
+          onMoveFactionThread={handleMoveFactionThread}
+          onAddFactionRolePoints={handleAddFactionRolePoints}
+          onClaimFactionRolePoints={handleClaimFactionRolePoints}
+          onOpenProfile={handleOpenProfile}
+          goBack={handleGoBack}
+        />
+      )}
+      {view === "new_thread" && (
+        <NewThreadView
+          currentUser={currentUser}
+          users={users}
+          onSubmit={handleNewThread}
+          goBack={handleGoBack}
+          initialCategory={selectedCategory}
+        />
+      )}
+      {view === "profile" && (
+        <ProfileView
+          currentUser={currentUser}
+          users={users}
+          threads={threads}
+          selectedUserId={selectedProfileId || currentUser.id}
+          onSaveProfile={handleSaveProfile}
+          onOpenProfile={handleOpenProfile}
+          onBack={handleGoBack}
+        />
+      )}
+      {view === "admin" && currentUser.role !== "user" && (
+        <AdminView
+          threads={threads}
+          users={users}
+          redemptions={redemptions}
+          currentUser={currentUser}
+          onStatusChange={handleStatusChange}
+          onPinToggle={handlePinToggle}
+          onDeleteThread={handleDeleteThread}
+          onRoleChange={handleRoleChange}
+          onAddRolePoints={handleAddRolePoints}
+          onContactUser={handleContactUser}
+          onToggleSuspend={handleToggleSuspend}
+          onDeleteUser={handleDeleteUser}
+          onMarkRedemptionDelivered={handleMarkRedemptionDelivered}
+          setView={setView}
+          setSelectedThread={setSelectedThread}
+        />
+      )}
+      {threadPendingDeletion && (
+        <DeleteThreadModal
+          threadTitle={threadPendingDeletion.title}
+          onConfirm={() => void confirmDeleteThread()}
+          onCancel={() => setThreadPendingDeletion(null)}
+        />
+      )}
+      {operationMessage && <OperationOverlay message={operationMessage} />}
+      {showWelcome && <WelcomePanel username={currentUser.username} onClose={() => setShowWelcome(false)} />}
+    </div>
+  )
+}

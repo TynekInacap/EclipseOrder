@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+.cache/
+.env*
+!.env.example
+migrate-attachments.mjs
+.vite/
+supabase/.temp/
+vite.config.*.timestamp-*
+*.tsbuildinfo
+*-debug.log*
+logs/
+*.log
+.claude-replay.*
+.tmp-*

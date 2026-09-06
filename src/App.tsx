@@ -3570,7 +3570,7 @@ function CharacterSubforumView({
         </button>}
       </div>
       <section>
-        <div className="character-thread-table" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+        <div className="character-thread-table" data-thread-count={visibleThreads.length} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
           {renderCharacterRows(visibleThreads, subforum === "cerrados" ? "No hay fichas cerradas." : "No hay fichas de personajes activas.")}
         </div>
       </section>

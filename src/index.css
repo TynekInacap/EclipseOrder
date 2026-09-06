@@ -3292,8 +3292,12 @@ body {
 }
 
 .character-thread-row {
-  flex: 1 1 0;
+  flex: 0 0 auto;
   min-height: 58px;
+}
+
+.character-thread-table[data-thread-count="10"] .character-thread-row {
+  flex: 1 1 0;
 }
 
 .faction-thread-head span:nth-child(n + 2) {

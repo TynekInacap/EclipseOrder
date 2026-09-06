@@ -7544,9 +7544,7 @@ export default function App() {
         ...item,
         replies: item.replies.filter((entry) => entry.id !== replyId),
         replyCount: Math.max(0, threadReplyCount(item) - 1),
-        repliesLoaded: false,
       } : item))
-      await refreshForumState()
     } finally {
       setOperationMessage(null)
     }

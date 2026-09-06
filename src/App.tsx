@@ -6052,51 +6052,44 @@ function AdminView({
   const [contactMessages, setContactMessages] = useState<Record<string, string>>({})
   const [userSearch, setUserSearch] = useState("")
   const filteredUsers = users.filter((user) => user.username.toLowerCase().includes(userSearch.trim().toLowerCase()))
+  const pendingRedemptions = redemptions.filter((redemption) => redemption.status !== "delivered").length
+  const suspendedUsers = users.filter((user) => user.suspended).length
 
   return (
-    <div className="forum-wide-view" style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 28 }}>
-        <div
-          style={{
-            width: 4,
-            height: 28,
-            background: "linear-gradient(180deg, #a855f7, #6d28d9)",
-            borderRadius: 2,
-          }}
-        />
-        <h2 style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, fontWeight: 700, letterSpacing: "0.1em", color: "var(--text)", margin: 0 }}>
-          PANEL DE ADMINISTRACIÓN
-        </h2>
+    <div className="forum-wide-view admin-panel-view" style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
+      <header className="admin-panel-header">
+        <div>
+          <div className="admin-panel-eyebrow">CENTRO DE CONTROL · {currentUser.role === "admin" ? "ADMINISTRADOR" : "MODERADOR"}</div>
+          <h2>PANEL DE ADMINISTRACIÓN</h2>
+          <p>Gestiona la actividad del foro, las cuentas y las operaciones pendientes desde un solo lugar.</p>
+        </div>
+        <div className="admin-panel-status"><span /> SISTEMA OPERATIVO</div>
+      </header>
+
+      <div className="admin-summary-grid">
+        <div className="admin-summary-card"><span>HILOS</span><strong>{threads.length}</strong><small>publicaciones registradas</small></div>
+        <div className="admin-summary-card"><span>USUARIOS</span><strong>{users.length}</strong><small>{suspendedUsers ? `${suspendedUsers} suspendidos` : "cuentas activas"}</small></div>
+        <div className={`admin-summary-card${pendingRedemptions ? " admin-summary-alert" : ""}`}><span>CANJES PENDIENTES</span><strong>{pendingRedemptions}</strong><small>requieren seguimiento</small></div>
+        <div className="admin-summary-card"><span>SECCIÓN ACTIVA</span><strong>{tab === "threads" ? "HILOS" : tab === "users" ? "USUARIOS" : tab === "redemptions" ? "CANJES" : "PZ"}</strong><small>módulo seleccionado</small></div>
       </div>
 
-      <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: "1px solid #1e2330", paddingBottom: 0 }}>
+      <nav className="admin-tabs" aria-label="Módulos de administración">
         {[{ id: "threads", label: "Gestión de Hilos" }, { id: "users", label: "Gestión de Usuarios" }, { id: "redemptions", label: "Canjes" }, ...(currentUser.role === "admin" ? [{ id: "player-links", label: "Vínculos PZ" }] : [])].map((t) => (
           <button
             key={t.id}
+            className={tab === t.id ? "admin-tab admin-tab-active" : "admin-tab"}
             onClick={() => setTab(t.id as "threads" | "users" | "redemptions" | "player-links")}
-            style={{
-              background: "none",
-              border: "none",
-              borderBottom: tab === t.id ? "2px solid #c0392b" : "2px solid transparent",
-              color: tab === t.id ? "var(--text)" : "var(--text-dim)",
-              cursor: "pointer",
-              padding: "10px 16px",
-              fontSize: 13,
-              fontFamily: "Oswald, sans-serif",
-              fontWeight: 600,
-              letterSpacing: "0.06em",
-              marginBottom: -1,
-            }}
           >
             {t.label.toUpperCase()}
           </button>
         ))}
-      </div>
+      </nav>
 
+      <div className="admin-panel-content">
       {tab === "player-links" && <PlayerLinksAdminPanel users={users} currentUser={currentUser} />}
 
       {tab === "threads" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div className="admin-list admin-thread-list">
           {threads.map((thread) => {
             const author = users.find((u) => u.id === thread.authorId)
             const availableStatuses: ThreadStatus[] = thread.category === "historias" && thread.status !== "en_revision"
@@ -6105,6 +6098,7 @@ function AdminView({
             return (
               <div
                 key={thread.id}
+                className="admin-thread-card"
                 style={{
                   background: "var(--surface)",
                   border: "1px solid #1e2330",
@@ -6173,8 +6167,8 @@ function AdminView({
       )}
 
       {tab === "users" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+        <div className="admin-list admin-user-list">
+          <div className="admin-search-row">
             <input
               value={userSearch}
               onChange={(event) => setUserSearch(event.target.value)}
@@ -6301,13 +6295,13 @@ function AdminView({
       )}
 
       {tab === "redemptions" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div className="admin-list admin-redemption-list">
           {redemptions.length === 0 ? (
             <div style={{ padding: "30px 18px", textAlign: "center", color: "var(--text-dim)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
               Todavía no hay productos canjeados.
             </div>
           ) : [...redemptions].reverse().map((redemption) => (
-            <div key={redemption.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto auto auto", alignItems: "center", gap: 18, padding: "15px 18px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
+            <div key={redemption.id} className="admin-redemption-card" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto auto auto", alignItems: "center", gap: 18, padding: "15px 18px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ color: "var(--text)", fontFamily: "Oswald, sans-serif", fontSize: 16, letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{redemption.productTitle}</div>
                 <div style={{ color: "var(--text-dim)", fontSize: 12, marginTop: 3 }}>Comprado por <strong style={{ color: "var(--highlight)" }}>{redemption.username}</strong> · Cantidad: {redemption.quantity || 1}</div>
@@ -6342,6 +6336,7 @@ function AdminView({
           ))}
         </div>
       )}
+      </div>
     </div>
   )
 }

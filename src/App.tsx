@@ -3495,6 +3495,11 @@ function CharacterSubforumView({
     return () => window.removeEventListener("popstate", handlePopState)
   }, [])
 
+  function goToPage(nextPage: number) {
+    setPage(nextPage)
+    window.history.pushState({}, "", `/foro/historias/${subforum}?pagina=${nextPage}`)
+  }
+
   function renderCharacterRows(items: Thread[], emptyMessage: string) {
     if (items.length === 0) return <div style={{ padding: "28px 20px", textAlign: "center", color: "var(--text-dim)" }}>{emptyMessage}</div>
 
@@ -3578,7 +3583,7 @@ function CharacterSubforumView({
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 18, flexWrap: "wrap" }}>
           <span style={{ color: "var(--text-muted)", fontSize: 11, marginRight: 6 }}>Páginas ({pageCount}):</span>
           {Array.from({ length: pageCount }, (_, index) => index + 1).map((pageNumber) => (
-            <button key={pageNumber} type="button" onClick={() => setPage(pageNumber)} style={{ ...primaryBtn, width: "auto", minWidth: 28, padding: "5px 7px", fontSize: 10, background: page === pageNumber ? "rgba(168,85,247,0.2)" : "transparent", border: `1px solid ${page === pageNumber ? "#a855f7" : "var(--border2)"}`, color: page === pageNumber ? "#d8b4fe" : "var(--text-muted)", boxShadow: "none" }}>{pageNumber}</button>
+            <button key={pageNumber} type="button" onClick={() => goToPage(pageNumber)} style={{ ...primaryBtn, width: "auto", minWidth: 28, padding: "5px 7px", fontSize: 10, background: page === pageNumber ? "rgba(168,85,247,0.2)" : "transparent", border: `1px solid ${page === pageNumber ? "#a855f7" : "var(--border2)"}`, color: page === pageNumber ? "#d8b4fe" : "var(--text-muted)", boxShadow: "none" }}>{pageNumber}</button>
           ))}
         </div>
       )}

@@ -360,7 +360,24 @@ type View =
   | "new_thread"
   | "profile"
   | "store"
+  | "map"
   | "admin"
+
+type MapMission = {
+  id: string
+  title: string
+  location: string
+  description: string
+  requirements: string
+  reward: string
+  rewardImageUrl?: string
+  coordinates: string
+  status: "active" | "completed"
+  createdAt: string
+  joinedUserIds?: string[]
+  startAt?: string
+  deadlineAt?: string
+}
 
 type RouteState = {
   view: View
@@ -389,6 +406,7 @@ function routeFromLocation(): RouteState {
   if (segments[0] === "servidor") return { view: "server" }
   if (segments[0] === "miembros") return { view: "members" }
   if (segments[0] === "tienda") return { view: "store" }
+  if (segments[0] === "mapa") return { view: "map" }
   if (segments[0] === "control") return { view: "control" }
   if (segments[0] === "verificacion") return { view: "verification" }
   if (segments[0] === "admin") return { view: "admin" }
@@ -429,6 +447,7 @@ function pathFromState(view: View, profileId: string, threadId: string, category
   if (view === "server") return "/servidor"
   if (view === "members") return "/miembros"
   if (view === "store") return "/tienda"
+  if (view === "map") return "/mapa"
   if (view === "control") return "/control"
   if (view === "verification") return "/verificacion"
   if (view === "admin") return "/admin"
@@ -945,6 +964,21 @@ function formatDate(iso: string) {
     hour: "2-digit",
     minute: "2-digit",
   })
+}
+
+function toDateTimeInputValue(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, "0")
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function formatMissionCountdown(targetIso: string, now: number) {
+  const remainingSeconds = Math.max(0, Math.floor((new Date(targetIso).getTime() - now) / 1000))
+  const days = Math.floor(remainingSeconds / 86400)
+  const hours = Math.floor((remainingSeconds % 86400) / 3600)
+  const minutes = Math.floor((remainingSeconds % 3600) / 60)
+  const seconds = remainingSeconds % 60
+  if (days > 0) return `${days}d ${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m`
+  return `${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`
 }
 
 function formatServerUptime(onlineSince: string | null) {
@@ -2348,6 +2382,460 @@ function StoreView({
   )
 }
 
+// ─── Map / mission board ───────────────────────────────────────────────────────
+
+function MapView({ currentUser, users, setView, onOpenProfile }: { currentUser: User; users: User[]; setView: (view: View) => void; onOpenProfile: (user: User) => void }) {
+  const mapContainerRef = useRef<HTMLElement>(null)
+  const [mapUrl, setMapUrl] = useState("https://projectzomboidmap.com/es/")
+  const [missions, setMissions] = useState<MapMission[]>([])
+  const [isCreating, setIsCreating] = useState(false)
+  const [editingMissionId, setEditingMissionId] = useState<string | null>(null)
+  const [showMissionPanel, setShowMissionPanel] = useState(false)
+  const [missionFilter, setMissionFilter] = useState<"active" | "completed">("active")
+  const [pendingMissionJoinId, setPendingMissionJoinId] = useState<string | null>(null)
+  const [pendingMissionDeleteId, setPendingMissionDeleteId] = useState<string | null>(null)
+  const [isAccountVerified, setIsAccountVerified] = useState(false)
+  const [isVerificationCheckReady, setIsVerificationCheckReady] = useState(false)
+  const [form, setForm] = useState({ title: "", location: "", description: "", requirements: "", reward: "", rewardImageUrl: "", coordinateX: "", coordinateY: "", coordinateZoom: "232" })
+  const [missionStartAt, setMissionStartAt] = useState(() => toDateTimeInputValue(new Date()))
+  const [missionDeadlineAt, setMissionDeadlineAt] = useState(() => toDateTimeInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000)))
+  const [coordinatesError, setCoordinatesError] = useState("")
+  const [currentTime, setCurrentTime] = useState(() => Date.now())
+  const canManageMissions = currentUser.role === "admin" || currentUser.role === "moderator"
+  const visibleMissions = missions.filter((mission) => mission.status === missionFilter)
+  const pendingMission = missions.find((mission) => mission.id === pendingMissionJoinId) || null
+  const pendingMissionToDelete = missions.find((mission) => mission.id === pendingMissionDeleteId) || null
+
+  useEffect(() => {
+    let mounted = true
+    async function loadMissions() {
+      const [{ data: missionRows, error: missionError }, { data: participantRows, error: participantError }] = await Promise.all([
+        supabase.from("missions").select("id, title, location, description, requirements, reward, reward_image_url, coordinates, status, created_at, start_at, deadline_at").order("created_at", { ascending: false }),
+        supabase.from("mission_participants").select("mission_id, user_id"),
+      ])
+      if (!mounted) return
+      if (missionError || participantError) {
+        console.error("Could not load missions", missionError || participantError)
+        return
+      }
+      const participantsByMission = new Map<string, string[]>()
+      for (const row of participantRows || []) {
+        const usersForMission = participantsByMission.get(row.mission_id) || []
+        participantsByMission.set(row.mission_id, [...usersForMission, row.user_id])
+      }
+      setMissions((missionRows || []).map((row) => ({
+        id: row.id,
+        title: row.title,
+        location: row.location,
+        description: row.description,
+        requirements: row.requirements || "",
+        reward: row.reward || "",
+        rewardImageUrl: row.reward_image_url || undefined,
+        coordinates: row.coordinates,
+        status: row.status,
+        createdAt: row.created_at,
+        startAt: row.start_at,
+        deadlineAt: row.deadline_at,
+        joinedUserIds: participantsByMission.get(row.id) || [],
+      })))
+    }
+    void loadMissions()
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+    void supabase
+      .from("player_links")
+      .select("id")
+      .eq("forum_user_id", currentUser.id)
+      .eq("verified", true)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!mounted) return
+        setIsAccountVerified(Boolean(data))
+        setIsVerificationCheckReady(true)
+      })
+      .catch(() => {
+        if (!mounted) return
+        setIsAccountVerified(false)
+        setIsVerificationCheckReady(true)
+      })
+
+    return () => {
+      mounted = false
+    }
+  }, [currentUser.id])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTime(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  async function toggleMissionStatus(missionId: string) {
+    if (!canManageMissions) return
+    const mission = missions.find((item) => item.id === missionId)
+    if (!mission) return
+    const status = mission.status === "completed" ? "active" : "completed"
+    const { error } = await supabase.from("missions").update({ status }).eq("id", missionId)
+    if (error) {
+      console.error("Could not update mission status", error)
+      return
+    }
+    setMissions((previous) => previous.map((item) => item.id === missionId ? { ...item, status } : item))
+  }
+
+  function toggleMissionMembership(missionId: string) {
+    const mission = missions.find((item) => item.id === missionId)
+    if (!mission || mission.status === "completed") return
+    if ((mission.joinedUserIds || []).includes(currentUser.id)) return
+    setPendingMissionJoinId(missionId)
+  }
+
+  async function confirmMissionMembership() {
+    if (!pendingMissionJoinId) return
+    const { error } = await supabase.from("mission_participants").insert({ mission_id: pendingMissionJoinId, user_id: currentUser.id })
+    if (error && error.code !== "23505") {
+      console.error("Could not join mission", error)
+      return
+    }
+    setMissions((previous) => previous.map((mission) => mission.id === pendingMissionJoinId
+      ? { ...mission, joinedUserIds: [...new Set([...(mission.joinedUserIds || []), currentUser.id])] }
+      : mission))
+    setPendingMissionJoinId(null)
+  }
+
+  async function confirmMissionDeletion() {
+    if (!canManageMissions || !pendingMissionDeleteId) return
+    const { error } = await supabase.from("missions").delete().eq("id", pendingMissionDeleteId)
+    if (error) {
+      console.error("Could not delete mission", error)
+      return
+    }
+    setMissions((previous) => previous.filter((item) => item.id !== pendingMissionDeleteId))
+    setPendingMissionDeleteId(null)
+  }
+
+  function resetMissionForm() {
+    setForm({ title: "", location: "", description: "", requirements: "", reward: "", rewardImageUrl: "", coordinateX: "", coordinateY: "", coordinateZoom: "232" })
+    setMissionStartAt(toDateTimeInputValue(new Date()))
+    setMissionDeadlineAt(toDateTimeInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000)))
+    setEditingMissionId(null)
+    setCoordinatesError("")
+  }
+
+  function editMission(mission: MapMission) {
+    if (!canManageMissions) return
+    const [coordinateX = "", coordinateY = "", coordinateZoom = "232"] = mission.coordinates.split("x")
+    setForm({
+      title: mission.title,
+      location: mission.location,
+      description: mission.description,
+      requirements: mission.requirements,
+      reward: mission.reward,
+      rewardImageUrl: mission.rewardImageUrl || "",
+      coordinateX,
+      coordinateY,
+      coordinateZoom,
+    })
+    setMissionStartAt(mission.startAt ? toDateTimeInputValue(new Date(mission.startAt)) : toDateTimeInputValue(new Date()))
+    setMissionDeadlineAt(mission.deadlineAt ? toDateTimeInputValue(new Date(mission.deadlineAt)) : toDateTimeInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000)))
+    setEditingMissionId(mission.id)
+    setIsCreating(true)
+    setCoordinatesError("")
+  }
+
+  async function submitMission(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!canManageMissions) return
+    if (!form.title.trim() || !form.location.trim() || !form.description.trim()) return
+    const coordinateX = form.coordinateX.trim()
+    const coordinateY = form.coordinateY.trim()
+    const coordinateZoom = form.coordinateZoom.trim()
+    const startDate = new Date(missionStartAt)
+    const endDate = new Date(missionDeadlineAt)
+    if (!/^\d+$/.test(coordinateX) || !/^\d+$/.test(coordinateY) || !/^\d+$/.test(coordinateZoom)) {
+      setCoordinatesError("Introduce solo números en los campos X, Y y zoom.")
+      return
+    }
+    if (!missionStartAt || !missionDeadlineAt || Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate >= endDate) {
+      setCoordinatesError("Selecciona una fecha de inicio y fin válidas. La fecha de fin debe ser posterior a la de inicio.")
+      return
+    }
+    setCoordinatesError("")
+    const coordinates = `${coordinateX}x${coordinateY}x${coordinateZoom}`
+    if (editingMissionId) {
+      const { error } = await supabase.from("missions").update({
+        title: form.title.trim(),
+        location: form.location.trim(),
+        description: form.description.trim(),
+        requirements: form.requirements.trim(),
+        reward: form.reward.trim(),
+        reward_image_url: form.rewardImageUrl.trim() || null,
+        coordinates,
+        start_at: startDate.toISOString(),
+        deadline_at: endDate.toISOString(),
+      }).eq("id", editingMissionId)
+      if (error) {
+        setCoordinatesError("No se pudo guardar la misión en Supabase.")
+        console.error("Could not update mission", error)
+        return
+      }
+      setMissions((previous) => previous.map((mission) => mission.id === editingMissionId
+        ? { ...mission, title: form.title.trim(), location: form.location.trim(), description: form.description.trim(), requirements: form.requirements.trim(), reward: form.reward.trim(), rewardImageUrl: form.rewardImageUrl.trim() || undefined, coordinates, startAt: startDate.toISOString(), deadlineAt: endDate.toISOString() }
+        : mission))
+    } else {
+      const { data, error } = await supabase.from("missions").insert({
+        title: form.title.trim(),
+        location: form.location.trim(),
+        description: form.description.trim(),
+        requirements: form.requirements.trim(),
+        reward: form.reward.trim(),
+        reward_image_url: form.rewardImageUrl.trim() || null,
+        coordinates,
+        status: "active",
+        created_by: currentUser.id,
+        start_at: startDate.toISOString(),
+        deadline_at: endDate.toISOString(),
+      }).select("id, title, location, description, requirements, reward, reward_image_url, coordinates, status, created_at, start_at, deadline_at").single()
+      if (error || !data) {
+        setCoordinatesError("No se pudo publicar la misión en Supabase.")
+        console.error("Could not create mission", error)
+        return
+      }
+      setMissions((previous) => [{
+        id: data.id,
+        title: data.title,
+        location: data.location,
+        description: data.description,
+        requirements: data.requirements || "",
+        reward: data.reward || "",
+        rewardImageUrl: data.reward_image_url || undefined,
+        coordinates: data.coordinates,
+        status: data.status,
+        createdAt: data.created_at,
+        startAt: data.start_at,
+        deadlineAt: data.deadline_at,
+        joinedUserIds: [],
+      }, ...previous])
+    }
+    resetMissionForm()
+    setIsCreating(false)
+  }
+
+  function handleRewardImageChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : ""
+      setForm((previous) => ({ ...previous, rewardImageUrl: result }))
+    }
+    reader.readAsDataURL(file)
+    event.target.value = ""
+  }
+
+  function focusMap(coordinates?: string) {
+    if (coordinates) {
+      const coordinateParts = coordinates.split("x").filter(Boolean)
+      const mapCoordinates = coordinateParts.length >= 3 ? coordinates : `${coordinates}x232`
+      setMapUrl(`https://projectzomboidmap.com/es/#${mapCoordinates}`)
+    }
+    mapContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
+  }
+
+  if (!isVerificationCheckReady) {
+    return (
+      <main className="map-workspace">
+        <div className="mission-locked-panel">
+          <span className="map-kicker">ACCESO</span>
+          <h2>Cargando mapa de misiones…</h2>
+        </div>
+      </main>
+    )
+  }
+
+  if (!isAccountVerified) {
+    return (
+      <main className="map-workspace">
+        <div className="mission-locked-panel">
+          <span className="map-kicker">ACCESO RESTRINGIDO</span>
+          <h2>Cuenta no verificada</h2>
+          <p>Para ver y participar en las misiones debes tener la cuenta verificada. Haz la verificación desde el apartado de verificación del foro.</p>
+          <button type="button" className="mission-locked-button" onClick={() => setView("verification")}>VERIFICAR CUENTA</button>
+        </div>
+      </main>
+    )
+  }
+
+  return (
+    <>
+      {pendingMission && (
+        <div className="mission-confirm-backdrop" role="dialog" aria-modal="true" aria-labelledby="mission-confirm-title" onClick={() => setPendingMissionJoinId(null)}>
+          <div className="mission-confirm-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="mission-confirm-header">
+              <span className="map-kicker">CONFIRMACIÓN</span>
+              <button type="button" className="mission-confirm-close" onClick={() => setPendingMissionJoinId(null)} aria-label="Cerrar confirmación">×</button>
+            </div>
+
+            <div className="mission-confirm-body">
+              <div className="mission-confirm-icon">!</div>
+              <div className="mission-confirm-copy">
+                <h3 id="mission-confirm-title">Unirte a la misión</h3>
+                <p>
+                  ¿Quieres unirte a <strong>{pendingMission.title}</strong>?<br />
+                  Una vez que aceptes, no podrás salir de ella.
+                </p>
+              </div>
+            </div>
+
+            <div className="mission-confirm-actions">
+              <button type="button" className="mission-confirm-cancel" onClick={() => setPendingMissionJoinId(null)}>Cancelar</button>
+              <button type="button" className="mission-confirm-accept" onClick={confirmMissionMembership}>Aceptar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingMissionToDelete && (
+        <div className="mission-confirm-backdrop" role="dialog" aria-modal="true" aria-labelledby="mission-delete-title" onClick={() => setPendingMissionDeleteId(null)}>
+          <div className="mission-confirm-modal mission-confirm-modal-danger" onClick={(event) => event.stopPropagation()}>
+            <div className="mission-confirm-header">
+              <span className="map-kicker">CONFIRMACIÓN</span>
+              <button type="button" className="mission-confirm-close" onClick={() => setPendingMissionDeleteId(null)} aria-label="Cerrar confirmación">×</button>
+            </div>
+
+            <div className="mission-confirm-body">
+              <div className="mission-confirm-icon mission-confirm-icon-danger">!</div>
+              <div className="mission-confirm-copy">
+                <h3 id="mission-delete-title">Eliminar misión</h3>
+                <p>
+                  ¿Seguro que quieres eliminar <strong>{pendingMissionToDelete.title}</strong>?<br />
+                  Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+
+            <div className="mission-confirm-actions">
+              <button type="button" className="mission-confirm-cancel" onClick={() => setPendingMissionDeleteId(null)}>Cancelar</button>
+              <button type="button" className="mission-confirm-delete" onClick={confirmMissionDeletion}>Eliminar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <main className="map-workspace">
+      <div className="map-workspace-heading">
+        <div>
+          <button className="map-back-link" type="button" onClick={() => setView("forum")}>← Volver al foro</button>
+          <h1>Mapa y misiones</h1>
+          <p>Explora el mapa, localiza puntos de interés y coordina misiones para la comunidad.</p>
+        </div>
+      </div>
+
+      <div className="map-layout">
+        <section ref={mapContainerRef} className="map-frame-panel" aria-label="Mapa navegable de Project Zomboid">
+          <div className="map-frame-toolbar">
+            <span><i /> MAPA</span>
+            <small>Explora, busca ubicaciones y consulta el mundo.</small>
+          </div>
+          <iframe className="pz-map-frame" title="Mapa navegable de Project Zomboid B42" src={mapUrl} loading="lazy" />
+          <div className="map-frame-note">Usa sus controles para explorar, buscar ubicaciones y consultar el mundo.</div>
+        </section>
+
+        <div className="mission-toggle-shell">
+          <button className="mission-toggle-button" type="button" onClick={() => setShowMissionPanel((value) => !value)}>{showMissionPanel ? "OCULTAR MISIONES" : "VER MISIONES"}</button>
+        </div>
+
+        <div className={`mission-panel-collapsible ${showMissionPanel ? "is-open" : ""}`}>
+          <aside className="mission-board">
+            <div className="mission-board-header">
+              <div><h2>Misiones disponibles</h2></div>
+              <div className="mission-board-actions"><button type="button" className="mission-filter-button" onClick={() => setMissionFilter((value) => value === "active" ? "completed" : "active")}>{missionFilter === "active" ? "VER COMPLETADAS" : "VER MISIONES ACTIVAS"}</button>{canManageMissions && <button type="button" className="mission-create-button" onClick={() => { if (isCreating) { resetMissionForm(); setIsCreating(false) } else { resetMissionForm(); setIsCreating(true) } }}>{isCreating ? "CANCELAR" : "+ NUEVA MISIÓN"}</button>}</div>
+            </div>
+            <div className="mission-role-warning"><strong>IMPORTANTE</strong><span>El rol de la misión y toda la preparación necesaria deben desarrollarse en su hilo de personaje. Este panel sirve para coordinar participantes y consultar el objetivo. Si no se cumplen los requisitos, no se realiza ningún tipo de rol o no existe evidencia de ello en los hilos correspondientes, se retirará la recompensa sin previo aviso.</span></div>
+
+            {isCreating && canManageMissions && (
+              <div className="mission-form-panel">
+                <div className="mission-form-header">
+                  <h3>{editingMissionId ? "Editar misión" : "Crear misión"}</h3>
+                </div>
+                <form className="mission-form" onSubmit={submitMission}>
+                  <div className="mission-form-grid">
+                    <label>Título<input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Recuperar suministros" required /></label>
+                    <label>Zona o ubicación<input value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Riverside, almacén norte" required /></label>
+                    <label className="mission-form-wide">Descripción<textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Qué deben hacer los jugadores..." required /></label>
+                    <label className="mission-form-wide">Requisitos<textarea value={form.requirements} onChange={(event) => setForm({ ...form, requirements: event.target.value })} placeholder="Nivel, objetos, grupo mínimo..." /></label>
+                    <div className="mission-schedule-grid">
+                      <label>Coordenadas<div className="coordinate-inputs"><span>X:</span><input value={form.coordinateX} onChange={(event) => { setCoordinatesError(""); setForm({ ...form, coordinateX: event.target.value.replace(/\D/g, "") }) }} placeholder="8276" inputMode="numeric" required /><span>Y:</span><input value={form.coordinateY} onChange={(event) => { setCoordinatesError(""); setForm({ ...form, coordinateY: event.target.value.replace(/\D/g, "") }) }} placeholder="11630" inputMode="numeric" required /></div></label>
+                      <label>Empieza<input lang="es-ES" type="datetime-local" value={missionStartAt} onChange={(event) => setMissionStartAt(event.target.value)} required /></label>
+                      <label>Termina<input lang="es-ES" type="datetime-local" value={missionDeadlineAt} onChange={(event) => setMissionDeadlineAt(event.target.value)} required /></label>
+                    </div>
+                  </div>
+
+                  <div className="mission-photo-block">
+                    <label className="store-upload mission-upload-box">
+                      {form.rewardImageUrl ? <img src={form.rewardImageUrl} alt="Vista previa de la recompensa" /> : <span>＋ Añadir foto de recompensa (opcional)</span>}
+                      <input type="file" accept="image/*" onChange={handleRewardImageChange} />
+                    </label>
+                  </div>
+
+                  <div className="mission-form-actions">
+                    {coordinatesError && <div className="mission-form-error">{coordinatesError}</div>}
+                    <button className="mission-submit-button" type="submit">{editingMissionId ? "GUARDAR CAMBIOS" : "PUBLICAR MISIÓN"}</button>
+                  </div>
+                  <small className="mission-local-note">Prototipo local: las misiones se guardan en este navegador.</small>
+                </form>
+              </div>
+            )}
+
+            <div className="mission-list">
+              {visibleMissions.length === 0 ? (
+                <div className="mission-empty"><strong>{missionFilter === "active" ? "No hay misiones activas" : "No hay misiones completadas"}</strong><span>{missionFilter === "active" ? "Administración puede crear el primer objetivo desde este panel." : "Las misiones completadas aparecerán aquí."}</span></div>
+              ) : visibleMissions.map((mission) => {
+                const joinedUserIds = mission.joinedUserIds || []
+                const joinedUsers = joinedUserIds.map((userId) => users.find((user) => user.id === userId)).filter((user): user is User => Boolean(user))
+                const isJoined = joinedUserIds.includes(currentUser.id)
+                return (
+                <article key={mission.id} className={`mission-card ${mission.status === "completed" ? "is-completed" : ""}`}>
+                  <div className="mission-card-top"><span className={`mission-status ${mission.status === "completed" ? "is-completed" : ""}`}>{mission.status === "completed" ? "COMPLETADA" : "ACTIVA"}</span><time>{formatDate(mission.createdAt)}</time></div>
+                  <h3>{mission.title}</h3>
+                  <div className="mission-location"><span>UBICACIÓN</span><strong>⌖ {mission.location}</strong></div>
+                  <div className="mission-details">
+                    <div className={`mission-countdown ${mission.status === "completed" ? "is-completed" : ""}`}>
+                      <b>{mission.status === "completed" ? "MISIÓN COMPLETADA" : mission.startAt && currentTime < new Date(mission.startAt).getTime() ? "COMIENZA EN" : mission.deadlineAt && currentTime < new Date(mission.deadlineAt).getTime() ? "TIEMPO RESTANTE" : "TIEMPO AGOTADO"}</b>
+                      <strong>{mission.status === "completed" ? "Objetivo cerrado" : mission.startAt && currentTime < new Date(mission.startAt).getTime() ? formatMissionCountdown(mission.startAt, currentTime) : mission.deadlineAt && currentTime < new Date(mission.deadlineAt).getTime() ? formatMissionCountdown(mission.deadlineAt, currentTime) : "00h 00m 00s"}</strong>
+                    </div>
+                    <div className="mission-description"><b>DESCRIPCIÓN</b><p>{mission.description}</p></div>
+                    {mission.requirements && <div className="mission-description"><b>REQUISITOS</b><span>{mission.requirements}</span></div>}
+                    {mission.coordinates && <div className="mission-description"><b>COORDENADAS</b><span>{mission.coordinates}</span></div>}
+                    <div className="mission-description">
+                      <b>PARTICIPANTES ({joinedUsers.length})</b>
+                      <span className="mission-participants">
+                        {joinedUsers.length > 0 ? joinedUsers.map((user) => <button key={user.id} type="button" onClick={() => onOpenProfile(user)}>{user.username}</button>) : "Aún no se ha unido nadie."}
+                      </span>
+                    </div>
+                    {mission.rewardImageUrl && <div className="mission-reward"><b>FOTO DE RECOMPENSA</b><img className="mission-reward-image" src={mission.rewardImageUrl} alt="Foto de la recompensa" /></div>}
+                    <button type="button" className="mission-join-button" onClick={() => toggleMissionMembership(mission.id)} disabled={mission.status === "completed" || isJoined}>{isJoined ? "YA ESTÁS UNIDO" : "UNIRME A LA MISIÓN"}</button>
+                    {canManageMissions && <button type="button" className="mission-complete-button" onClick={() => toggleMissionStatus(mission.id)}>{mission.status === "completed" ? "REABRIR MISIÓN" : "MARCAR COMO COMPLETADA"}</button>}
+                    {canManageMissions && <button type="button" className="mission-edit-button" onClick={() => editMission(mission)}>EDITAR MISIÓN</button>}
+                    {canManageMissions && <button type="button" className="mission-delete-button" onClick={() => setPendingMissionDeleteId(mission.id)}>ELIMINAR</button>}
+                  </div>
+                </article>
+                )
+              })}
+            </div>
+          </aside>
+        </div>
+      </div>
+    </main>
+    </>
+  )
+}
+
 // ─── Header ───────────────────────────────────────────────────────────────────
 
 function Header({
@@ -2454,6 +2942,13 @@ function Header({
               style={{ ...navBtn, color: "var(--text-dim)", background: "transparent", padding: "10px 22px" }}
             >
               TIENDA
+            </button>
+            <button
+              className={`header-primary-link ${view === "map" ? "is-active" : ""}`}
+              onClick={() => setView("map")}
+              style={{ ...navBtn, color: "var(--text-dim)", background: "transparent", padding: "10px 22px" }}
+            >
+              MISIONES
             </button>
             <button
               className={`header-primary-link ${view === "members" ? "is-active" : ""}`}
@@ -7786,6 +8281,7 @@ export default function App() {
         />
       )}
       {view === "server" && <ServerView users={users} onOpenProfile={handleOpenProfile} onBack={handleGoBack} />}
+      {view === "map" && <MapView currentUser={currentUser} users={users} setView={setView} onOpenProfile={handleOpenProfile} />}
       {view === "control" && (
         <ControlPanelView
           currentUser={currentUser}

@@ -339,6 +339,68 @@ create table public.server_activity (
   created_at timestamptz not null default timezone('utc', now())
 );
 
+-- Shared mission board used by the map view.
+create table if not exists public.missions (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  location text not null,
+  description text not null,
+  requirements text not null default '',
+  reward text not null default '',
+  reward_image_url text,
+  coordinates text not null,
+  status text not null default 'active' check (status in ('active', 'completed')),
+  created_by uuid not null references public.profiles(id) on delete restrict,
+  created_at timestamptz not null default timezone('utc', now()),
+  start_at timestamptz not null,
+  deadline_at timestamptz not null,
+  constraint missions_deadline_after_start check (deadline_at > start_at)
+);
+
+create table if not exists public.mission_participants (
+  mission_id uuid not null references public.missions(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  joined_at timestamptz not null default timezone('utc', now()),
+  primary key (mission_id, user_id)
+);
+
+alter table public.missions enable row level security;
+alter table public.mission_participants enable row level security;
+
+drop policy if exists "Authenticated users can read missions" on public.missions;
+create policy "Authenticated users can read missions"
+on public.missions for select
+using (auth.role() = 'authenticated');
+
+drop policy if exists "Staff can create missions" on public.missions;
+create policy "Staff can create missions"
+on public.missions for insert
+with check (
+  auth.uid() = created_by
+  and exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'moderator'))
+);
+
+drop policy if exists "Staff can update missions" on public.missions;
+create policy "Staff can update missions"
+on public.missions for update
+using (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'moderator')))
+with check (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'moderator')));
+
+drop policy if exists "Staff can delete missions" on public.missions;
+create policy "Staff can delete missions"
+on public.missions for delete
+using (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'moderator')));
+
+drop policy if exists "Authenticated users can read mission participants" on public.mission_participants;
+create policy "Authenticated users can read mission participants"
+on public.mission_participants for select
+using (auth.role() = 'authenticated');
+
+drop policy if exists "Users can join missions" on public.mission_participants;
+create policy "Users can join missions"
+on public.mission_participants for insert
+with check (auth.uid() = user_id);
+
 insert into public.server_status (id)
 values ('main')
 on conflict (id) do nothing;

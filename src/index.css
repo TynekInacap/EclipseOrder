@@ -3281,6 +3281,21 @@ body {
 
 .character-thread-head span:nth-child(n + 2) { text-align: center; }
 
+.character-thread-table {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 220px);
+}
+
+.character-thread-table .character-thread-head {
+  flex: 0 0 auto;
+}
+
+.character-thread-row {
+  flex: 1 1 0;
+  min-height: 58px;
+}
+
 .faction-thread-head span:nth-child(n + 2) {
   text-align: center;
 }
@@ -3977,6 +3992,15 @@ body {
 @media (max-width: 820px) {
   .forum-category-stats {
     width: 98px;
+  }
+
+  .character-thread-table {
+    min-height: 0;
+  }
+
+  .character-thread-row {
+    flex: 0 0 auto;
+    min-height: 70px;
   }
 
   .forum-category-stats span {

@@ -3514,6 +3514,7 @@ function CharacterSubforumView({
           return (
             <button
               key={thread.id}
+              className="character-thread-row"
               onClick={() => {
                 setSelectedThread(thread.id)
                 setView("thread")
@@ -3569,7 +3570,7 @@ function CharacterSubforumView({
         </button>}
       </div>
       <section>
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+        <div className="character-thread-table" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
           {renderCharacterRows(visibleThreads, subforum === "cerrados" ? "No hay fichas cerradas." : "No hay fichas de personajes activas.")}
         </div>
       </section>

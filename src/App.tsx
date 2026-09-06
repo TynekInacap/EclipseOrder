@@ -7539,6 +7539,7 @@ export default function App() {
         .eq("thread_id", threadId)
       if (error) {
         console.error("Could not delete reply", error)
+        window.alert("No se pudo eliminar la respuesta. Comprueba que tu cuenta tenga permisos de moderación.")
         return
       }
       setThreads((previousThreads) => previousThreads.map((item) => item.id === threadId ? {

@@ -612,9 +612,16 @@ create policy "Authenticated users can create replies"
 on public.replies for insert
 with check (auth.uid() = author_id);
 
-create policy "Authors can delete replies"
+-- Migration for existing installations: allow staff to moderate replies.
+drop policy if exists "Authors can delete replies" on public.replies;
+drop policy if exists "Authors and staff can delete replies" on public.replies;
+
+create policy "Authors and staff can delete replies"
 on public.replies for delete
-using (auth.uid() = author_id);
+using (
+  auth.uid() = author_id
+  or exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'moderator'))
+);
 
 create policy "Authenticated users can read thread attachments"
 on public.thread_attachments for select

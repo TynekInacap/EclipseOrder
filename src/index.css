@@ -3284,6 +3284,10 @@ body {
 .character-thread-table {
   display: flex;
   flex-direction: column;
+  min-height: 0;
+}
+
+.character-thread-table[data-thread-count="10"] {
   min-height: calc(100vh - 220px);
 }
 

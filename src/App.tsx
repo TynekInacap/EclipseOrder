@@ -534,6 +534,7 @@ type AttachmentRow = {
 }
 
 const ATTACHMENTS_BUCKET = "forum-attachments"
+const SUPABASE_REFRESH_INTERVAL = 120_000
 
 function attachmentUrl(row: AttachmentRow) {
   if (row.storage_path) {
@@ -2397,6 +2398,7 @@ function MapView({ currentUser, users, setView, onOpenProfile }: { currentUser: 
   const [isAccountVerified, setIsAccountVerified] = useState(false)
   const [isVerificationCheckReady, setIsVerificationCheckReady] = useState(false)
   const [form, setForm] = useState({ title: "", location: "", description: "", requirements: "", reward: "", rewardImageUrl: "", coordinateX: "", coordinateY: "", coordinateZoom: "232" })
+  const [rewardImageFile, setRewardImageFile] = useState<File | null>(null)
   const [missionStartAt, setMissionStartAt] = useState(() => toDateTimeInputValue(new Date()))
   const [missionDeadlineAt, setMissionDeadlineAt] = useState(() => toDateTimeInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000)))
   const [coordinatesError, setCoordinatesError] = useState("")
@@ -2520,6 +2522,7 @@ function MapView({ currentUser, users, setView, onOpenProfile }: { currentUser: 
 
   function resetMissionForm() {
     setForm({ title: "", location: "", description: "", requirements: "", reward: "", rewardImageUrl: "", coordinateX: "", coordinateY: "", coordinateZoom: "232" })
+    setRewardImageFile(null)
     setMissionStartAt(toDateTimeInputValue(new Date()))
     setMissionDeadlineAt(toDateTimeInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000)))
     setEditingMissionId(null)
@@ -2540,6 +2543,7 @@ function MapView({ currentUser, users, setView, onOpenProfile }: { currentUser: 
       coordinateY,
       coordinateZoom,
     })
+    setRewardImageFile(null)
     setMissionStartAt(mission.startAt ? toDateTimeInputValue(new Date(mission.startAt)) : toDateTimeInputValue(new Date()))
     setMissionDeadlineAt(mission.deadlineAt ? toDateTimeInputValue(new Date(mission.deadlineAt)) : toDateTimeInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000)))
     setEditingMissionId(mission.id)
@@ -2566,6 +2570,22 @@ function MapView({ currentUser, users, setView, onOpenProfile }: { currentUser: 
     }
     setCoordinatesError("")
     const coordinates = `${coordinateX}x${coordinateY}x${coordinateZoom}`
+    let rewardImageUrl = form.rewardImageUrl.trim() || null
+    const legacyRewardImage = rewardImageUrl?.startsWith("data:") ? rewardImageUrl : null
+    if (rewardImageFile || legacyRewardImage) {
+      const imageBlob = rewardImageFile || await fetch(legacyRewardImage as string).then((response) => response.blob())
+      const extension = (rewardImageFile?.name.split(".").pop() || imageBlob.type.split("/")[1] || "bin").toLowerCase().replace(/[^a-z0-9]/g, "") || "bin"
+      const path = `missions/${currentUser.id}/${crypto.randomUUID()}.${extension}`
+      const { error: uploadError } = await supabase.storage.from("store-media").upload(path, imageBlob, {
+        contentType: imageBlob.type || "application/octet-stream",
+        upsert: false,
+      })
+      if (uploadError) {
+        setCoordinatesError(`No se pudo subir la imagen de recompensa: ${uploadError.message}`)
+        return
+      }
+      rewardImageUrl = supabase.storage.from("store-media").getPublicUrl(path).data.publicUrl
+    }
     if (editingMissionId) {
       const { error } = await supabase.from("missions").update({
         title: form.title.trim(),
@@ -2573,7 +2593,7 @@ function MapView({ currentUser, users, setView, onOpenProfile }: { currentUser: 
         description: form.description.trim(),
         requirements: form.requirements.trim(),
         reward: form.reward.trim(),
-        reward_image_url: form.rewardImageUrl.trim() || null,
+        reward_image_url: rewardImageUrl,
         coordinates,
         start_at: startDate.toISOString(),
         deadline_at: endDate.toISOString(),
@@ -2584,7 +2604,7 @@ function MapView({ currentUser, users, setView, onOpenProfile }: { currentUser: 
         return
       }
       setMissions((previous) => previous.map((mission) => mission.id === editingMissionId
-        ? { ...mission, title: form.title.trim(), location: form.location.trim(), description: form.description.trim(), requirements: form.requirements.trim(), reward: form.reward.trim(), rewardImageUrl: form.rewardImageUrl.trim() || undefined, coordinates, startAt: startDate.toISOString(), deadlineAt: endDate.toISOString() }
+        ? { ...mission, title: form.title.trim(), location: form.location.trim(), description: form.description.trim(), requirements: form.requirements.trim(), reward: form.reward.trim(), rewardImageUrl: rewardImageUrl || undefined, coordinates, startAt: startDate.toISOString(), deadlineAt: endDate.toISOString() }
         : mission))
     } else {
       const { data, error } = await supabase.from("missions").insert({
@@ -2593,7 +2613,7 @@ function MapView({ currentUser, users, setView, onOpenProfile }: { currentUser: 
         description: form.description.trim(),
         requirements: form.requirements.trim(),
         reward: form.reward.trim(),
-        reward_image_url: form.rewardImageUrl.trim() || null,
+        reward_image_url: rewardImageUrl,
         coordinates,
         status: "active",
         created_by: currentUser.id,
@@ -2629,6 +2649,7 @@ function MapView({ currentUser, users, setView, onOpenProfile }: { currentUser: 
     const file = event.target.files?.[0]
     if (!file) return
 
+    setRewardImageFile(file)
     const reader = new FileReader()
     reader.onload = () => {
       const result = typeof reader.result === "string" ? reader.result : ""
@@ -2875,7 +2896,9 @@ function Header({
     }
 
     void loadServerStatus()
-    const refreshTimer = window.setInterval(loadServerStatus, 30_000)
+    const refreshTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void loadServerStatus()
+    }, SUPABASE_REFRESH_INTERVAL)
     return () => {
       mounted = false
       window.clearInterval(refreshTimer)
@@ -2883,7 +2906,9 @@ function Header({
   }, [])
 
   useEffect(() => {
-    const refreshTimer = window.setInterval(onRefreshNotifications, 30_000)
+    const refreshTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") onRefreshNotifications()
+    }, SUPABASE_REFRESH_INTERVAL)
     return () => window.clearInterval(refreshTimer)
   }, [onRefreshNotifications])
 
@@ -4849,7 +4874,9 @@ function ServerView({ users, onOpenProfile, onBack }: { users: User[]; onOpenPro
     }
 
     void loadServerPresence()
-    const refreshTimer = window.setInterval(loadServerPresence, 30_000)
+    const refreshTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void loadServerPresence()
+    }, SUPABASE_REFRESH_INTERVAL)
     return () => {
       mounted = false
       window.clearInterval(refreshTimer)
@@ -5631,7 +5658,7 @@ function ThreadView({
   const author = users.find((u) => u.id === thread.authorId)
   const authorBadges = author ? calculateUserBadges(author, threads, users, false) : []
   const isStaff = currentUser.role !== "user"
-  const canEditThread = thread.category === "historias" && currentUser.id === thread.authorId
+  const canEditThread = thread.category === "historias" && thread.status !== "cerrado" && currentUser.id === thread.authorId
   const canDeleteThread = currentUser.id === thread.authorId || currentUser.role === "admin"
   const canAddThreadRolePoints = thread.category === "historias" && currentUser.role === "admin"
   const isFactionReadOnly = thread.category === "facciones" && (thread.subforum === "formato" || thread.subforum === "oficial")
@@ -5642,6 +5669,7 @@ function ThreadView({
   const canClaimFactionPoints = currentUser.id === thread.authorId && factionRolePoints > 0 && !thread.factionRolePointsClaimed
 
   function startEditing() {
+    if (!canEditThread) return
     setEditTitle(thread.title)
     setEditContent(thread.content)
     setEditError("")
@@ -5650,6 +5678,10 @@ function ThreadView({
 
   function handleEditSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!canEditThread) {
+      setIsEditing(false)
+      return
+    }
     if (editTitle.trim().length < 5) {
       setEditError("El título debe tener al menos 5 caracteres.")
       return
@@ -5801,7 +5833,7 @@ function ThreadView({
                 </button>
               )}
             </div>
-            {isEditing ? (
+            {isEditing && canEditThread ? (
               <form onSubmit={handleEditSubmit} style={{ marginBottom: 12 }}>
                 {editError && (
                   <div style={{ background: "#c0392b18", border: "1px solid #c0392b55", borderRadius: 4, padding: "8px 12px", color: "#e74c3c", fontSize: 13, marginBottom: 10 }}>
@@ -7030,7 +7062,9 @@ export default function App() {
     }
 
     void loadServerPlaytimeData()
-    const refreshTimer = window.setInterval(() => { void loadServerPlaytimeData() }, 30_000)
+    const refreshTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void loadServerPlaytimeData()
+    }, SUPABASE_REFRESH_INTERVAL)
     return () => {
       mounted = false
       window.clearInterval(refreshTimer)
@@ -7842,9 +7876,18 @@ export default function App() {
 
   async function handleEditThread(threadId: string, title: string, content: string) {
     if (!currentUser) return
+    const thread = threads.find((item) => item.id === threadId)
+    if (!thread || thread.status === "cerrado" || thread.authorId !== currentUser.id) return
     const editedAt = new Date().toISOString()
-    const { error } = await supabase.from("threads").update({ title, content, edited_at: editedAt }).eq("id", threadId).eq("author_id", currentUser.id)
-    if (error) {
+    const { data, error } = await supabase
+      .from("threads")
+      .update({ title, content, edited_at: editedAt })
+      .eq("id", threadId)
+      .eq("author_id", currentUser.id)
+      .neq("status", "cerrado")
+      .select("id")
+      .maybeSingle()
+    if (error || !data) {
       console.error("Could not edit thread", error)
       return
     }

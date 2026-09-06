@@ -7,7 +7,6 @@ import siteLogoImg from "@/imports/final123.png"
 import defaultBannerImg from "@/imports/default-banner.jpg"
 import eclipseGif from "@/imports/giphy.gif"
 import accountNameGuideImg from "@/imports/server-guide.png"
-
 const DEFAULT_BANNER_URL = defaultBannerImg
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -5135,7 +5134,7 @@ function ThreadView({
   const canDeleteThread = currentUser.id === thread.authorId || currentUser.role === "admin"
   const canAddThreadRolePoints = thread.category === "historias" && currentUser.role === "admin"
   const isFactionReadOnly = thread.category === "facciones" && (thread.subforum === "formato" || thread.subforum === "oficial")
-  const canReply = !isFactionReadOnly && thread.category !== "normativa" && !thread.adminOnly && (thread.status === "abierto" || thread.status === "en_revision" || isStaff)
+  const canReply = !isFactionReadOnly && thread.category !== "normativa" && !thread.adminOnly && thread.status !== "cerrado"
   const canMoveFactionThread = currentUser.role === "admin" && thread.category === "facciones" && thread.subforum !== "oficial"
   const factionRolePoints = thread.factionRolePoints || 0
   const canManageFactionPoints = currentUser.role === "admin" && thread.category === "facciones"
@@ -5207,6 +5206,10 @@ function ThreadView({
     if (isSubmitting) return
     if (thread.category === "normativa") {
       setError("No se pueden añadir respuestas en la sección de Normativa.")
+      return
+    }
+    if (thread.status === "cerrado") {
+      setError("Este hilo está cerrado y no acepta más respuestas.")
       return
     }
     if (thread.category === "facciones" && (thread.subforum === "formato" || thread.subforum === "oficial")) {
@@ -5619,11 +5622,13 @@ function ThreadView({
                       {reply.editedAt && <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}> · EDITADO</span>}
                     </div>
                     </div>
-                    {reply.authorId === currentUser.id && (
+                    {(reply.authorId === currentUser.id || currentUser.role !== "user") && (
                       <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                        <button onClick={() => startEditingReply(reply)} style={{ ...primaryBtn, width: "auto", background: "transparent", border: "1px solid var(--border2)", color: "var(--text-muted)", boxShadow: "none", padding: "5px 8px", fontSize: 9 }}>
-                          EDITAR
-                        </button>
+                        {reply.authorId === currentUser.id && (
+                          <button onClick={() => startEditingReply(reply)} style={{ ...primaryBtn, width: "auto", background: "transparent", border: "1px solid var(--border2)", color: "var(--text-muted)", boxShadow: "none", padding: "5px 8px", fontSize: 9 }}>
+                            EDITAR
+                          </button>
+                        )}
                         <button onClick={() => onDeleteReply(thread.id, reply.id)} style={{ background: "transparent", border: "1px solid rgba(239,68,68,0.32)", borderRadius: 6, color: "#fca5a5", cursor: "pointer", padding: "5px 8px", fontSize: 9, fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.06em" }}>
                           ELIMINAR
                         </button>
@@ -7522,7 +7527,7 @@ export default function App() {
   async function handleDeleteReply(threadId: string, replyId: string) {
     const thread = threads.find((item) => item.id === threadId)
     const reply = thread?.replies.find((item) => item.id === replyId)
-    if (!thread || !reply || reply.authorId !== currentUser?.id) return
+    if (!thread || !reply || (reply.authorId !== currentUser?.id && currentUser?.role === "user")) return
     if (!window.confirm("¿Seguro que quieres eliminar esta respuesta? Esta acción no se puede deshacer.")) return
     setOperationMessage("ELIMINANDO RESPUESTA...")
     try {
@@ -7531,7 +7536,6 @@ export default function App() {
         .delete()
         .eq("id", replyId)
         .eq("thread_id", threadId)
-        .eq("author_id", currentUser.id)
       if (error) {
         console.error("Could not delete reply", error)
         return
@@ -7540,7 +7544,9 @@ export default function App() {
         ...item,
         replies: item.replies.filter((entry) => entry.id !== replyId),
         replyCount: Math.max(0, threadReplyCount(item) - 1),
+        repliesLoaded: false,
       } : item))
+      await refreshForumState()
     } finally {
       setOperationMessage(null)
     }

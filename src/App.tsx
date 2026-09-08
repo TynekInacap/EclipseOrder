@@ -2393,6 +2393,7 @@ function MapView({ currentUser, users, setView, onOpenProfile }: { currentUser: 
   const [editingMissionId, setEditingMissionId] = useState<string | null>(null)
   const [showMissionPanel, setShowMissionPanel] = useState(false)
   const [missionFilter, setMissionFilter] = useState<"active" | "completed">("active")
+  const [expandedMissionId, setExpandedMissionId] = useState<string | null>(null)
   const [pendingMissionJoinId, setPendingMissionJoinId] = useState<string | null>(null)
   const [pendingMissionDeleteId, setPendingMissionDeleteId] = useState<string | null>(null)
   const [isAccountVerified, setIsAccountVerified] = useState(false)
@@ -2797,12 +2798,7 @@ function MapView({ currentUser, users, setView, onOpenProfile }: { currentUser: 
                     </div>
                   </div>
 
-                  <div className="mission-photo-block">
-                    <label className="store-upload mission-upload-box">
-                      {form.rewardImageUrl ? <img src={form.rewardImageUrl} alt="Vista previa de la recompensa" /> : <span>＋ Añadir foto de recompensa (opcional)</span>}
-                      <input type="file" accept="image/*" onChange={handleRewardImageChange} />
-                    </label>
-                  </div>
+                  <label className="mission-form-wide">Recompensa<textarea value={form.reward} onChange={(event) => setForm({ ...form, reward: event.target.value })} placeholder="PDR, FDR, objetos, etc..." /></label>
 
                   <div className="mission-form-actions">
                     {coordinatesError && <div className="mission-form-error">{coordinatesError}</div>}
@@ -2820,31 +2816,36 @@ function MapView({ currentUser, users, setView, onOpenProfile }: { currentUser: 
                 const joinedUserIds = mission.joinedUserIds || []
                 const joinedUsers = joinedUserIds.map((userId) => users.find((user) => user.id === userId)).filter((user): user is User => Boolean(user))
                 const isJoined = joinedUserIds.includes(currentUser.id)
+                const isExpanded = expandedMissionId === mission.id
+                const coordinateDisplay = mission.coordinates ? mission.coordinates.split("x").filter(Boolean).slice(0, 2).join("x") : ""
                 return (
                 <article key={mission.id} className={`mission-card ${mission.status === "completed" ? "is-completed" : ""}`}>
                   <div className="mission-card-top"><span className={`mission-status ${mission.status === "completed" ? "is-completed" : ""}`}>{mission.status === "completed" ? "COMPLETADA" : "ACTIVA"}</span><time>{formatDate(mission.createdAt)}</time></div>
                   <h3>{mission.title}</h3>
                   <div className="mission-location"><span>UBICACIÓN</span><strong>⌖ {mission.location}</strong></div>
-                  <div className="mission-details">
-                    <div className={`mission-countdown ${mission.status === "completed" ? "is-completed" : ""}`}>
-                      <b>{mission.status === "completed" ? "MISIÓN COMPLETADA" : mission.startAt && currentTime < new Date(mission.startAt).getTime() ? "COMIENZA EN" : mission.deadlineAt && currentTime < new Date(mission.deadlineAt).getTime() ? "TIEMPO RESTANTE" : "TIEMPO AGOTADO"}</b>
-                      <strong>{mission.status === "completed" ? "Objetivo cerrado" : mission.startAt && currentTime < new Date(mission.startAt).getTime() ? formatMissionCountdown(mission.startAt, currentTime) : mission.deadlineAt && currentTime < new Date(mission.deadlineAt).getTime() ? formatMissionCountdown(mission.deadlineAt, currentTime) : "00h 00m 00s"}</strong>
+                  <button type="button" className="mission-expand-button" onClick={() => setExpandedMissionId((current) => current === mission.id ? null : mission.id)}>{isExpanded ? "OCULTAR INFORMACIÓN" : "VER MÁS INFORMACIÓN"}</button>
+                  {isExpanded && (
+                    <div className="mission-details">
+                      <div className={`mission-countdown ${mission.status === "completed" ? "is-completed" : ""}`}>
+                        <b>{mission.status === "completed" ? "MISIÓN COMPLETADA" : mission.startAt && currentTime < new Date(mission.startAt).getTime() ? "COMIENZA EN" : mission.deadlineAt && currentTime < new Date(mission.deadlineAt).getTime() ? "TIEMPO RESTANTE" : "TIEMPO AGOTADO"}</b>
+                        <strong>{mission.status === "completed" ? "Objetivo cerrado" : mission.startAt && currentTime < new Date(mission.startAt).getTime() ? formatMissionCountdown(mission.startAt, currentTime) : mission.deadlineAt && currentTime < new Date(mission.deadlineAt).getTime() ? formatMissionCountdown(mission.deadlineAt, currentTime) : "00h 00m 00s"}</strong>
+                      </div>
+                      <div className="mission-description"><b>DESCRIPCIÓN</b><p>{mission.description}</p></div>
+                      {mission.requirements && <div className="mission-description"><b>REQUISITOS</b><span className="mission-text-block">{mission.requirements}</span></div>}
+                      {mission.reward && <div className="mission-description"><b>RECOMPENSA</b><span className="mission-text-block">{mission.reward}</span></div>}
+                      {coordinateDisplay && <div className="mission-description"><b>COORDENADAS</b><span>{coordinateDisplay}</span></div>}
+                      <div className="mission-description">
+                        <b>PARTICIPANTES ({joinedUsers.length})</b>
+                        <span className="mission-participants">
+                          {joinedUsers.length > 0 ? joinedUsers.map((user) => <button key={user.id} type="button" onClick={() => onOpenProfile(user)}>{user.username}</button>) : "Aún no se ha unido nadie."}
+                        </span>
+                      </div>
+                      <button type="button" className="mission-join-button" onClick={() => toggleMissionMembership(mission.id)} disabled={mission.status === "completed" || isJoined}>{isJoined ? "YA ESTÁS UNIDO" : "UNIRME A LA MISIÓN"}</button>
+                      {canManageMissions && <button type="button" className="mission-complete-button" onClick={() => toggleMissionStatus(mission.id)}>{mission.status === "completed" ? "REABRIR MISIÓN" : "MARCAR COMO COMPLETADA"}</button>}
+                      {canManageMissions && <button type="button" className="mission-edit-button" onClick={() => editMission(mission)}>EDITAR MISIÓN</button>}
+                      {canManageMissions && <button type="button" className="mission-delete-button" onClick={() => setPendingMissionDeleteId(mission.id)}>ELIMINAR</button>}
                     </div>
-                    <div className="mission-description"><b>DESCRIPCIÓN</b><p>{mission.description}</p></div>
-                    {mission.requirements && <div className="mission-description"><b>REQUISITOS</b><span>{mission.requirements}</span></div>}
-                    {mission.coordinates && <div className="mission-description"><b>COORDENADAS</b><span>{mission.coordinates}</span></div>}
-                    <div className="mission-description">
-                      <b>PARTICIPANTES ({joinedUsers.length})</b>
-                      <span className="mission-participants">
-                        {joinedUsers.length > 0 ? joinedUsers.map((user) => <button key={user.id} type="button" onClick={() => onOpenProfile(user)}>{user.username}</button>) : "Aún no se ha unido nadie."}
-                      </span>
-                    </div>
-                    {mission.rewardImageUrl && <div className="mission-reward"><b>FOTO DE RECOMPENSA</b><img className="mission-reward-image" src={mission.rewardImageUrl} alt="Foto de la recompensa" /></div>}
-                    <button type="button" className="mission-join-button" onClick={() => toggleMissionMembership(mission.id)} disabled={mission.status === "completed" || isJoined}>{isJoined ? "YA ESTÁS UNIDO" : "UNIRME A LA MISIÓN"}</button>
-                    {canManageMissions && <button type="button" className="mission-complete-button" onClick={() => toggleMissionStatus(mission.id)}>{mission.status === "completed" ? "REABRIR MISIÓN" : "MARCAR COMO COMPLETADA"}</button>}
-                    {canManageMissions && <button type="button" className="mission-edit-button" onClick={() => editMission(mission)}>EDITAR MISIÓN</button>}
-                    {canManageMissions && <button type="button" className="mission-delete-button" onClick={() => setPendingMissionDeleteId(mission.id)}>ELIMINAR</button>}
-                  </div>
+                  )}
                 </article>
                 )
               })}

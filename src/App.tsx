@@ -6055,15 +6055,11 @@ function ThreadView({
                   }}
                 >
                   <img
+                    className="thread-attachment-image"
                     src={att.dataUrl}
                     alt={att.name}
                     style={{
                       display: "block",
-                      width: "auto",
-                      maxWidth: "100%",
-                      height: "auto",
-                      maxHeight: 520,
-                      objectFit: "contain",
                       margin: "0 auto",
                     }}
                   />
@@ -6196,9 +6192,10 @@ function ThreadView({
                             style={{ cursor: "zoom-in", borderRadius: 10, overflow: "hidden", border: "1px solid var(--border)", background: "rgba(15,23,42,0.45)" }}
                           >
                             <img
+                              className="thread-attachment-image"
                               src={att.dataUrl}
                               alt={att.name}
-                              style={{ display: "block", maxWidth: "100%", width: "auto", height: "auto", maxHeight: 420, objectFit: "contain", margin: "0 auto" }}
+                              style={{ display: "block", margin: "0 auto" }}
                             />
                           </div>
                         ) : (

@@ -219,7 +219,16 @@ select:hover,
 }
 .markdown-content pre code { padding: 0; background: none; color: var(--text-muted); }
 .markdown-content a { color: var(--highlight); }
-.markdown-content img { max-width: 100%; height: auto; border-radius: 6px; }
+.markdown-content img,
+.thread-attachment-image {
+  display: block;
+  width: auto;
+  max-width: min(100%, 760px);
+  height: auto;
+  max-height: 360px;
+  object-fit: contain;
+  border-radius: 6px;
+}
 .markdown-align-left { text-align: left; }
 .markdown-align-center { text-align: center; }
 .markdown-align-right { text-align: right; }

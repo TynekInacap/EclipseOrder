@@ -1,0 +1,11 @@
+{
+  "title": "Eclipse Order | Foro de la comunidad",
+  "description": "Reporta problemas, comparte historias y participa en las facciones de Eclipse Order.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

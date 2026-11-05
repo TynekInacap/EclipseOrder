@@ -1026,10 +1026,11 @@ function isLegacyAuthEmail(email: string | undefined) {
   return Boolean(email?.toLowerCase().endsWith("@eclipse-order.local"))
 }
 
-function isFutureJwtError(error: { message?: string; status?: number } | null | undefined) {
+function isFutureJwtError(error: { message?: string; status?: number; code?: string; details?: string; hint?: string } | null | undefined) {
   if (!error) return false
-  const message = (error.message ?? "").toLowerCase()
-  return error.status === 401 && (message.includes("jwt issued at future") || message.includes("jwt issued in the future") || message.includes("issued at future"))
+  const message = [error.message, error.details, error.hint].filter(Boolean).join(" ").toLowerCase()
+  return (error.status === 401 || error.code === "PGRST303") &&
+    (error.code === "PGRST303" || message.includes("jwt issued at future") || message.includes("jwt issued in the future") || message.includes("issued at future"))
 }
 
 function clearSupabaseStoredAuth() {
@@ -1044,9 +1045,16 @@ function clearSupabaseStoredAuth() {
   clearMatchingKeys(sessionStorage)
 }
 
+async function clearFutureJwtSession(error: { message?: string; status?: number; code?: string; details?: string; hint?: string } | null | undefined) {
+  if (!isFutureJwtError(error)) return false
+  clearSupabaseStoredAuth()
+  await supabase.auth.signOut().catch(() => undefined)
+  return true
+}
+
 function getFriendlyAuthError(error: { message?: string; status?: number } | null | undefined) {
   if (isFutureJwtError(error)) {
-    return "La hora del equipo está adelantada. Ajusta la fecha y hora del sistema y vuelve a intentarlo."
+    return "Supabase rechazó la sesión por un desfase en la hora del JWT. Sincroniza la fecha y hora del equipo y vuelve a intentarlo. Si persiste, será necesario revisar la hora del proyecto Supabase."
   }
 
   return error?.message || "No se pudo iniciar sesión."
@@ -6990,6 +6998,7 @@ export default function App() {
   const currentUserRef = useRef<User | null>(null)
   const notificationIdsRef = useRef<Set<string>>(new Set())
     const hydratingUserIdRef = useRef<string | null>(null)
+  const loginInProgressRef = useRef(false)
   const notificationCountRef = useRef<{ userId: string; count: number } | null>(null)
     const welcomePendingUsernameRef = useRef<string | null>(null)
   const navigationHistoryRef = useRef<NavigationSnapshot[]>([])
@@ -7561,9 +7570,14 @@ export default function App() {
         return
       } else if (isLegacyAuthEmail(session.user.email) && _event !== "USER_UPDATED") {
         setView("link_email")
-      } else if (_event !== "USER_UPDATED" && (!currentUserRef.current || currentUserRef.current.id !== session.user.id)) {
+      } else if (!loginInProgressRef.current && _event !== "USER_UPDATED" && (!currentUserRef.current || currentUserRef.current.id !== session.user.id)) {
         void hydrateSession(session.user.id).catch((sessionError) => {
           console.error("Could not load Supabase profile", sessionError)
+          if (isFutureJwtError(sessionError)) {
+            void clearFutureJwtSession(sessionError)
+            setCurrentUser(null)
+            setView("login")
+          }
         })
       }
     })
@@ -7600,46 +7614,66 @@ export default function App() {
   }, [currentUser])
 
   async function handleLogin(characterName: string, password: string) {
-    const loginInput = characterName.trim()
-    let loginName = loginInput
-    const { data: forumProfile, error: profileLookupError } = await supabase
-      .from("profiles")
-      .select("id, username")
-      .ilike("username", loginInput)
-      .maybeSingle()
-    if (profileLookupError && profileLookupError.code !== "PGRST116") throw new Error(profileLookupError.message)
+    loginInProgressRef.current = true
+    try {
+      const loginInput = characterName.trim()
+      let loginName = loginInput
+      if (!loginInput.includes("@")) {
+        const { data: forumProfile, error: profileLookupError } = await supabase
+          .from("profiles")
+          .select("id, username")
+          .ilike("username", loginInput)
+          .maybeSingle()
+        if (profileLookupError && profileLookupError.code !== "PGRST116") {
+          if (await clearFutureJwtSession(profileLookupError)) throw new Error(getFriendlyAuthError(profileLookupError))
+          throw new Error(profileLookupError.message)
+        }
 
-    if (forumProfile) {
-      loginName = forumProfile.username
-      const { data: verifiedLink, error: linkLookupError } = await supabase
-        .from("player_links")
-        .select("pz_username")
-        .eq("forum_user_id", forumProfile.id)
-        .eq("verified", true)
-        .maybeSingle()
-      if (linkLookupError) throw new Error(linkLookupError.message)
-      if (verifiedLink?.pz_username) loginName = verifiedLink.pz_username
-    }
+        if (forumProfile) {
+          loginName = forumProfile.username
+          const { data: verifiedLink, error: linkLookupError } = await supabase
+            .from("player_links")
+            .select("pz_username")
+            .eq("forum_user_id", forumProfile.id)
+            .eq("verified", true)
+            .maybeSingle()
+          if (linkLookupError) {
+            if (await clearFutureJwtSession(linkLookupError)) throw new Error(getFriendlyAuthError(linkLookupError))
+            throw new Error(linkLookupError.message)
+          }
+          if (verifiedLink?.pz_username) loginName = verifiedLink.pz_username
+        }
+      }
 
-    const { data: authData, error } = await supabase.auth.signInWithPassword({
-      email: loginInput.includes("@") ? loginInput : authEmailForCharacter(loginName),
-      password,
-    })
-    if (error) {
-      if (isFutureJwtError(error)) {
-        await supabase.auth.signOut().catch(() => undefined)
+      const { data: authData, error } = await supabase.auth.signInWithPassword({
+        email: loginInput.includes("@") ? loginInput : authEmailForCharacter(loginName),
+        password,
+      })
+      if (error) {
+        if (await clearFutureJwtSession(error)) {
+          throw new Error(getFriendlyAuthError(error))
+        }
         throw new Error(getFriendlyAuthError(error))
       }
-      throw new Error(getFriendlyAuthError(error))
-    }
 
-    if (authData.session?.user?.id) {
-      if (isLegacyAuthEmail(authData.session.user.email)) {
-        setView("link_email")
-        return
+      if (authData.session?.user?.id) {
+        if (isLegacyAuthEmail(authData.session.user.email)) {
+          setView("link_email")
+          return
+        }
+        try {
+          await hydrateSession(authData.session.user.id)
+        } catch (loginError) {
+          if (await clearFutureJwtSession(loginError)) {
+            setCurrentUser(null)
+            setView("login")
+            throw new Error(getFriendlyAuthError(loginError))
+          }
+          throw loginError
+        }
       }
-      setView("forum")
-      await hydrateSession(authData.session.user.id)
+    } finally {
+      loginInProgressRef.current = false
     }
   }
 

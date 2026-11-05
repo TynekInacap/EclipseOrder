@@ -1026,11 +1026,15 @@ function isLegacyAuthEmail(email: string | undefined) {
   return Boolean(email?.toLowerCase().endsWith("@eclipse-order.local"))
 }
 
-function isFutureJwtError(error: { message?: string; status?: number; code?: string; details?: string; hint?: string } | null | undefined) {
+function isRejectedJwtError(error: { message?: string; status?: number; code?: string; details?: string; hint?: string } | null | undefined) {
   if (!error) return false
   const message = [error.message, error.details, error.hint].filter(Boolean).join(" ").toLowerCase()
-  return (error.status === 401 || error.code === "PGRST303") &&
-    (error.code === "PGRST303" || message.includes("jwt issued at future") || message.includes("jwt issued in the future") || message.includes("issued at future"))
+  return error.status === 401 ||
+    /^PGRST30[123]$/.test(error.code || "") ||
+    message.includes("jwt issued at future") ||
+    message.includes("jwt issued in the future") ||
+    message.includes("issued at future") ||
+    message.includes("invalid_token")
 }
 
 function clearSupabaseStoredAuth() {
@@ -1045,16 +1049,16 @@ function clearSupabaseStoredAuth() {
   clearMatchingKeys(sessionStorage)
 }
 
-async function clearFutureJwtSession(error: { message?: string; status?: number; code?: string; details?: string; hint?: string } | null | undefined) {
-  if (!isFutureJwtError(error)) return false
+async function clearRejectedJwtSession(error: { message?: string; status?: number; code?: string; details?: string; hint?: string } | null | undefined) {
+  if (!isRejectedJwtError(error)) return false
   clearSupabaseStoredAuth()
   await supabase.auth.signOut().catch(() => undefined)
   return true
 }
 
 function getFriendlyAuthError(error: { message?: string; status?: number; code?: string } | null | undefined) {
-  if (isFutureJwtError(error)) {
-    return "Supabase rechazó la sesión por un desfase en la hora del JWT. Sincroniza la fecha y hora del equipo y vuelve a intentarlo. Si persiste, será necesario revisar la hora del proyecto Supabase."
+  if (isRejectedJwtError(error)) {
+    return "Supabase rechazó la sesión guardada. Se limpió el acceso anterior; vuelve a iniciar sesión. Si el error persiste, revisa la fecha y hora del equipo y el estado del proyecto Supabase."
   }
 
   return error?.message || "No se pudo iniciar sesión."
@@ -7507,7 +7511,7 @@ export default function App() {
         const isPasswordRecovery = recoveryLinkOpen
         if (session && mounted) {
           const { error: userError } = await supabase.auth.getUser()
-          if (userError && await clearFutureJwtSession(userError)) {
+          if (userError && await clearRejectedJwtSession(userError)) {
             setCurrentUser(null)
             setView("login")
             return
@@ -7523,6 +7527,10 @@ export default function App() {
         }
       } catch (sessionError) {
         console.error("Could not restore Supabase session", sessionError)
+        if (await clearRejectedJwtSession(sessionError)) {
+          setCurrentUser(null)
+          setView("login")
+        }
       } finally {
         if (mounted) setAuthReady(true)
       }
@@ -7554,8 +7562,8 @@ export default function App() {
       } else if (!loginInProgressRef.current && _event !== "USER_UPDATED" && (!currentUserRef.current || currentUserRef.current.id !== session.user.id)) {
         void hydrateSession(session.user.id).catch((sessionError) => {
           console.error("Could not load Supabase profile", sessionError)
-          if (isFutureJwtError(sessionError)) {
-            void clearFutureJwtSession(sessionError)
+          if (isRejectedJwtError(sessionError)) {
+            void clearRejectedJwtSession(sessionError)
             setCurrentUser(null)
             setView("login")
           }
@@ -7606,7 +7614,7 @@ export default function App() {
           .ilike("username", loginInput)
           .maybeSingle()
         if (profileLookupError && profileLookupError.code !== "PGRST116") {
-          if (await clearFutureJwtSession(profileLookupError)) throw new Error(getFriendlyAuthError(profileLookupError))
+          if (await clearRejectedJwtSession(profileLookupError)) throw new Error(getFriendlyAuthError(profileLookupError))
           throw new Error(profileLookupError.message)
         }
 
@@ -7619,7 +7627,7 @@ export default function App() {
             .eq("verified", true)
             .maybeSingle()
           if (linkLookupError) {
-            if (await clearFutureJwtSession(linkLookupError)) throw new Error(getFriendlyAuthError(linkLookupError))
+            if (await clearRejectedJwtSession(linkLookupError)) throw new Error(getFriendlyAuthError(linkLookupError))
             throw new Error(linkLookupError.message)
           }
           if (verifiedLink?.pz_username) loginName = verifiedLink.pz_username
@@ -7631,7 +7639,7 @@ export default function App() {
         password,
       })
       if (error) {
-        if (await clearFutureJwtSession(error)) throw new Error(getFriendlyAuthError(error))
+        if (await clearRejectedJwtSession(error)) throw new Error(getFriendlyAuthError(error))
         throw new Error(getFriendlyAuthError(error))
       }
 
@@ -7643,7 +7651,7 @@ export default function App() {
         try {
           await hydrateSession(authData.session.user.id)
         } catch (loginError) {
-          if (await clearFutureJwtSession(loginError)) {
+          if (await clearRejectedJwtSession(loginError)) {
             setCurrentUser(null)
             setView("login")
             throw new Error(getFriendlyAuthError(loginError))

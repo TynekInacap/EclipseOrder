@@ -7640,7 +7640,6 @@ export default function App() {
           setView("link_email")
           return
         }
-        setView("forum")
         try {
           await hydrateSession(authData.session.user.id)
         } catch (loginError) {
